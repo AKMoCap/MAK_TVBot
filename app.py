@@ -130,6 +130,16 @@ def api_prices():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/asset-meta', methods=['GET'])
+def api_asset_metadata():
+    """Get asset metadata from Hyperliquid (szDecimals, maxLeverage)"""
+    try:
+        meta = bot_manager.get_asset_metadata()
+        return jsonify(meta)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/stats/daily', methods=['GET'])
 def api_daily_stats():
     """Get daily trading statistics"""

@@ -120,6 +120,34 @@ class BotManager:
             logger.exception(f"Error getting account info: {e}")
             return {'error': str(e)}
 
+    def get_asset_metadata(self):
+        """
+        Get asset metadata from Hyperliquid including szDecimals and maxLeverage.
+        Returns dict mapping coin -> {szDecimals, maxLeverage}
+        """
+        try:
+            info, _ = self.get_exchange()
+            meta = info.meta()
+
+            # meta contains 'universe' which is a list of asset info
+            universe = meta.get('universe', [])
+
+            asset_meta = {}
+            for asset in universe:
+                coin = asset.get('name')
+                if coin:
+                    asset_meta[coin] = {
+                        'szDecimals': asset.get('szDecimals', 2),
+                        'maxLeverage': asset.get('maxLeverage', 10)
+                    }
+
+            logger.info(f"Loaded metadata for {len(asset_meta)} assets")
+            return asset_meta
+
+        except Exception as e:
+            logger.exception(f"Error getting asset metadata: {e}")
+            return {}
+
     def get_market_prices(self, coins=None):
         """Get current market prices"""
         try:
@@ -133,22 +161,49 @@ class BotManager:
             logger.exception(f"Error getting prices: {e}")
             return {}
 
-    def get_size_decimals(self, coin):
+    def get_size_decimals(self, coin, asset_meta=None):
         """
         Get the number of decimal places for position size based on coin.
-        Hyperliquid has specific size increments for each asset.
+        Uses Hyperliquid API metadata when available.
         """
-        # High-value coins need more precision
+        # Try to get from cached/passed metadata first
+        if asset_meta and coin in asset_meta:
+            return asset_meta[coin].get('szDecimals', 2)
+
+        # Try to fetch from API
+        try:
+            meta = self.get_asset_metadata()
+            if coin in meta:
+                return meta[coin].get('szDecimals', 2)
+        except:
+            pass
+
+        # Fallback to reasonable defaults
         if coin in ['BTC']:
-            return 5  # 0.00001 BTC
+            return 5
         elif coin in ['ETH']:
-            return 4  # 0.0001 ETH
-        elif coin in ['SOL', 'AAVE', 'PENDLE', 'ENA', 'AERO', 'HYPE']:
-            return 2  # 0.01 units
-        elif coin in ['DOGE', 'PENGU', 'kPEPE', 'kBONK', 'FARTCOIN', 'PUMP', 'VIRTUAL']:
-            return 0  # Whole units only for memecoins
+            return 4
         else:
-            return 1  # Default to 0.1 units
+            return 2  # Default
+
+    def get_max_leverage(self, coin, asset_meta=None):
+        """
+        Get the maximum allowed leverage for a coin.
+        Uses Hyperliquid API metadata.
+        """
+        # Try to get from cached/passed metadata first
+        if asset_meta and coin in asset_meta:
+            return asset_meta[coin].get('maxLeverage', 10)
+
+        # Try to fetch from API
+        try:
+            meta = self.get_asset_metadata()
+            if coin in meta:
+                return meta[coin].get('maxLeverage', 10)
+        except:
+            pass
+
+        return 10  # Default
 
     def calculate_position_size(self, coin, collateral_usd, leverage):
         """Calculate position size based on collateral and leverage"""
@@ -161,7 +216,7 @@ class BotManager:
         notional_value = collateral_usd * leverage
         size = notional_value / current_price
 
-        # Round appropriately based on coin's size increment
+        # Get szDecimals from API
         decimals = self.get_size_decimals(coin)
         size = round(size, decimals)
 
@@ -172,20 +227,27 @@ class BotManager:
             # If rounding resulted in 0, use minimum increment
             size = 10 ** (-decimals)
 
-        logger.info(f"Calculated size for {coin}: {size} (decimals: {decimals}, price: ${current_price:.4f})")
+        logger.info(f"Calculated size for {coin}: {size} (szDecimals: {decimals}, price: ${current_price:.4f})")
 
         return size, current_price
 
     def execute_trade(self, coin, action, leverage, collateral_usd, stop_loss_pct=None, take_profit_pct=None, slippage=0.01):
         """Execute a trade on Hyperliquid"""
         if not self._enabled:
-            return {'error': 'Bot is disabled'}
+            return {'success': False, 'error': 'Bot is disabled'}
 
         try:
             info, exchange = self.get_exchange()
 
+            # Check max leverage for this coin
+            max_leverage = self.get_max_leverage(coin)
+            if leverage > max_leverage:
+                error_msg = f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"
+                logger.error(error_msg)
+                return {'success': False, 'error': error_msg}
+
             # Set leverage
-            logger.info(f"Setting leverage to {leverage}x for {coin}")
+            logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x)")
             exchange.update_leverage(leverage, coin, is_cross=False)
 
             # Calculate position size

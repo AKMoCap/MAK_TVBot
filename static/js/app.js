@@ -345,6 +345,9 @@ function updateConnectionStatus(connected) {
 // Store coin configs globally for quick trade form
 let coinConfigsCache = {};
 
+// Store asset metadata (szDecimals, maxLeverage) from Hyperliquid API
+let assetMetaCache = {};
+
 // Category definitions for batch trading
 const categoryCoins = {
     'CAT:MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
@@ -356,8 +359,31 @@ function isCategory(value) {
     return value && value.startsWith('CAT:');
 }
 
+async function loadAssetMetadata() {
+    try {
+        const data = await apiCall('/asset-meta');
+        if (data && !data.error) {
+            assetMetaCache = data;
+            console.log('Loaded asset metadata for', Object.keys(assetMetaCache).length, 'assets');
+        }
+    } catch (error) {
+        console.error('Failed to load asset metadata:', error);
+    }
+}
+
+function getMaxLeverage(coin) {
+    // Get max leverage from asset metadata, default to 10
+    if (assetMetaCache[coin]) {
+        return assetMetaCache[coin].maxLeverage || 10;
+    }
+    return 10;
+}
+
 async function loadCoinConfigsForQuickTrade() {
     try {
+        // Load asset metadata first
+        await loadAssetMetadata();
+
         const data = await apiCall('/coins');
         if (data.coins) {
             data.coins.forEach(coin => {
@@ -384,13 +410,24 @@ function populateQuickTradeForm(selection) {
     const config = coinConfigsCache[selection];
     if (!config) return;
 
-    // Update leverage
+    // Get max leverage for this coin from Hyperliquid API metadata
+    const maxLeverage = getMaxLeverage(selection);
+
+    // Update leverage slider max value and current value
     const leverageRange = document.getElementById('trade-leverage-range');
     const leverageDisplay = document.getElementById('leverage-display');
-    if (leverageRange && config.default_leverage) {
-        leverageRange.value = config.default_leverage;
+    if (leverageRange) {
+        // Update the max attribute
+        leverageRange.max = maxLeverage;
+
+        // Set default leverage (capped at max)
+        const defaultLev = Math.min(config.default_leverage || 3, maxLeverage);
+        leverageRange.value = defaultLev;
+
         if (leverageDisplay) {
-            leverageDisplay.textContent = config.default_leverage + 'x';
+            leverageDisplay.textContent = defaultLev + 'x';
+            // Show max leverage info
+            leverageDisplay.title = `Max leverage for ${selection}: ${maxLeverage}x`;
         }
     }
 
@@ -432,8 +469,13 @@ function clearQuickTradeForm() {
     const leverageRange = document.getElementById('trade-leverage-range');
     const leverageDisplay = document.getElementById('leverage-display');
     if (leverageRange) {
+        // Reset max to lowest common denominator for category trading
+        leverageRange.max = 3;  // Most restrictive (AERO is 3x max)
         leverageRange.value = 3;
-        if (leverageDisplay) leverageDisplay.textContent = '3x';
+        if (leverageDisplay) {
+            leverageDisplay.textContent = '3x';
+            leverageDisplay.title = 'Max leverage varies by coin (using lowest: 3x)';
+        }
     }
 
     const collateralInput = document.getElementById('trade-collateral');
