@@ -20,3 +20,4 @@ requests>=2.31.0
 # Production WSGI server
 gunicorn>=21.0.0
 flask-sqlalchemy
+psycopg2-binary
