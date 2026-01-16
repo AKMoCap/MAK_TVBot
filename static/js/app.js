@@ -837,8 +837,8 @@ function updateCoinConfigTable(coins) {
     // Define coin groups
     const groups = {
         'MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
-        'DEFI': ['AAVE', 'ENA', 'PENDLE', 'VIRTUAL', 'AERO'],
-        'HIGH BETA / MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']
+        'DEFI': ['AAVE', 'ENA', 'PENDLE', 'AERO'],
+        'HIGH BETA / MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'VIRTUAL']
     };
 
     // Create a map for quick coin lookup
