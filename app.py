@@ -91,7 +91,11 @@ def trades():
 @app.route('/indicators')
 def indicators():
     """Indicators configuration page"""
-    return render_template('indicators.html')
+    try:
+        return render_template('indicators.html')
+    except Exception as e:
+        logger.exception(f"Error rendering indicators page: {e}")
+        return f"Error: {str(e)}", 500
 
 
 @app.route('/settings')
