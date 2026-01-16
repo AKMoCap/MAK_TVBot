@@ -113,7 +113,7 @@ def api_account():
 def api_prices():
     """Get current market prices"""
     try:
-        coins = request.args.get('coins', 'BTC,ETH,SOL').split(',')
+        coins = request.args.get('coins', 'BTC,ETH,SOL,HYPE,AAVE,ENA,PENDLE,VIRTUAL,AERO,PUMP,DOGE,FARTCOIN,kBONK,kPEPE,PENGU').split(',')
         prices = bot_manager.get_market_prices(coins)
         return jsonify(prices)
     except Exception as e:

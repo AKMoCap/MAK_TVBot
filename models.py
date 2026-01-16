@@ -248,7 +248,9 @@ def init_db(app):
             db.session.add(default_risk)
 
         # Create default coin configs for popular coins
-        default_coins = ['BTC', 'ETH', 'SOL', 'DOGE', 'ARB', 'OP', 'AVAX', 'MATIC']
+        # Hyperliquid asset IDs for configured coins
+        default_coins = ['BTC', 'ETH', 'SOL', 'HYPE', 'AAVE', 'ENA', 'PENDLE', 'VIRTUAL',
+                         'AERO', 'PUMP', 'DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']
         for coin in default_coins:
             if not CoinConfig.query.filter_by(coin=coin).first():
                 coin_config = CoinConfig(coin=coin)
