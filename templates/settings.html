@@ -117,17 +117,18 @@
                             <tr>
                                 <th>Coin</th>
                                 <th>Enabled</th>
-                                <th>Default Leverage</th>
-                                <th>Default Collateral</th>
-                                <th>Max Position Size</th>
-                                <th>Stop Loss %</th>
-                                <th>Take Profit %</th>
+                                <th>Leverage</th>
+                                <th>Collateral</th>
+                                <th>Max Size</th>
+                                <th>SL %</th>
+                                <th>TP1</th>
+                                <th>TP2</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="coin-config-table">
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">
+                                <td colspan="9" class="text-center text-muted py-4">
                                     Loading coin configurations...
                                 </td>
                             </tr>
@@ -226,7 +227,7 @@
 
 <!-- Edit Coin Modal -->
 <div class="modal fade" id="editCoinModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark text-light">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title">Edit Coin Configuration</h5>
@@ -244,34 +245,88 @@
                     </div>
 
                     <div class="row mb-3">
-                        <div class="col-6">
+                        <div class="col-4">
                             <label class="form-label">Default Leverage</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="edit-coin-leverage" min="1" max="50">
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-leverage" min="1" max="10">
+                                <span class="input-group-text bg-dark text-light border-secondary">x</span>
+                            </div>
                         </div>
-                        <div class="col-6">
+                        <div class="col-4">
                             <label class="form-label">Default Collateral</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="edit-coin-collateral" min="1">
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-collateral" min="1">
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Max Position Size</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-max-size" min="100">
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Max Position Size (USD)</label>
-                        <input type="number" class="form-control bg-dark text-light border-secondary"
-                               id="edit-coin-max-size" min="100">
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Stop Loss</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <label class="form-label">Stop Loss %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-sl" min="1" max="50" step="0.5" value="15">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Take Profit Levels</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">TP1 Target %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-tp1" min="1" max="500" step="1" value="50">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">Target gain to trigger TP1</small>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">TP1 Size %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-tp1-size" min="1" max="100" step="1" value="25">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">% of position to close at TP1</small>
+                        </div>
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-6">
-                            <label class="form-label">Default Stop Loss %</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="edit-coin-sl" min="0.1" max="50" step="0.1">
+                            <label class="form-label">TP2 Target %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-tp2" min="1" max="500" step="1" value="100">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">Target gain to trigger TP2</small>
                         </div>
                         <div class="col-6">
-                            <label class="form-label">Default Take Profit %</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="edit-coin-tp" min="0.1" max="100" step="0.1">
+                            <label class="form-label">TP2 Size %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="edit-coin-tp2-size" min="1" max="100" step="1" value="50">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">% of position to close at TP2</small>
                         </div>
                     </div>
                 </form>
