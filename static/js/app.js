@@ -773,9 +773,9 @@ async function loadSettings() {
         // General settings
         const botEnabled = data.bot_enabled !== 'false';
         document.getElementById('bot-enabled').checked = botEnabled;
-        document.getElementById('default-leverage').value = data.default_leverage || 10;
+        document.getElementById('default-leverage').value = data.default_leverage || 3;
         document.getElementById('default-collateral').value = data.default_collateral || 100;
-        document.getElementById('slippage-tolerance').value = (parseFloat(data.slippage_tolerance) * 100) || 1;
+        document.getElementById('slippage-tolerance').value = (parseFloat(data.slippage_tolerance) * 100) || 0.3;
 
         // Update navbar bot toggle to match
         updateBotToggleButton(botEnabled);
@@ -794,14 +794,9 @@ async function loadSettings() {
 
         // Risk settings
         if (data.risk) {
-            document.getElementById('max-positions').value = data.risk.max_total_positions || 5;
             document.getElementById('max-position-value').value = data.risk.max_position_value_usd || 1000;
-            document.getElementById('max-exposure').value = data.risk.max_total_exposure_usd || 5000;
-            document.getElementById('daily-loss-limit').value = data.risk.daily_loss_limit_usd || 500;
-            document.getElementById('max-daily-trades').value = data.risk.max_daily_trades || 20;
-            document.getElementById('pause-after-losses').value = data.risk.pause_on_consecutive_losses || 3;
-            document.getElementById('pause-duration').value = data.risk.pause_duration_minutes || 60;
-            document.getElementById('max-leverage').value = data.risk.max_leverage || 20;
+            document.getElementById('max-exposure-pct').value = data.risk.max_total_exposure_pct || 75;
+            document.getElementById('max-leverage').value = data.risk.max_leverage || 10;
         }
 
         // Wallet info
@@ -830,27 +825,59 @@ async function loadCoinConfigs() {
 function updateCoinConfigTable(coins) {
     const tbody = document.getElementById('coin-config-table');
 
-    tbody.innerHTML = coins.map(coin => `
-        <tr>
-            <td><strong>${coin.coin}</strong></td>
-            <td>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" ${coin.enabled ? 'checked' : ''}
-                           onchange="toggleCoin('${coin.coin}', this.checked)">
-                </div>
-            </td>
-            <td>${coin.default_leverage}x</td>
-            <td>${formatCurrency(coin.default_collateral)}</td>
-            <td>${coin.max_position_size ? formatCurrency(coin.max_position_size) : '--'}</td>
-            <td>${coin.default_stop_loss_pct ? coin.default_stop_loss_pct + '%' : '--'}</td>
-            <td>${coin.default_take_profit_pct ? coin.default_take_profit_pct + '%' : '--'}</td>
-            <td>
-                <button class="btn btn-outline-secondary btn-sm" onclick="editCoin('${coin.coin}')">
-                    <i class="bi bi-pencil"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
+    // Define coin groups
+    const groups = {
+        'MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
+        'DEFI': ['AAVE', 'ENA', 'PENDLE', 'AERO'],
+        'HIGH BETA / MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']
+    };
+
+    // Create a map for quick coin lookup
+    const coinMap = {};
+    coins.forEach(c => { coinMap[c.coin] = c; });
+
+    let html = '';
+
+    for (const [groupName, groupCoins] of Object.entries(groups)) {
+        // Add group header
+        html += `
+            <tr class="table-active">
+                <td colspan="8" class="py-2" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
+                    <i class="bi bi-collection me-2"></i>${groupName}
+                </td>
+            </tr>
+        `;
+
+        // Add coins in this group
+        for (const coinName of groupCoins) {
+            const coin = coinMap[coinName];
+            if (coin) {
+                html += `
+                    <tr>
+                        <td><strong>${coin.coin}</strong></td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" ${coin.enabled ? 'checked' : ''}
+                                       onchange="toggleCoin('${coin.coin}', this.checked)">
+                            </div>
+                        </td>
+                        <td>${coin.default_leverage}x</td>
+                        <td>${formatCurrency(coin.default_collateral)}</td>
+                        <td>${coin.max_position_size ? formatCurrency(coin.max_position_size) : '--'}</td>
+                        <td>${coin.default_stop_loss_pct ? coin.default_stop_loss_pct + '%' : '--'}</td>
+                        <td>${coin.default_take_profit_pct ? coin.default_take_profit_pct + '%' : '--'}</td>
+                        <td>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="editCoin('${coin.coin}')">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+    }
+
+    tbody.innerHTML = html;
 }
 
 async function saveGeneralSettings(e) {
@@ -880,13 +907,8 @@ async function saveRiskSettings(e) {
     e.preventDefault();
 
     const data = {
-        max_total_positions: parseInt(document.getElementById('max-positions').value),
         max_position_value_usd: parseFloat(document.getElementById('max-position-value').value),
-        max_total_exposure_usd: parseFloat(document.getElementById('max-exposure').value),
-        daily_loss_limit_usd: parseFloat(document.getElementById('daily-loss-limit').value),
-        max_daily_trades: parseInt(document.getElementById('max-daily-trades').value),
-        pause_on_consecutive_losses: parseInt(document.getElementById('pause-after-losses').value),
-        pause_duration_minutes: parseInt(document.getElementById('pause-duration').value),
+        max_total_exposure_pct: parseFloat(document.getElementById('max-exposure-pct').value),
         max_leverage: parseInt(document.getElementById('max-leverage').value)
     };
 
