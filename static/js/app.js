@@ -106,8 +106,43 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 // ============================================================================
 
 async function initDashboard() {
+    // First fetch settings to get network and bot status
+    await fetchBotStatus();
     await refreshDashboard();
     setupDashboardEvents();
+}
+
+async function fetchBotStatus() {
+    try {
+        const settings = await apiCall('/settings');
+
+        // Update network badge
+        const networkBadge = document.getElementById('network-badge');
+        if (networkBadge) {
+            if (settings.use_testnet === 'false') {
+                networkBadge.className = 'badge bg-danger';
+                networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
+            } else {
+                networkBadge.className = 'badge bg-warning text-dark';
+                networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>TESTNET';
+            }
+        }
+
+        // Update bot status button
+        const botToggle = document.getElementById('bot-toggle');
+        if (botToggle) {
+            const isEnabled = settings.bot_enabled === 'true';
+            if (isEnabled) {
+                botToggle.className = 'btn btn-success btn-sm';
+                botToggle.innerHTML = '<i class="bi bi-play-fill me-1"></i>Running';
+            } else {
+                botToggle.className = 'btn btn-warning btn-sm';
+                botToggle.innerHTML = '<i class="bi bi-pause-fill me-1"></i>Paused';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to fetch bot status:', error);
+    }
 }
 
 async function refreshDashboard() {
@@ -415,17 +450,24 @@ async function toggleBot() {
     try {
         const result = await apiCall('/bot/toggle', 'POST', { enabled: !isEnabled });
         if (result.success) {
-            if (result.enabled) {
-                btn.className = 'btn btn-success btn-sm';
-                btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Running';
-            } else {
-                btn.className = 'btn btn-danger btn-sm';
-                btn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>Paused';
-            }
-            showToast(`Bot ${result.enabled ? 'enabled' : 'disabled'}`, 'info');
+            updateBotToggleButton(result.enabled);
+            showToast(`Bot ${result.enabled ? 'enabled' : 'paused'}`, 'info');
         }
     } catch (error) {
         showToast('Failed to toggle bot', 'error');
+    }
+}
+
+function updateBotToggleButton(enabled) {
+    const btn = document.getElementById('bot-toggle');
+    if (!btn) return;
+
+    if (enabled) {
+        btn.className = 'btn btn-success btn-sm';
+        btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Running';
+    } else {
+        btn.className = 'btn btn-warning btn-sm';
+        btn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>Paused';
     }
 }
 
@@ -735,11 +777,26 @@ async function loadSettings() {
         const data = await apiCall('/settings');
 
         // General settings
-        document.getElementById('bot-enabled').checked = data.bot_enabled !== 'false';
-        document.getElementById('use-testnet').checked = data.use_testnet !== 'false';
+        const botEnabled = data.bot_enabled !== 'false';
+        document.getElementById('bot-enabled').checked = botEnabled;
         document.getElementById('default-leverage').value = data.default_leverage || 10;
         document.getElementById('default-collateral').value = data.default_collateral || 100;
         document.getElementById('slippage-tolerance').value = (parseFloat(data.slippage_tolerance) * 100) || 1;
+
+        // Update navbar bot toggle to match
+        updateBotToggleButton(botEnabled);
+
+        // Update network badge
+        const networkBadge = document.getElementById('network-badge');
+        if (networkBadge) {
+            if (data.use_testnet === 'false') {
+                networkBadge.className = 'badge bg-danger';
+                networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
+            } else {
+                networkBadge.className = 'badge bg-warning text-dark';
+                networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>TESTNET';
+            }
+        }
 
         // Risk settings
         if (data.risk) {
@@ -805,9 +862,9 @@ function updateCoinConfigTable(coins) {
 async function saveGeneralSettings(e) {
     e.preventDefault();
 
+    const botEnabled = document.getElementById('bot-enabled').checked;
     const data = {
-        bot_enabled: document.getElementById('bot-enabled').checked,
-        use_testnet: document.getElementById('use-testnet').checked,
+        bot_enabled: botEnabled,
         default_leverage: parseInt(document.getElementById('default-leverage').value),
         default_collateral: parseFloat(document.getElementById('default-collateral').value),
         slippage_tolerance: parseFloat(document.getElementById('slippage-tolerance').value) / 100
@@ -816,6 +873,8 @@ async function saveGeneralSettings(e) {
     try {
         const result = await apiCall('/settings', 'POST', data);
         if (result.success) {
+            // Update navbar bot toggle to match
+            updateBotToggleButton(botEnabled);
             showToast('Settings saved successfully', 'success');
         }
     } catch (error) {
