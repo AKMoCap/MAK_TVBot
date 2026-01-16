@@ -811,7 +811,6 @@ async function loadSettings() {
 
         // Wallet info
         document.getElementById('main-wallet').value = data.main_wallet || 'Not configured';
-        document.getElementById('webhook-secret').value = data.webhook_secret ? '••••••••••••' : 'Not configured';
 
         if (!data.api_secret_configured) {
             document.getElementById('api-wallet-status').innerHTML =
@@ -948,19 +947,6 @@ async function testConnection() {
         }
     } catch (error) {
         showToast('Connection test failed', 'error');
-    }
-}
-
-function toggleSecretVisibility() {
-    const input = document.getElementById('webhook-secret');
-    const btn = document.getElementById('toggle-secret');
-
-    if (input.type === 'password') {
-        input.type = 'text';
-        btn.innerHTML = '<i class="bi bi-eye-slash"></i>';
-    } else {
-        input.type = 'password';
-        btn.innerHTML = '<i class="bi bi-eye"></i>';
     }
 }
 
