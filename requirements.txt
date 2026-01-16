@@ -1,20 +1,21 @@
-# TradingView to Hyperliquid Bot Dependencies
+# MAK TradingView to Hyperliquid Trading Bot
 # Install with: pip install -r requirements.txt
 
-# Web framework for receiving webhooks
+# Web framework
 flask>=3.0.0
+flask-sqlalchemy>=3.1.0
 
-# Hyperliquid official SDK
+# Hyperliquid SDK
 hyperliquid-python-sdk>=0.20.0
 
-# Ethereum account handling (dependency of SDK, but listed explicitly)
+# Ethereum account handling
 eth-account>=0.11.0
 
-# For environment variable management (optional but helpful)
+# Environment variable management
 python-dotenv>=1.0.0
-eth-account
-flask
-hyperliquid-python-sdk
-python-dotenv
-requests
-gunicorn
+
+# HTTP requests
+requests>=2.31.0
+
+# Production WSGI server
+gunicorn>=21.0.0
