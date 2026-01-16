@@ -54,6 +54,57 @@ body {
     background-color: rgba(58, 180, 239, 0.15);
 }
 
+/* Navbar Status Badges */
+.navbar-status-badges {
+    display: flex;
+    gap: 1rem;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 120px;
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.status-badge-primary {
+    background-color: var(--accent-primary);
+    color: #fff;
+}
+
+.status-badge-primary:hover {
+    background-color: #2da3de;
+    color: #fff;
+}
+
+.status-badge-testnet {
+    background-color: #f59e0b;
+    color: #000;
+}
+
+.status-badge-testnet:hover {
+    background-color: #d97706;
+    color: #000;
+}
+
+.status-badge-paused {
+    background-color: var(--accent-primary);
+    color: #fff;
+    opacity: 0.7;
+}
+
+.status-badge-disconnected {
+    background-color: var(--accent-red);
+    color: #fff;
+}
+
 /* Cards */
 .card {
     border-radius: 12px;

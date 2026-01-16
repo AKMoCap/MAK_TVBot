@@ -120,10 +120,10 @@ async function fetchBotStatus() {
         const networkBadge = document.getElementById('network-badge');
         if (networkBadge) {
             if (settings.use_testnet === 'false') {
-                networkBadge.className = 'badge bg-danger';
+                networkBadge.className = 'status-badge status-badge-primary';
                 networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
             } else {
-                networkBadge.className = 'badge bg-warning text-dark';
+                networkBadge.className = 'status-badge status-badge-testnet';
                 networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>TESTNET';
             }
         }
@@ -132,13 +132,7 @@ async function fetchBotStatus() {
         const botToggle = document.getElementById('bot-toggle');
         if (botToggle) {
             const isEnabled = settings.bot_enabled === 'true';
-            if (isEnabled) {
-                botToggle.className = 'btn btn-success btn-sm';
-                botToggle.innerHTML = '<i class="bi bi-play-fill me-1"></i>Running';
-            } else {
-                botToggle.className = 'btn btn-warning btn-sm';
-                botToggle.innerHTML = '<i class="bi bi-pause-fill me-1"></i>Paused';
-            }
+            updateBotToggleButton(isEnabled);
         }
     } catch (error) {
         console.error('Failed to fetch bot status:', error);
@@ -330,10 +324,10 @@ function updateActivityList(logs) {
 function updateConnectionStatus(connected) {
     const badge = document.getElementById('connection-status');
     if (connected) {
-        badge.className = 'badge bg-success';
+        badge.className = 'status-badge status-badge-primary';
         badge.innerHTML = '<i class="bi bi-wifi me-1"></i>Connected';
     } else {
-        badge.className = 'badge bg-danger';
+        badge.className = 'status-badge status-badge-disconnected';
         badge.innerHTML = '<i class="bi bi-wifi-off me-1"></i>Disconnected';
     }
 }
@@ -445,7 +439,7 @@ async function closeAllPositions() {
 
 async function toggleBot() {
     const btn = document.getElementById('bot-toggle');
-    const isEnabled = btn.classList.contains('btn-success');
+    const isEnabled = !btn.classList.contains('status-badge-paused');
 
     try {
         const result = await apiCall('/bot/toggle', 'POST', { enabled: !isEnabled });
@@ -463,10 +457,10 @@ function updateBotToggleButton(enabled) {
     if (!btn) return;
 
     if (enabled) {
-        btn.className = 'btn btn-success btn-sm';
+        btn.className = 'status-badge status-badge-primary';
         btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Running';
     } else {
-        btn.className = 'btn btn-warning btn-sm';
+        btn.className = 'status-badge status-badge-paused';
         btn.innerHTML = '<i class="bi bi-pause-fill me-1"></i>Paused';
     }
 }
@@ -790,10 +784,10 @@ async function loadSettings() {
         const networkBadge = document.getElementById('network-badge');
         if (networkBadge) {
             if (data.use_testnet === 'false') {
-                networkBadge.className = 'badge bg-danger';
+                networkBadge.className = 'status-badge status-badge-primary';
                 networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
             } else {
-                networkBadge.className = 'badge bg-warning text-dark';
+                networkBadge.className = 'status-badge status-badge-testnet';
                 networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>TESTNET';
             }
         }
