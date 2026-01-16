@@ -33,9 +33,22 @@ The application runs on port 5000 with a web dashboard accessible at the root UR
 - `GET /health` - Health check endpoint
 - `GET /api/status` - API status and account info
 
+## Database
+Uses PostgreSQL for persistent storage of settings and trade history. The `DATABASE_URL` environment variable is automatically set by Replit's built-in PostgreSQL database.
+
+Database tables:
+- `trades` - Trade history and execution details
+- `bot_config` - Bot configuration settings
+- `coin_configs` - Per-coin trading configurations
+- `risk_settings` - Risk management parameters
+- `indicators` - Technical indicator settings
+- `activity_logs` - Activity and event logging
+
 ## Required Environment Variables
+- `DATABASE_URL` - PostgreSQL connection string (auto-configured by Replit)
 - `HL_MAIN_WALLET` - Your main Hyperliquid wallet address
-- `HL_API_SECRET` - Your Hyperliquid API wallet secret key
+- `HL_API_SECRET` - Your Hyperliquid API wallet secret key (mainnet)
+- `HL_TESTNET_API_SECRET` - Your Hyperliquid API wallet secret key (testnet)
 - `WEBHOOK_SECRET` - Secret key for TradingView webhook validation
 - `USE_TESTNET` - Set to "true" for testnet, "false" for mainnet
 - `SECRET_KEY` - Flask session secret key
@@ -56,3 +69,4 @@ The application runs on port 5000 with a web dashboard accessible at the root UR
 - 2026-01-16: Initial import and setup in Replit environment
 - 2026-01-16: Added flask-sqlalchemy for database support
 - 2026-01-16: Updated workflow to run app.py with web UI
+- 2026-01-16: Migrated from SQLite to PostgreSQL for persistent database storage
