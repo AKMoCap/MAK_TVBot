@@ -852,8 +852,11 @@ function updateCoinConfigTable(coins) {
         for (const coinName of groupCoins) {
             const coin = coinMap[coinName];
             if (coin) {
-                const tp1Display = coin.tp1_pct ? `${coin.tp1_pct}% @ ${coin.tp1_size_pct}%` : '--';
-                const tp2Display = coin.tp2_pct ? `${coin.tp2_pct}% @ ${coin.tp2_size_pct}%` : '--';
+                // TP display: "size% @ target%" (e.g., "25% @ 50%" = close 25% at 50% gain)
+                const tp1Display = coin.tp1_pct ? `${coin.tp1_size_pct}% @ ${coin.tp1_pct}%` : '--';
+                const tp2Display = coin.tp2_pct ? `${coin.tp2_size_pct}% @ ${coin.tp2_pct}%` : '--';
+                const maxSizeDisplay = coin.max_position_size ? formatCurrency(coin.max_position_size) : formatCurrency(coin.default_collateral * 10);
+                const slDisplay = coin.default_stop_loss_pct ? `-${coin.default_stop_loss_pct}%` : '-15%';
                 html += `
                     <tr>
                         <td><strong>${coin.coin}</strong></td>
@@ -865,8 +868,8 @@ function updateCoinConfigTable(coins) {
                         </td>
                         <td>${coin.default_leverage}x</td>
                         <td>${formatCurrency(coin.default_collateral)}</td>
-                        <td>${coin.max_position_size ? formatCurrency(coin.max_position_size) : '--'}</td>
-                        <td>${coin.default_stop_loss_pct ? coin.default_stop_loss_pct + '%' : '--'}</td>
+                        <td>${maxSizeDisplay}</td>
+                        <td>${slDisplay}</td>
                         <td><small>${tp1Display}</small></td>
                         <td><small>${tp2Display}</small></td>
                         <td>

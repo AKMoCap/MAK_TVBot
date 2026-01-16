@@ -105,10 +105,36 @@ body {
     color: #fff;
 }
 
+/* Global light text for dark theme */
+body {
+    color: var(--text-light);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-light);
+}
+
+p, span, div {
+    color: inherit;
+}
+
 /* Cards */
 .card {
     border-radius: 12px;
     border: 1px solid var(--border-color);
+    color: var(--text-light);
+}
+
+.card h3, .card h4 {
+    color: var(--text-light);
+}
+
+.card-body h6 {
+    color: var(--text-light);
+}
+
+.card-body p {
+    color: var(--text-light);
 }
 
 .card-header {
@@ -292,6 +318,11 @@ h6.text-muted {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    color: var(--text-light);
+}
+
+.activity-list .activity-content div {
+    color: var(--text-light);
 }
 
 .activity-list .activity-item:last-child {
@@ -503,4 +534,27 @@ code {
 /* Progress bars */
 .progress-bar.bg-info {
     background-color: var(--accent-primary) !important;
+}
+
+/* List group items */
+.list-group-item {
+    color: var(--text-light);
+}
+
+.list-group-item span {
+    color: var(--text-light);
+}
+
+/* Risk status and other card spans */
+.card-body span {
+    color: var(--text-light);
+}
+
+/* Modal text */
+.modal-body {
+    color: var(--text-light);
+}
+
+.modal-body p {
+    color: var(--text-light);
 }
