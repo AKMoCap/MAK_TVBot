@@ -43,11 +43,19 @@ class BotManager:
 
     def get_config(self):
         """Get configuration from environment"""
+        use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
+
+        # Select API secret based on network
+        if use_testnet:
+            api_secret = os.environ.get("HL_TESTNET_API_SECRET")
+        else:
+            api_secret = os.environ.get("HL_API_SECRET")
+
         return {
             'main_wallet': os.environ.get("HL_MAIN_WALLET"),
-            'api_secret': os.environ.get("HL_API_SECRET"),
+            'api_secret': api_secret,
             'webhook_secret': os.environ.get("WEBHOOK_SECRET"),
-            'use_testnet': os.environ.get("USE_TESTNET", "true").lower() == "true"
+            'use_testnet': use_testnet
         }
 
     def is_configured(self):
