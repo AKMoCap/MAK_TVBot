@@ -26,7 +26,7 @@
                         <label class="form-label">Default Leverage</label>
                         <div class="input-group">
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="default-leverage" value="10" min="1" max="20">
+                                   id="default-leverage" value="3" min="1" max="10">
                             <span class="input-group-text bg-dark text-light border-secondary">x</span>
                         </div>
                     </div>
@@ -44,7 +44,7 @@
                         <label class="form-label">Slippage Tolerance</label>
                         <div class="input-group">
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="slippage-tolerance" value="1" min="0.1" max="5" step="0.1">
+                                   id="slippage-tolerance" value="0.3" min="0.1" max="5" step="0.1">
                             <span class="input-group-text bg-dark text-light border-secondary">%</span>
                         </div>
                     </div>
@@ -67,74 +67,31 @@
                 <form id="risk-settings-form">
                     <h6 class="text-muted mb-3">Position Limits</h6>
 
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <label class="form-label">Max Total Positions</label>
+                    <div class="mb-3">
+                        <label class="form-label">Max Position Value</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark text-light border-secondary">$</span>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="max-positions" value="5" min="1" max="20">
+                                   id="max-position-value" value="1000" min="100">
                         </div>
-                        <div class="col-6">
-                            <label class="form-label">Max Position Value</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
-                                <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="max-position-value" value="1000" min="100">
-                            </div>
-                        </div>
+                        <small class="text-muted">Maximum collateral per position</small>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label">Max Total Exposure</label>
                         <div class="input-group">
-                            <span class="input-group-text bg-dark text-light border-secondary">$</span>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="max-exposure" value="5000" min="100">
+                                   id="max-exposure-pct" value="75" min="1" max="100" step="1">
+                            <span class="input-group-text bg-dark text-light border-secondary">%</span>
                         </div>
-                    </div>
-
-                    <hr class="border-secondary">
-                    <h6 class="text-muted mb-3">Daily Limits</h6>
-
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <label class="form-label">Daily Loss Limit</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
-                                <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="daily-loss-limit" value="500" min="10">
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label">Max Daily Trades</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="max-daily-trades" value="20" min="1" max="100">
-                        </div>
-                    </div>
-
-                    <hr class="border-secondary">
-                    <h6 class="text-muted mb-3">Circuit Breakers</h6>
-
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <label class="form-label">Pause After X Losses</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="pause-after-losses" value="3" min="1" max="10">
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label">Pause Duration</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="pause-duration" value="60" min="5">
-                                <span class="input-group-text bg-dark text-light border-secondary">min</span>
-                            </div>
-                        </div>
+                        <small class="text-muted">Maximum % of account USDC collateral at risk</small>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label">Max Leverage Allowed</label>
                         <div class="input-group">
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="max-leverage" value="20" min="1" max="50">
+                                   id="max-leverage" value="10" min="1" max="20">
                             <span class="input-group-text bg-dark text-light border-secondary">x</span>
                         </div>
                     </div>
@@ -155,7 +112,7 @@
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0">
+                    <table class="table table-dark table-hover mb-0" id="coin-config-table-container">
                         <thead>
                             <tr>
                                 <th>Coin</th>

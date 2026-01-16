@@ -94,7 +94,7 @@ class CoinConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     coin = db.Column(db.String(20), unique=True, nullable=False)
     enabled = db.Column(db.Boolean, default=True)
-    default_leverage = db.Column(db.Integer, default=10)
+    default_leverage = db.Column(db.Integer, default=3)
     default_collateral = db.Column(db.Float, default=100.0)
     max_position_size = db.Column(db.Float, nullable=True)  # Max position in USD
     max_open_positions = db.Column(db.Integer, default=1)  # Per this coin
@@ -135,22 +135,19 @@ class RiskSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     # Position limits
-    max_total_positions = db.Column(db.Integer, default=5)
     max_position_value_usd = db.Column(db.Float, default=1000.0)
-    max_total_exposure_usd = db.Column(db.Float, default=5000.0)
-
-    # Daily limits
-    daily_loss_limit_usd = db.Column(db.Float, default=500.0)
-    daily_loss_limit_pct = db.Column(db.Float, default=10.0)  # % of account
-    max_daily_trades = db.Column(db.Integer, default=20)
-
-    # Risk per trade
-    max_risk_per_trade_pct = db.Column(db.Float, default=2.0)  # % of account
+    max_total_exposure_pct = db.Column(db.Float, default=75.0)  # % of account USDC collateral
 
     # Leverage limits
-    max_leverage = db.Column(db.Integer, default=20)
+    max_leverage = db.Column(db.Integer, default=10)
 
-    # Circuit breakers
+    # Legacy fields (kept for database compatibility)
+    max_total_positions = db.Column(db.Integer, default=5)
+    max_total_exposure_usd = db.Column(db.Float, default=5000.0)
+    daily_loss_limit_usd = db.Column(db.Float, default=500.0)
+    daily_loss_limit_pct = db.Column(db.Float, default=10.0)
+    max_daily_trades = db.Column(db.Integer, default=20)
+    max_risk_per_trade_pct = db.Column(db.Float, default=2.0)
     pause_on_consecutive_losses = db.Column(db.Integer, default=3)
     pause_duration_minutes = db.Column(db.Integer, default=60)
 
@@ -158,16 +155,9 @@ class RiskSettings(db.Model):
 
     def to_dict(self):
         return {
-            'max_total_positions': self.max_total_positions,
             'max_position_value_usd': self.max_position_value_usd,
-            'max_total_exposure_usd': self.max_total_exposure_usd,
-            'daily_loss_limit_usd': self.daily_loss_limit_usd,
-            'daily_loss_limit_pct': self.daily_loss_limit_pct,
-            'max_daily_trades': self.max_daily_trades,
-            'max_risk_per_trade_pct': self.max_risk_per_trade_pct,
-            'max_leverage': self.max_leverage,
-            'pause_on_consecutive_losses': self.pause_on_consecutive_losses,
-            'pause_duration_minutes': self.pause_duration_minutes
+            'max_total_exposure_pct': self.max_total_exposure_pct,
+            'max_leverage': self.max_leverage
         }
 
 
@@ -248,9 +238,10 @@ def init_db(app):
             db.session.add(default_risk)
 
         # Create default coin configs for popular coins
-        # Hyperliquid asset IDs for configured coins
-        default_coins = ['BTC', 'ETH', 'SOL', 'HYPE', 'AAVE', 'ENA', 'PENDLE', 'VIRTUAL',
-                         'AERO', 'PUMP', 'DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']
+        # Grouped as: MAJORS, DEFI, HIGH BETA/MEMES
+        default_coins = ['BTC', 'ETH', 'SOL', 'HYPE',  # MAJORS
+                         'AAVE', 'ENA', 'PENDLE', 'AERO',  # DEFI
+                         'DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']  # HIGH BETA/MEMES
         for coin in default_coins:
             if not CoinConfig.query.filter_by(coin=coin).first():
                 coin_config = CoinConfig(coin=coin)
@@ -260,8 +251,8 @@ def init_db(app):
         defaults = {
             'bot_enabled': 'true',
             'use_testnet': 'true',
-            'slippage_tolerance': '0.01',
-            'default_leverage': '10',
+            'slippage_tolerance': '0.003',  # 0.3%
+            'default_leverage': '3',
             'default_collateral': '100'
         }
         for key, value in defaults.items():

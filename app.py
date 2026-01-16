@@ -119,7 +119,7 @@ def api_account():
 def api_prices():
     """Get current market prices"""
     try:
-        coins = request.args.get('coins', 'BTC,ETH,SOL,HYPE,AAVE,ENA,PENDLE,VIRTUAL,AERO,PUMP,DOGE,FARTCOIN,kBONK,kPEPE,PENGU').split(',')
+        coins = request.args.get('coins', 'BTC,ETH,SOL,HYPE,AAVE,ENA,PENDLE,AERO,DOGE,PUMP,FARTCOIN,kBONK,kPEPE,PENGU').split(',')
         prices = bot_manager.get_market_prices(coins)
         return jsonify(prices)
     except Exception as e:
@@ -487,9 +487,9 @@ def api_get_settings():
         return jsonify({
             'bot_enabled': BotConfig.get('bot_enabled', 'true'),
             'use_testnet': str(USE_TESTNET).lower(),  # Use actual environment variable
-            'default_leverage': BotConfig.get('default_leverage', '10'),
+            'default_leverage': BotConfig.get('default_leverage', '3'),
             'default_collateral': BotConfig.get('default_collateral', '100'),
-            'slippage_tolerance': BotConfig.get('slippage_tolerance', '0.01'),
+            'slippage_tolerance': BotConfig.get('slippage_tolerance', '0.003'),
             'risk': risk.to_dict() if risk else {},
             'main_wallet': MAIN_WALLET_ADDRESS[:10] + '...' + MAIN_WALLET_ADDRESS[-6:] if MAIN_WALLET_ADDRESS else None,
             'api_secret_configured': bool(API_WALLET_SECRET),
@@ -529,10 +529,7 @@ def api_save_risk_settings():
             risk = RiskSettings()
             db.session.add(risk)
 
-        for key in ['max_total_positions', 'max_position_value_usd', 'max_total_exposure_usd',
-                    'daily_loss_limit_usd', 'daily_loss_limit_pct', 'max_daily_trades',
-                    'max_risk_per_trade_pct', 'max_leverage', 'pause_on_consecutive_losses',
-                    'pause_duration_minutes']:
+        for key in ['max_position_value_usd', 'max_total_exposure_pct', 'max_leverage']:
             if key in data:
                 setattr(risk, key, data[key])
 
