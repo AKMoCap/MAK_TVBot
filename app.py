@@ -577,7 +577,8 @@ def api_update_coin(coin):
             db.session.add(config)
 
         for key in ['enabled', 'default_leverage', 'default_collateral', 'max_position_size',
-                    'max_open_positions', 'default_stop_loss_pct', 'default_take_profit_pct',
+                    'max_open_positions', 'default_stop_loss_pct',
+                    'tp1_pct', 'tp1_size_pct', 'tp2_pct', 'tp2_size_pct',
                     'use_trailing_stop', 'trailing_stop_pct']:
             if key in data:
                 setattr(config, key, data[key])

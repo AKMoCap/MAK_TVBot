@@ -842,7 +842,7 @@ function updateCoinConfigTable(coins) {
         // Add group header
         html += `
             <tr class="table-active">
-                <td colspan="8" class="py-2" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
+                <td colspan="9" class="py-2" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
                     <i class="bi bi-collection me-2"></i>${groupName}
                 </td>
             </tr>
@@ -852,6 +852,8 @@ function updateCoinConfigTable(coins) {
         for (const coinName of groupCoins) {
             const coin = coinMap[coinName];
             if (coin) {
+                const tp1Display = coin.tp1_pct ? `${coin.tp1_pct}% @ ${coin.tp1_size_pct}%` : '--';
+                const tp2Display = coin.tp2_pct ? `${coin.tp2_pct}% @ ${coin.tp2_size_pct}%` : '--';
                 html += `
                     <tr>
                         <td><strong>${coin.coin}</strong></td>
@@ -865,7 +867,8 @@ function updateCoinConfigTable(coins) {
                         <td>${formatCurrency(coin.default_collateral)}</td>
                         <td>${coin.max_position_size ? formatCurrency(coin.max_position_size) : '--'}</td>
                         <td>${coin.default_stop_loss_pct ? coin.default_stop_loss_pct + '%' : '--'}</td>
-                        <td>${coin.default_take_profit_pct ? coin.default_take_profit_pct + '%' : '--'}</td>
+                        <td><small>${tp1Display}</small></td>
+                        <td><small>${tp2Display}</small></td>
                         <td>
                             <button class="btn btn-outline-secondary btn-sm" onclick="editCoin('${coin.coin}')">
                                 <i class="bi bi-pencil"></i>
@@ -962,11 +965,14 @@ function editCoin(coin) {
     apiCall(`/coins/${coin}`).then(data => {
         document.getElementById('edit-coin-name').value = coin;
         document.getElementById('edit-coin-enabled').checked = data.enabled;
-        document.getElementById('edit-coin-leverage').value = data.default_leverage;
-        document.getElementById('edit-coin-collateral').value = data.default_collateral;
-        document.getElementById('edit-coin-max-size').value = data.max_position_size || '';
-        document.getElementById('edit-coin-sl').value = data.default_stop_loss_pct || '';
-        document.getElementById('edit-coin-tp').value = data.default_take_profit_pct || '';
+        document.getElementById('edit-coin-leverage').value = data.default_leverage || 3;
+        document.getElementById('edit-coin-collateral').value = data.default_collateral || 100;
+        document.getElementById('edit-coin-max-size').value = data.max_position_size || 1000;
+        document.getElementById('edit-coin-sl').value = data.default_stop_loss_pct || 15;
+        document.getElementById('edit-coin-tp1').value = data.tp1_pct || 50;
+        document.getElementById('edit-coin-tp1-size').value = data.tp1_size_pct || 25;
+        document.getElementById('edit-coin-tp2').value = data.tp2_pct || 100;
+        document.getElementById('edit-coin-tp2-size').value = data.tp2_size_pct || 50;
 
         const modal = new bootstrap.Modal(document.getElementById('editCoinModal'));
         modal.show();
@@ -981,7 +987,10 @@ async function saveCoinConfig() {
         default_collateral: parseFloat(document.getElementById('edit-coin-collateral').value),
         max_position_size: parseFloat(document.getElementById('edit-coin-max-size').value) || null,
         default_stop_loss_pct: parseFloat(document.getElementById('edit-coin-sl').value) || null,
-        default_take_profit_pct: parseFloat(document.getElementById('edit-coin-tp').value) || null
+        tp1_pct: parseFloat(document.getElementById('edit-coin-tp1').value) || null,
+        tp1_size_pct: parseFloat(document.getElementById('edit-coin-tp1-size').value) || null,
+        tp2_pct: parseFloat(document.getElementById('edit-coin-tp2').value) || null,
+        tp2_size_pct: parseFloat(document.getElementById('edit-coin-tp2-size').value) || null
     };
 
     try {

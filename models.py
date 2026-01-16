@@ -96,12 +96,22 @@ class CoinConfig(db.Model):
     enabled = db.Column(db.Boolean, default=True)
     default_leverage = db.Column(db.Integer, default=3)
     default_collateral = db.Column(db.Float, default=100.0)
-    max_position_size = db.Column(db.Float, nullable=True)  # Max position in USD
+    max_position_size = db.Column(db.Float, default=1000.0)  # 10x default collateral
     max_open_positions = db.Column(db.Integer, default=1)  # Per this coin
 
-    # Stop Loss / Take Profit defaults
-    default_stop_loss_pct = db.Column(db.Float, nullable=True)  # e.g., 2.0 for 2%
-    default_take_profit_pct = db.Column(db.Float, nullable=True)  # e.g., 5.0 for 5%
+    # Stop Loss default
+    default_stop_loss_pct = db.Column(db.Float, default=15.0)  # 15%
+
+    # Take Profit Level 1
+    tp1_pct = db.Column(db.Float, default=50.0)  # Target: 50% gain
+    tp1_size_pct = db.Column(db.Float, default=25.0)  # Close 25% of position
+
+    # Take Profit Level 2
+    tp2_pct = db.Column(db.Float, default=100.0)  # Target: 100% gain
+    tp2_size_pct = db.Column(db.Float, default=50.0)  # Close 50% of position
+
+    # Legacy fields (kept for compatibility)
+    default_take_profit_pct = db.Column(db.Float, nullable=True)
     use_trailing_stop = db.Column(db.Boolean, default=False)
     trailing_stop_pct = db.Column(db.Float, nullable=True)
 
@@ -121,7 +131,10 @@ class CoinConfig(db.Model):
             'max_position_size': self.max_position_size,
             'max_open_positions': self.max_open_positions,
             'default_stop_loss_pct': self.default_stop_loss_pct,
-            'default_take_profit_pct': self.default_take_profit_pct,
+            'tp1_pct': self.tp1_pct,
+            'tp1_size_pct': self.tp1_size_pct,
+            'tp2_pct': self.tp2_pct,
+            'tp2_size_pct': self.tp2_size_pct,
             'use_trailing_stop': self.use_trailing_stop,
             'trailing_stop_pct': self.trailing_stop_pct,
             'indicator_source': self.indicator_source
@@ -244,7 +257,17 @@ def init_db(app):
                          'DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']  # HIGH BETA/MEMES
         for coin in default_coins:
             if not CoinConfig.query.filter_by(coin=coin).first():
-                coin_config = CoinConfig(coin=coin)
+                # Default: max_position = 10x collateral, SL=15%, TP1=50%@25%, TP2=100%@50%
+                coin_config = CoinConfig(
+                    coin=coin,
+                    default_collateral=100.0,
+                    max_position_size=1000.0,  # 10x default collateral
+                    default_stop_loss_pct=15.0,
+                    tp1_pct=50.0,
+                    tp1_size_pct=25.0,
+                    tp2_pct=100.0,
+                    tp2_size_pct=50.0
+                )
                 db.session.add(coin_config)
 
         # Set default bot config
