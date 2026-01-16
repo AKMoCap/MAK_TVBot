@@ -253,7 +253,7 @@ def init_db(app):
         # Create default coin configs for popular coins
         # Grouped as: MAJORS, DEFI, HIGH BETA/MEMES
         default_coins = ['BTC', 'ETH', 'SOL', 'HYPE',  # MAJORS
-                         'AAVE', 'ENA', 'PENDLE', 'AERO',  # DEFI
+                         'AAVE', 'ENA', 'PENDLE', 'VIRTUAL', 'AERO',  # DEFI
                          'DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']  # HIGH BETA/MEMES
         for coin in default_coins:
             if not CoinConfig.query.filter_by(coin=coin).first():

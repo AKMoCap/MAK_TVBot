@@ -214,7 +214,7 @@ class RiskManager:
         """Get all open positions from database"""
         return Trade.query.filter_by(status='open').all()
 
-    def get_daily_stats(self):
+    def get_daily_stats(self, account_value=None, total_margin_used=None):
         """Get trading statistics for today"""
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -225,6 +225,26 @@ class RiskManager:
         winning = len([t for t in closed_today if (t.pnl or 0) > 0])
         losing = len([t for t in closed_today if (t.pnl or 0) < 0])
 
+        # Get risk settings
+        settings = self.get_risk_settings()
+
+        # Calculate collateral at risk (% of account used as margin)
+        collateral_at_risk_pct = 0
+        cross_margin_used = 0
+        if account_value and account_value > 0:
+            # Total collateral in open positions
+            open_trades = Trade.query.filter_by(status='open').all()
+            total_collateral = sum(t.collateral_usd for t in open_trades)
+            collateral_at_risk_pct = (total_collateral / account_value) * 100
+
+            # Cross margin / effective leverage
+            if total_margin_used is not None and total_collateral > 0:
+                cross_margin_used = total_margin_used / total_collateral if total_collateral > 0 else 0
+            elif total_collateral > 0:
+                # Estimate from open trades
+                total_notional = sum(t.collateral_usd * t.leverage for t in open_trades)
+                cross_margin_used = total_notional / account_value if account_value > 0 else 0
+
         return {
             'total_trades': len(trades_today),
             'closed_trades': len(closed_today),
@@ -234,7 +254,11 @@ class RiskManager:
             'losing_trades': losing,
             'win_rate': (winning / len(closed_today) * 100) if closed_today else 0,
             'consecutive_losses': self._consecutive_losses,
-            'is_paused': self._paused_until and datetime.utcnow() < self._paused_until
+            'is_paused': self._paused_until and datetime.utcnow() < self._paused_until,
+            'collateral_at_risk_pct': collateral_at_risk_pct,
+            'cross_margin_used': cross_margin_used,
+            'max_exposure_pct': settings.max_total_exposure_pct,
+            'max_leverage': settings.max_leverage
         }
 
 

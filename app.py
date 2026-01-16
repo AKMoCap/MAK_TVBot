@@ -119,7 +119,7 @@ def api_account():
 def api_prices():
     """Get current market prices"""
     try:
-        coins = request.args.get('coins', 'BTC,ETH,SOL,HYPE,AAVE,ENA,PENDLE,AERO,DOGE,PUMP,FARTCOIN,kBONK,kPEPE,PENGU').split(',')
+        coins = request.args.get('coins', 'BTC,ETH,SOL,HYPE,AAVE,ENA,PENDLE,VIRTUAL,AERO,DOGE,PUMP,FARTCOIN,kBONK,kPEPE,PENGU').split(',')
         prices = bot_manager.get_market_prices(coins)
         return jsonify(prices)
     except Exception as e:
@@ -130,7 +130,19 @@ def api_prices():
 def api_daily_stats():
     """Get daily trading statistics"""
     try:
-        stats = risk_manager.get_daily_stats()
+        # Get account info for risk calculations
+        account_value = None
+        total_margin_used = None
+        try:
+            account_info = bot_manager.get_account_info()
+            if account_info and 'account_value' in account_info:
+                account_value = account_info['account_value']
+            if account_info and 'margin_used' in account_info:
+                total_margin_used = account_info['margin_used']
+        except:
+            pass
+
+        stats = risk_manager.get_daily_stats(account_value, total_margin_used)
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
