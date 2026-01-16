@@ -12,3 +12,9 @@ eth-account>=0.11.0
 
 # For environment variable management (optional but helpful)
 python-dotenv>=1.0.0
+eth-account
+flask
+hyperliquid-python-sdk
+python-dotenv
+requests
+gunicorn
