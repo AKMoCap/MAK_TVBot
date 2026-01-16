@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - MAK Trading Bot{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- General Settings -->
+    <div class="col-md-6">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-gear me-2"></i>General Settings</h5>
+            </div>
+            <div class="card-body">
+                <form id="general-settings-form">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="bot-enabled" checked>
+                            <label class="form-check-label" for="bot-enabled">Bot Enabled</label>
+                        </div>
+                        <small class="text-muted">When disabled, webhooks will be received but trades won't execute</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="use-testnet" checked>
+                            <label class="form-check-label" for="use-testnet">Use Testnet</label>
+                        </div>
+                        <small class="text-muted">Enable testnet for testing without real funds</small>
+                    </div>
+
+                    <hr class="border-secondary">
+
+                    <div class="mb-3">
+                        <label class="form-label">Default Leverage</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="default-leverage" value="10" min="1" max="20">
+                            <span class="input-group-text bg-dark text-light border-secondary">x</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Default Collateral (USD)</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="default-collateral" value="100" min="1">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Slippage Tolerance</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="slippage-tolerance" value="1" min="0.1" max="5" step="0.1">
+                            <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>Save Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Management -->
+    <div class="col-md-6">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Risk Management</h5>
+            </div>
+            <div class="card-body">
+                <form id="risk-settings-form">
+                    <h6 class="text-muted mb-3">Position Limits</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Max Total Positions</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="max-positions" value="5" min="1" max="20">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Max Position Value</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="max-position-value" value="1000" min="100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Max Total Exposure</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="max-exposure" value="5000" min="100">
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Daily Limits</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Daily Loss Limit</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="daily-loss-limit" value="500" min="10">
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Max Daily Trades</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="max-daily-trades" value="20" min="1" max="100">
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Circuit Breakers</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Pause After X Losses</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="pause-after-losses" value="3" min="1" max="10">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Pause Duration</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="pause-duration" value="60" min="5">
+                                <span class="input-group-text bg-dark text-light border-secondary">min</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Max Leverage Allowed</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="max-leverage" value="20" min="1" max="50">
+                            <span class="input-group-text bg-dark text-light border-secondary">x</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>Save Risk Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Coin Configuration -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-currency-exchange me-2"></i>Coin Configuration</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Enabled</th>
+                                <th>Default Leverage</th>
+                                <th>Default Collateral</th>
+                                <th>Max Position Size</th>
+                                <th>Stop Loss %</th>
+                                <th>Take Profit %</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="coin-config-table">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">
+                                    Loading coin configurations...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Configuration -->
+    <div class="col-md-6">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-key me-2"></i>API Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Security Note:</strong> API keys are configured via environment variables for security.
+                    Never expose your private keys in code or URLs.
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Main Wallet Address</label>
+                    <input type="text" class="form-control bg-dark text-light border-secondary"
+                           id="main-wallet" readonly>
+                    <small class="text-muted">Set via HL_MAIN_WALLET environment variable</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">API Wallet Status</label>
+                    <div id="api-wallet-status">
+                        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+                    </div>
+                    <small class="text-muted">Set via HL_API_SECRET environment variable</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Webhook Secret</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control bg-dark text-light border-secondary"
+                               id="webhook-secret" readonly>
+                        <button class="btn btn-outline-secondary" type="button" id="toggle-secret">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                    <small class="text-muted">Set via WEBHOOK_SECRET environment variable</small>
+                </div>
+
+                <button class="btn btn-outline-info" id="test-connection">
+                    <i class="bi bi-wifi me-1"></i>Test Connection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database & Logs -->
+    <div class="col-md-6">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-database me-2"></i>Data Management</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-4">
+                    <h6>Database</h6>
+                    <p class="text-muted mb-2">Trade history and configuration are stored locally.</p>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-secondary" id="export-data">
+                            <i class="bi bi-download me-1"></i>Export Data
+                        </button>
+                        <button class="btn btn-outline-danger" id="clear-trades">
+                            <i class="bi bi-trash me-1"></i>Clear Trade History
+                        </button>
+                    </div>
+                </div>
+
+                <hr class="border-secondary">
+
+                <div>
+                    <h6>Activity Logs</h6>
+                    <p class="text-muted mb-2">View recent bot activity and errors.</p>
+                    <div class="btn-group">
+                        <a href="/api/logs" class="btn btn-outline-secondary" target="_blank">
+                            <i class="bi bi-file-text me-1"></i>View Logs
+                        </a>
+                        <button class="btn btn-outline-danger" id="clear-logs">
+                            <i class="bi bi-trash me-1"></i>Clear Logs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Coin Modal -->
+<div class="modal fade" id="editCoinModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Edit Coin Configuration</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-coin-form">
+                    <input type="hidden" id="edit-coin-name">
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="edit-coin-enabled" checked>
+                            <label class="form-check-label" for="edit-coin-enabled">Trading Enabled</label>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Default Leverage</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="edit-coin-leverage" min="1" max="50">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Default Collateral</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="edit-coin-collateral" min="1">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Max Position Size (USD)</label>
+                        <input type="number" class="form-control bg-dark text-light border-secondary"
+                               id="edit-coin-max-size" min="100">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Default Stop Loss %</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="edit-coin-sl" min="0.1" max="50" step="0.1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Default Take Profit %</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="edit-coin-tp" min="0.1" max="100" step="0.1">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-coin-config">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadSettings();
+    loadCoinConfigs();
+
+    document.getElementById('general-settings-form').addEventListener('submit', saveGeneralSettings);
+    document.getElementById('risk-settings-form').addEventListener('submit', saveRiskSettings);
+    document.getElementById('test-connection').addEventListener('click', testConnection);
+    document.getElementById('toggle-secret').addEventListener('click', toggleSecretVisibility);
+    document.getElementById('save-coin-config').addEventListener('click', saveCoinConfig);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Trade History - MAK Trading Bot{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Stats Cards -->
+    <div class="col-12">
+        <div class="row g-3">
+            <div class="col-md-2">
+                <div class="card bg-darker border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted mb-1">Total Trades</h6>
+                        <h4 class="mb-0" id="total-trades">0</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card bg-darker border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted mb-1">Win Rate</h6>
+                        <h4 class="mb-0 text-success" id="win-rate">0%</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card bg-darker border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted mb-1">Total P&L</h6>
+                        <h4 class="mb-0" id="total-pnl">$0.00</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card bg-darker border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted mb-1">Avg Win</h6>
+                        <h4 class="mb-0 text-success" id="avg-win">$0.00</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card bg-darker border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted mb-1">Avg Loss</h6>
+                        <h4 class="mb-0 text-danger" id="avg-loss">$0.00</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card bg-darker border-secondary">
+                    <div class="card-body text-center">
+                        <h6 class="text-muted mb-1">Best Trade</h6>
+                        <h4 class="mb-0 text-success" id="best-trade">$0.00</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label">Coin</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="filter-coin">
+                            <option value="">All Coins</option>
+                            <option value="BTC">BTC</option>
+                            <option value="ETH">ETH</option>
+                            <option value="SOL">SOL</option>
+                            <option value="DOGE">DOGE</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Side</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="filter-side">
+                            <option value="">All Sides</option>
+                            <option value="long">Long</option>
+                            <option value="short">Short</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="filter-status">
+                            <option value="">All Status</option>
+                            <option value="open">Open</option>
+                            <option value="closed">Closed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Result</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="filter-result">
+                            <option value="">All Results</option>
+                            <option value="win">Winners</option>
+                            <option value="loss">Losers</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Date Range</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="filter-date">
+                            <option value="all">All Time</option>
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-primary w-100" id="apply-filters">
+                            <i class="bi bi-funnel me-1"></i>Apply Filters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade History Table -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Trade History</h5>
+                <button class="btn btn-outline-secondary btn-sm" id="export-btn">
+                    <i class="bi bi-download me-1"></i>Export CSV
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date/Time</th>
+                                <th>Coin</th>
+                                <th>Side</th>
+                                <th>Entry</th>
+                                <th>Exit</th>
+                                <th>Size</th>
+                                <th>Leverage</th>
+                                <th>P&L</th>
+                                <th>P&L %</th>
+                                <th>Close Reason</th>
+                                <th>Indicator</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-table">
+                            <tr>
+                                <td colspan="11" class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                    No trades found
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-secondary">
+                <nav>
+                    <ul class="pagination pagination-sm mb-0 justify-content-center" id="pagination">
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+
+    <!-- P&L Chart -->
+    <div class="col-md-6">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Cumulative P&L</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="pnl-chart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Win/Loss Chart -->
+    <div class="col-md-6">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Win/Loss Distribution</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="winloss-chart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadTradeHistory();
+    initCharts();
+
+    document.getElementById('apply-filters').addEventListener('click', loadTradeHistory);
+    document.getElementById('export-btn').addEventListener('click', exportTrades);
+});
+</script>
+{% endblock %}

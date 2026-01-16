@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}Indicators - MAK Trading Bot{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Add New Indicator -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add New Indicator</h5>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#add-indicator-form">
+                    <i class="bi bi-plus me-1"></i>Add Indicator
+                </button>
+            </div>
+            <div class="collapse" id="add-indicator-form">
+                <div class="card-body">
+                    <form id="new-indicator-form">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Indicator Name</label>
+                                <input type="text" class="form-control bg-dark text-light border-secondary"
+                                       id="indicator-name" placeholder="e.g., RSI Oversold Signal" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Type</label>
+                                <select class="form-select bg-dark text-light border-secondary" id="indicator-type" required>
+                                    <option value="">Select type...</option>
+                                    <option value="custom">Custom Pine Script</option>
+                                    <option value="rsi">RSI</option>
+                                    <option value="macd">MACD</option>
+                                    <option value="ema">EMA Crossover</option>
+                                    <option value="bollinger">Bollinger Bands</option>
+                                    <option value="supertrend">Supertrend</option>
+                                    <option value="vwap">VWAP</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Webhook Key</label>
+                                <input type="text" class="form-control bg-dark text-light border-secondary"
+                                       id="indicator-webhook-key" placeholder="Unique key for this indicator">
+                                <small class="text-muted">Used to identify which indicator triggered the signal</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Timeframe</label>
+                                <select class="form-select bg-dark text-light border-secondary" id="indicator-timeframe">
+                                    <option value="1m">1 Minute</option>
+                                    <option value="5m">5 Minutes</option>
+                                    <option value="15m">15 Minutes</option>
+                                    <option value="1h" selected>1 Hour</option>
+                                    <option value="4h">4 Hours</option>
+                                    <option value="1d">1 Day</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Coins</label>
+                                <select class="form-select bg-dark text-light border-secondary" id="indicator-coins" multiple>
+                                    <option value="BTC" selected>BTC</option>
+                                    <option value="ETH" selected>ETH</option>
+                                    <option value="SOL">SOL</option>
+                                    <option value="DOGE">DOGE</option>
+                                    <option value="ARB">ARB</option>
+                                    <option value="OP">OP</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">&nbsp;</label>
+                                <button type="submit" class="btn btn-success w-100">
+                                    <i class="bi bi-check-circle me-1"></i>Save Indicator
+                                </button>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control bg-dark text-light border-secondary" id="indicator-description"
+                                          rows="2" placeholder="Describe what this indicator does and when it triggers..."></textarea>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Indicators -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-activity me-2"></i>Configured Indicators</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Timeframe</th>
+                                <th>Coins</th>
+                                <th>Total Trades</th>
+                                <th>Win Rate</th>
+                                <th>P&L</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="indicators-table">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                    No indicators configured
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Webhook Setup Guide -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary">
+                <h5 class="mb-0"><i class="bi bi-book me-2"></i>TradingView Webhook Setup</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Webhook URL:</h6>
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control bg-dark text-light border-secondary"
+                                   id="webhook-url" readonly value="Loading...">
+                            <button class="btn btn-outline-secondary" type="button" id="copy-webhook">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+
+                        <h6>Alert Message Template:</h6>
+                        <pre class="bg-black p-3 rounded"><code id="webhook-template">{
+    "secret": "YOUR_WEBHOOK_SECRET",
+    "action": "{{strategy.order.action}}",
+    "coin": "{{ticker}}",
+    "leverage": 10,
+    "collateral_usd": 100,
+    "indicator": "your-indicator-key",
+    "stop_loss_pct": 2,
+    "take_profit_pct": 5
+}</code></pre>
+                        <button class="btn btn-outline-secondary btn-sm" id="copy-template">
+                            <i class="bi bi-clipboard me-1"></i>Copy Template
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Setup Steps:</h6>
+                        <ol class="ps-3">
+                            <li>Create your indicator or strategy in TradingView Pine Script</li>
+                            <li>Set up an alert on the chart with your indicator</li>
+                            <li>In the alert settings, select "Webhook URL" and paste the URL above</li>
+                            <li>In the "Message" field, paste the JSON template</li>
+                            <li>Replace values as needed:
+                                <ul>
+                                    <li><code>YOUR_WEBHOOK_SECRET</code> - Your secret key from Settings</li>
+                                    <li><code>leverage</code> - Desired leverage (1-20)</li>
+                                    <li><code>collateral_usd</code> - Amount to risk per trade</li>
+                                    <li><code>indicator</code> - The webhook key for this indicator</li>
+                                </ul>
+                            </li>
+                            <li>Use Pine Script placeholders:
+                                <ul>
+                                    <li><code>{{strategy.order.action}}</code> - "buy" or "sell"</li>
+                                    <li><code>{{ticker}}</code> - The coin symbol</li>
+                                    <li><code>{{close}}</code> - Current price</li>
+                                </ul>
+                            </li>
+                        </ol>
+
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Pro Tip:</strong> Start with TESTNET enabled to verify your setup works correctly before trading with real funds.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sample Pine Script -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-code-square me-2"></i>Sample Pine Scripts</h5>
+                <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#pine-scripts">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+            </div>
+            <div class="collapse" id="pine-scripts">
+                <div class="card-body">
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rsi-script">RSI</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ema-script">EMA Cross</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#macd-script">MACD</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content pt-3">
+                        <div class="tab-pane fade show active" id="rsi-script">
+                            <pre class="bg-black p-3 rounded"><code>//@version=5
+strategy("RSI Strategy for MAK Bot", overlay=true)
+
+// Parameters
+rsiLength = input.int(14, "RSI Length")
+oversold = input.int(30, "Oversold Level")
+overbought = input.int(70, "Overbought Level")
+
+// Calculate RSI
+rsiValue = ta.rsi(close, rsiLength)
+
+// Generate signals
+longCondition = ta.crossover(rsiValue, oversold)
+shortCondition = ta.crossunder(rsiValue, overbought)
+
+if (longCondition)
+    strategy.entry("Long", strategy.long)
+    alert('{"secret":"YOUR_SECRET","action":"buy","coin":"' + syminfo.ticker + '","leverage":10,"collateral_usd":100,"indicator":"rsi-oversold"}', alert.freq_once_per_bar)
+
+if (shortCondition)
+    strategy.entry("Short", strategy.short)
+    alert('{"secret":"YOUR_SECRET","action":"sell","coin":"' + syminfo.ticker + '","leverage":10,"collateral_usd":100,"indicator":"rsi-overbought"}', alert.freq_once_per_bar)</code></pre>
+                        </div>
+                        <div class="tab-pane fade" id="ema-script">
+                            <pre class="bg-black p-3 rounded"><code>//@version=5
+strategy("EMA Crossover for MAK Bot", overlay=true)
+
+// Parameters
+fastLength = input.int(9, "Fast EMA")
+slowLength = input.int(21, "Slow EMA")
+
+// Calculate EMAs
+fastEMA = ta.ema(close, fastLength)
+slowEMA = ta.ema(close, slowLength)
+
+// Plot EMAs
+plot(fastEMA, color=color.blue, title="Fast EMA")
+plot(slowEMA, color=color.red, title="Slow EMA")
+
+// Generate signals
+longCondition = ta.crossover(fastEMA, slowEMA)
+shortCondition = ta.crossunder(fastEMA, slowEMA)
+
+if (longCondition)
+    strategy.entry("Long", strategy.long)
+    alert('{"secret":"YOUR_SECRET","action":"buy","coin":"' + syminfo.ticker + '","leverage":10,"collateral_usd":100,"indicator":"ema-cross"}', alert.freq_once_per_bar)
+
+if (shortCondition)
+    strategy.entry("Short", strategy.short)
+    alert('{"secret":"YOUR_SECRET","action":"sell","coin":"' + syminfo.ticker + '","leverage":10,"collateral_usd":100,"indicator":"ema-cross"}', alert.freq_once_per_bar)</code></pre>
+                        </div>
+                        <div class="tab-pane fade" id="macd-script">
+                            <pre class="bg-black p-3 rounded"><code>//@version=5
+strategy("MACD Strategy for MAK Bot", overlay=false)
+
+// Parameters
+fastLength = input.int(12, "Fast Length")
+slowLength = input.int(26, "Slow Length")
+signalLength = input.int(9, "Signal Length")
+
+// Calculate MACD
+[macdLine, signalLine, histLine] = ta.macd(close, fastLength, slowLength, signalLength)
+
+// Plot
+plot(macdLine, color=color.blue, title="MACD")
+plot(signalLine, color=color.orange, title="Signal")
+plot(histLine, style=plot.style_histogram, color=histLine > 0 ? color.green : color.red, title="Histogram")
+
+// Generate signals
+longCondition = ta.crossover(macdLine, signalLine) and macdLine < 0
+shortCondition = ta.crossunder(macdLine, signalLine) and macdLine > 0
+
+if (longCondition)
+    strategy.entry("Long", strategy.long)
+    alert('{"secret":"YOUR_SECRET","action":"buy","coin":"' + syminfo.ticker + '","leverage":10,"collateral_usd":100,"indicator":"macd"}', alert.freq_once_per_bar)
+
+if (shortCondition)
+    strategy.entry("Short", strategy.short)
+    alert('{"secret":"YOUR_SECRET","action":"sell","coin":"' + syminfo.ticker + '","leverage":10,"collateral_usd":100,"indicator":"macd"}', alert.freq_once_per_bar)</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadIndicators();
+    setupWebhookInfo();
+
+    document.getElementById('new-indicator-form').addEventListener('submit', saveIndicator);
+    document.getElementById('copy-webhook').addEventListener('click', copyWebhookUrl);
+    document.getElementById('copy-template').addEventListener('click', copyTemplate);
+});
+</script>
+{% endblock %}
