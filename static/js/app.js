@@ -345,6 +345,17 @@ function updateConnectionStatus(connected) {
 // Store coin configs globally for quick trade form
 let coinConfigsCache = {};
 
+// Category definitions for batch trading
+const categoryCoins = {
+    'CAT:MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
+    'CAT:DEFI': ['AAVE', 'ENA', 'PENDLE', 'AERO'],
+    'CAT:MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'VIRTUAL']
+};
+
+function isCategory(value) {
+    return value && value.startsWith('CAT:');
+}
+
 async function loadCoinConfigsForQuickTrade() {
     try {
         const data = await apiCall('/coins');
@@ -354,7 +365,7 @@ async function loadCoinConfigsForQuickTrade() {
             });
             // Populate form with default coin (first one selected)
             const coinSelect = document.getElementById('trade-coin');
-            if (coinSelect && coinSelect.value) {
+            if (coinSelect && coinSelect.value && !isCategory(coinSelect.value)) {
                 populateQuickTradeForm(coinSelect.value);
             }
         }
@@ -363,8 +374,14 @@ async function loadCoinConfigsForQuickTrade() {
     }
 }
 
-function populateQuickTradeForm(coin) {
-    const config = coinConfigsCache[coin];
+function populateQuickTradeForm(selection) {
+    // If a category is selected, clear the form for manual entry
+    if (isCategory(selection)) {
+        clearQuickTradeForm();
+        return;
+    }
+
+    const config = coinConfigsCache[selection];
     if (!config) return;
 
     // Update leverage
@@ -408,6 +425,32 @@ function populateQuickTradeForm(coin) {
     if (tp2SizeInput && config.tp2_size_pct) {
         tp2SizeInput.value = config.tp2_size_pct;
     }
+}
+
+function clearQuickTradeForm() {
+    // Clear all fields for category trading (user must fill in)
+    const leverageRange = document.getElementById('trade-leverage-range');
+    const leverageDisplay = document.getElementById('leverage-display');
+    if (leverageRange) {
+        leverageRange.value = 3;
+        if (leverageDisplay) leverageDisplay.textContent = '3x';
+    }
+
+    const collateralInput = document.getElementById('trade-collateral');
+    if (collateralInput) collateralInput.value = '';
+
+    const slInput = document.getElementById('trade-sl');
+    if (slInput) slInput.value = '';
+
+    const tp1Input = document.getElementById('trade-tp1');
+    const tp1SizeInput = document.getElementById('trade-tp1-size');
+    if (tp1Input) tp1Input.value = '';
+    if (tp1SizeInput) tp1SizeInput.value = '';
+
+    const tp2Input = document.getElementById('trade-tp2');
+    const tp2SizeInput = document.getElementById('trade-tp2-size');
+    if (tp2Input) tp2Input.value = '';
+    if (tp2SizeInput) tp2SizeInput.value = '';
 }
 
 function setupDashboardEvents() {
@@ -457,7 +500,7 @@ function setupDashboardEvents() {
 }
 
 async function executeTrade(action) {
-    const coin = document.getElementById('trade-coin').value;
+    const selection = document.getElementById('trade-coin').value;
     const collateral = parseFloat(document.getElementById('trade-collateral').value);
     const leverage = parseInt(document.getElementById('trade-leverage-range').value);
     const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
@@ -468,14 +511,21 @@ async function executeTrade(action) {
     const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
     const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
 
-    if (!coin || !collateral || !leverage) {
+    if (!selection || !collateral || !leverage) {
         showToast('Please fill in all required fields', 'warning');
         return;
     }
 
+    // Check if this is a category trade
+    if (isCategory(selection)) {
+        await executeCategoryTrade(selection, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct);
+        return;
+    }
+
+    // Single coin trade
     try {
         const result = await apiCall('/trade', 'POST', {
-            coin,
+            coin: selection,
             action,
             leverage,
             collateral_usd: collateral,
@@ -487,7 +537,7 @@ async function executeTrade(action) {
         });
 
         if (result.success) {
-            showToast(`${action.toUpperCase()} order executed for ${coin}`, 'success');
+            showToast(`${action.toUpperCase()} order executed for ${selection}`, 'success');
             refreshDashboard();
         } else {
             showToast('Trade failed: ' + (result.error || 'Unknown error'), 'error');
@@ -495,6 +545,73 @@ async function executeTrade(action) {
     } catch (error) {
         showToast('Trade execution failed', 'error');
     }
+}
+
+async function executeCategoryTrade(category, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct) {
+    const coins = categoryCoins[category];
+    if (!coins || coins.length === 0) {
+        showToast('Invalid category selected', 'error');
+        return;
+    }
+
+    const categoryName = category.replace('CAT:', '');
+
+    // Confirm with user before opening multiple positions
+    const confirmMsg = `You are about to open ${coins.length} ${action.toUpperCase()} positions for all ${categoryName} coins:\n\n` +
+        coins.join(', ') + '\n\n' +
+        `Each position: $${collateral} collateral at ${leverage}x leverage\n` +
+        `Total exposure: $${(collateral * leverage * coins.length).toLocaleString()}\n\n` +
+        'Are you sure you want to proceed?';
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    showToast(`Opening ${coins.length} ${action.toUpperCase()} positions...`, 'info');
+
+    let successCount = 0;
+    let failedCoins = [];
+
+    // Execute trades sequentially to avoid overwhelming the API
+    for (const coin of coins) {
+        try {
+            const result = await apiCall('/trade', 'POST', {
+                coin,
+                action,
+                leverage,
+                collateral_usd: collateral,
+                stop_loss_pct: stopLoss,
+                tp1_pct: tp1Pct,
+                tp1_size_pct: tp1SizePct,
+                tp2_pct: tp2Pct,
+                tp2_size_pct: tp2SizePct
+            });
+
+            if (result.success) {
+                successCount++;
+            } else {
+                failedCoins.push(`${coin}: ${result.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            failedCoins.push(`${coin}: ${error.message || 'Failed'}`);
+        }
+
+        // Small delay between trades to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Show results
+    if (successCount === coins.length) {
+        showToast(`Successfully opened ${successCount} ${action.toUpperCase()} positions for ${categoryName}`, 'success');
+    } else if (successCount > 0) {
+        showToast(`Opened ${successCount}/${coins.length} positions. Failed: ${failedCoins.length}`, 'warning');
+        console.error('Failed trades:', failedCoins);
+    } else {
+        showToast(`Failed to open positions for ${categoryName}`, 'error');
+        console.error('All trades failed:', failedCoins);
+    }
+
+    refreshDashboard();
 }
 
 async function closePosition(coin) {
