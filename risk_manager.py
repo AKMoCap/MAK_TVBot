@@ -82,33 +82,6 @@ class RiskManager:
         if position_value > settings.max_position_value_usd:
             return False, f"Position value ${position_value:.2f} exceeds limit ${settings.max_position_value_usd:.2f}"
 
-        # Check max positions per coin
-        open_positions_for_coin = Trade.query.filter_by(
-            coin=coin, status='open'
-        ).count()
-        if open_positions_for_coin >= coin_config.max_open_positions:
-            return False, f"Max open positions ({coin_config.max_open_positions}) reached for {coin}"
-
-        # Check total open positions
-        total_open = Trade.query.filter_by(status='open').count()
-        if total_open >= settings.max_total_positions:
-            return False, f"Max total positions ({settings.max_total_positions}) reached"
-
-        # Check total exposure
-        total_exposure = self._calculate_total_exposure()
-        if total_exposure + position_value > settings.max_total_exposure_usd:
-            return False, f"Total exposure would exceed ${settings.max_total_exposure_usd:.2f}"
-
-        # Check daily loss limit
-        daily_loss = self._calculate_daily_loss()
-        if abs(daily_loss) >= settings.daily_loss_limit_usd:
-            return False, f"Daily loss limit ${settings.daily_loss_limit_usd:.2f} reached"
-
-        # Check daily trade count
-        daily_trades = self._count_daily_trades()
-        if daily_trades >= settings.max_daily_trades:
-            return False, f"Max daily trades ({settings.max_daily_trades}) reached"
-
         return True, "All risk checks passed"
 
     def _calculate_total_exposure(self):

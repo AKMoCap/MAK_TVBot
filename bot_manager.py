@@ -133,6 +133,23 @@ class BotManager:
             logger.exception(f"Error getting prices: {e}")
             return {}
 
+    def get_size_decimals(self, coin):
+        """
+        Get the number of decimal places for position size based on coin.
+        Hyperliquid has specific size increments for each asset.
+        """
+        # High-value coins need more precision
+        if coin in ['BTC']:
+            return 5  # 0.00001 BTC
+        elif coin in ['ETH']:
+            return 4  # 0.0001 ETH
+        elif coin in ['SOL', 'AAVE', 'PENDLE', 'ENA', 'AERO', 'HYPE']:
+            return 2  # 0.01 units
+        elif coin in ['DOGE', 'PENGU', 'kPEPE', 'kBONK', 'FARTCOIN', 'PUMP', 'VIRTUAL']:
+            return 0  # Whole units only for memecoins
+        else:
+            return 1  # Default to 0.1 units
+
     def calculate_position_size(self, coin, collateral_usd, leverage):
         """Calculate position size based on collateral and leverage"""
         prices = self.get_market_prices([coin])
@@ -144,13 +161,18 @@ class BotManager:
         notional_value = collateral_usd * leverage
         size = notional_value / current_price
 
-        # Round appropriately based on coin
-        if coin in ['BTC']:
-            size = round(size, 4)
-        elif coin in ['ETH']:
-            size = round(size, 3)
-        else:
-            size = round(size, 2)
+        # Round appropriately based on coin's size increment
+        decimals = self.get_size_decimals(coin)
+        size = round(size, decimals)
+
+        # Ensure minimum size (at least 1 unit for 0 decimal coins)
+        if decimals == 0 and size < 1:
+            size = 1
+        elif size == 0:
+            # If rounding resulted in 0, use minimum increment
+            size = 10 ** (-decimals)
+
+        logger.info(f"Calculated size for {coin}: {size} (decimals: {decimals}, price: ${current_price:.4f})")
 
         return size, current_price
 
