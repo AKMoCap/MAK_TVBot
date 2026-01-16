@@ -22,10 +22,13 @@
 
                     <div class="mb-3">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="use-testnet" checked>
-                            <label class="form-check-label" for="use-testnet">Use Testnet</label>
+                            <input class="form-check-input" type="checkbox" id="use-testnet" disabled>
+                            <label class="form-check-label" for="use-testnet">
+                                Use Testnet
+                                <span class="badge bg-secondary ms-2">ENV Variable</span>
+                            </label>
                         </div>
-                        <small class="text-muted">Enable testnet for testing without real funds</small>
+                        <small class="text-muted">Controlled by USE_TESTNET environment variable in Replit Secrets</small>
                     </div>
 
                     <hr class="border-secondary">

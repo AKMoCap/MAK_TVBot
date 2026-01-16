@@ -142,9 +142,18 @@ body {
 }
 
 .form-label {
-    color: var(--text-muted);
+    color: #c9d1d9;
     font-size: 0.875rem;
     margin-bottom: 0.375rem;
+}
+
+.form-check-label {
+    color: #c9d1d9;
+}
+
+.card-header h5,
+.card-header h6 {
+    color: #e6edf3;
 }
 
 .form-check-input:checked {
