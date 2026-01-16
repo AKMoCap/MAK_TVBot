@@ -167,18 +167,6 @@
                     <small class="text-muted">Set via HL_API_SECRET environment variable</small>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Webhook Secret</label>
-                    <div class="input-group">
-                        <input type="password" class="form-control bg-dark text-light border-secondary"
-                               id="webhook-secret" readonly>
-                        <button class="btn btn-outline-secondary" type="button" id="toggle-secret">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                    </div>
-                    <small class="text-muted">Set via WEBHOOK_SECRET environment variable</small>
-                </div>
-
                 <button class="btn btn-outline-info" id="test-connection">
                     <i class="bi bi-wifi me-1"></i>Test Connection
                 </button>
@@ -349,7 +337,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('general-settings-form').addEventListener('submit', saveGeneralSettings);
     document.getElementById('risk-settings-form').addEventListener('submit', saveRiskSettings);
     document.getElementById('test-connection').addEventListener('click', testConnection);
-    document.getElementById('toggle-secret').addEventListener('click', toggleSecretVisibility);
     document.getElementById('save-coin-config').addEventListener('click', saveCoinConfig);
 });
 </script>
