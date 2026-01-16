@@ -556,18 +556,7 @@ async function executeCategoryTrade(category, action, collateral, leverage, stop
 
     const categoryName = category.replace('CAT:', '');
 
-    // Confirm with user before opening multiple positions
-    const confirmMsg = `You are about to open ${coins.length} ${action.toUpperCase()} positions for all ${categoryName} coins:\n\n` +
-        coins.join(', ') + '\n\n' +
-        `Each position: $${collateral} collateral at ${leverage}x leverage\n` +
-        `Total exposure: $${(collateral * leverage * coins.length).toLocaleString()}\n\n` +
-        'Are you sure you want to proceed?';
-
-    if (!confirm(confirmMsg)) {
-        return;
-    }
-
-    showToast(`Opening ${coins.length} ${action.toUpperCase()} positions...`, 'info');
+    showToast(`Opening ${coins.length} ${action.toUpperCase()} positions for ${categoryName}...`, 'info');
 
     let successCount = 0;
     let failedCoins = [];
@@ -589,25 +578,28 @@ async function executeCategoryTrade(category, action, collateral, leverage, stop
 
             if (result.success) {
                 successCount++;
+                showToast(`${coin} ${action.toUpperCase()} opened (${successCount}/${coins.length})`, 'success');
             } else {
                 failedCoins.push(`${coin}: ${result.error || 'Unknown error'}`);
+                showToast(`${coin} failed: ${result.error || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             failedCoins.push(`${coin}: ${error.message || 'Failed'}`);
+            showToast(`${coin} failed: ${error.message || 'Request failed'}`, 'error');
         }
 
-        // Small delay between trades to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Delay between trades to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // Show results
+    // Show final summary
     if (successCount === coins.length) {
-        showToast(`Successfully opened ${successCount} ${action.toUpperCase()} positions for ${categoryName}`, 'success');
+        showToast(`All ${successCount} ${action.toUpperCase()} positions opened for ${categoryName}!`, 'success');
     } else if (successCount > 0) {
-        showToast(`Opened ${successCount}/${coins.length} positions. Failed: ${failedCoins.length}`, 'warning');
+        showToast(`Opened ${successCount}/${coins.length} positions. ${failedCoins.length} failed.`, 'warning');
         console.error('Failed trades:', failedCoins);
     } else {
-        showToast(`Failed to open positions for ${categoryName}`, 'error');
+        showToast(`Failed to open any positions for ${categoryName}`, 'error');
         console.error('All trades failed:', failedCoins);
     }
 

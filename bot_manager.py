@@ -188,6 +188,7 @@ class BotManager:
                 statuses = order_result.get("response", {}).get("data", {}).get("statuses", [])
                 fills = []
                 actual_price = entry_price
+                errors = []
 
                 for status in statuses:
                     if "filled" in status:
@@ -198,6 +199,23 @@ class BotManager:
                             "size": filled.get("totalSz"),
                             "avg_price": actual_price
                         })
+                    elif "error" in status:
+                        errors.append(status["error"])
+                    elif "resting" in status:
+                        # Order placed but not filled - this shouldn't happen with market orders
+                        logger.warning(f"Order resting (not filled): {status}")
+                        errors.append("Order placed but not filled")
+
+                # Check for errors
+                if errors:
+                    error_msg = "; ".join(errors)
+                    logger.error(f"Order errors for {coin}: {error_msg}")
+                    return {'success': False, 'error': error_msg}
+
+                # Verify we actually have fills
+                if not fills:
+                    logger.error(f"No fills received for {coin} order. Statuses: {statuses}")
+                    return {'success': False, 'error': 'Order accepted but no fills received'}
 
                 # Calculate SL/TP prices
                 side = 'long' if is_buy else 'short'
@@ -216,6 +234,8 @@ class BotManager:
                     else:
                         tp_price = actual_price * (1 - take_profit_pct / 100)
 
+                logger.info(f"Trade filled: {coin} {action} {fills[0]['size']} @ ${actual_price:.2f}")
+
                 return {
                     'success': True,
                     'coin': coin,
@@ -231,7 +251,10 @@ class BotManager:
                     'order_id': fills[0]['oid'] if fills else None
                 }
             else:
-                error_msg = order_result.get("response", "Unknown error")
+                error_msg = order_result.get("response", {})
+                if isinstance(error_msg, dict):
+                    error_msg = error_msg.get("error", str(error_msg))
+                logger.error(f"Order failed for {coin}: {error_msg}")
                 return {'success': False, 'error': str(error_msg)}
 
         except Exception as e:
