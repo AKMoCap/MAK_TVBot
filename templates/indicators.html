@@ -151,7 +151,7 @@
                         </div>
 
                         <h6>Alert Message Template:</h6>
-                        <pre class="bg-black p-3 rounded"><code id="webhook-template">{
+                        <pre class="bg-black p-3 rounded"><code id="webhook-template">{% raw %}{
     "secret": "YOUR_WEBHOOK_SECRET",
     "action": "{{strategy.order.action}}",
     "coin": "{{ticker}}",
@@ -160,7 +160,7 @@
     "indicator": "your-indicator-key",
     "stop_loss_pct": 2,
     "take_profit_pct": 5
-}</code></pre>
+}{% endraw %}</code></pre>
                         <button class="btn btn-outline-secondary btn-sm" id="copy-template">
                             <i class="bi bi-clipboard me-1"></i>Copy Template
                         </button>
@@ -182,9 +182,9 @@
                             </li>
                             <li>Use Pine Script placeholders:
                                 <ul>
-                                    <li><code>{{strategy.order.action}}</code> - "buy" or "sell"</li>
-                                    <li><code>{{ticker}}</code> - The coin symbol</li>
-                                    <li><code>{{close}}</code> - Current price</li>
+                                    <li><code>{% raw %}{{strategy.order.action}}{% endraw %}</code> - "buy" or "sell"</li>
+                                    <li><code>{% raw %}{{ticker}}{% endraw %}</code> - The coin symbol</li>
+                                    <li><code>{% raw %}{{close}}{% endraw %}</code> - Current price</li>
                                 </ul>
                             </li>
                         </ol>
