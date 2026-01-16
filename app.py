@@ -480,7 +480,7 @@ def api_get_settings():
 
         return jsonify({
             'bot_enabled': BotConfig.get('bot_enabled', 'true'),
-            'use_testnet': BotConfig.get('use_testnet', 'true'),
+            'use_testnet': str(USE_TESTNET).lower(),  # Use actual environment variable
             'default_leverage': BotConfig.get('default_leverage', '10'),
             'default_collateral': BotConfig.get('default_collateral', '100'),
             'slippage_tolerance': BotConfig.get('slippage_tolerance', '0.01'),
