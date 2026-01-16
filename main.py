@@ -247,6 +247,12 @@ def webhook():
 # HEALTH CHECK ENDPOINT
 # ============================================================================
 
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint for health checks (required for Autoscale deployment)."""
+    return jsonify({"status": "healthy"})
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Simple health check endpoint to verify the bot is running."""

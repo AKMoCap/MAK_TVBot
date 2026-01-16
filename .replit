@@ -21,13 +21,13 @@ args = "TradingView Bot"
 name = "TradingView Bot"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python app.py"
 waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 5000
@@ -35,4 +35,4 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["sh", "-c", "/nix/store/s4ckxp77ljlikarkka88ba7qr5mlka97-python3-wrapper/bin/python3 $file"]
+run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--workers=2", "app:app"]

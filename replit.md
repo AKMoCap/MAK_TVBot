@@ -1,33 +1,44 @@
-# TradingView to Hyperliquid Trading Bot
+# MAK TradingView to Hyperliquid Trading Bot
 
 ## Overview
-This is a Flask-based webhook server that receives TradingView alerts and executes trades on Hyperliquid exchange. The bot acts as a bridge between TradingView's alert system and Hyperliquid's trading API.
+A full-featured trading bot that bridges TradingView alerts with Hyperliquid exchange. Includes a web-based dashboard for monitoring and configuration.
+
+## Features
+- Web-based UI dashboard
+- Multi-coin trading support
+- Risk management (SL/TP, position limits, circuit breakers)
+- Trade history and analytics
+- TradingView webhook integration
 
 ## Project Structure
 ```
 .
-├── main.py              # Main Flask application with webhook endpoints
-├── test_setup.py        # Test file for setup verification
+├── app.py               # Main Flask application with web UI and webhook endpoints
+├── models.py            # SQLAlchemy database models
+├── bot_manager.py       # Trading bot logic and Hyperliquid integration
+├── risk_manager.py      # Risk management logic
+├── static/              # Frontend assets (CSS, JS)
+├── templates/           # HTML templates
+├── main.py              # Legacy simple webhook handler
 ├── requirements.txt     # Python dependencies
 └── README.md            # Basic project info
 ```
 
-## How It Works
-1. TradingView sends a webhook (HTTP POST) when an indicator triggers
-2. The Flask server receives the webhook at `/webhook`
-3. The bot validates the request using a secret key
-4. If valid, executes the trade on Hyperliquid
+## Running
+The application runs on port 5000 with a web dashboard accessible at the root URL.
 
 ## Endpoints
+- `/` - Web dashboard
 - `POST /webhook` - Receives TradingView alerts
 - `GET /health` - Health check endpoint
-- `GET /status` - Check account status and open positions
+- `GET /api/status` - API status and account info
 
 ## Required Environment Variables
 - `HL_MAIN_WALLET` - Your main Hyperliquid wallet address
 - `HL_API_SECRET` - Your Hyperliquid API wallet secret key
-- `WEBHOOK_SECRET` - Secret key that TradingView must include in webhook requests
-- `USE_TESTNET` - Set to "true" for testnet, "false" for mainnet (defaults to testnet)
+- `WEBHOOK_SECRET` - Secret key for TradingView webhook validation
+- `USE_TESTNET` - Set to "true" for testnet, "false" for mainnet
+- `SECRET_KEY` - Flask session secret key
 
 ## TradingView Webhook Payload Format
 ```json
@@ -41,11 +52,7 @@ This is a Flask-based webhook server that receives TradingView alerts and execut
 }
 ```
 
-## Running Locally
-```bash
-python main.py
-```
-Server runs on port 5000.
-
 ## Recent Changes
 - 2026-01-16: Initial import and setup in Replit environment
+- 2026-01-16: Added flask-sqlalchemy for database support
+- 2026-01-16: Updated workflow to run app.py with web UI
