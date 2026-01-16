@@ -154,6 +154,7 @@
                                 <option value="AAVE">AAVE</option>
                                 <option value="ENA">ENA</option>
                                 <option value="PENDLE">PENDLE</option>
+                                <option value="VIRTUAL">VIRTUAL</option>
                                 <option value="AERO">AERO</option>
                             </optgroup>
                             <optgroup label="HIGH BETA / MEMES">
@@ -215,35 +216,26 @@
             <div class="card-body">
                 <div class="mb-3">
                     <div class="d-flex justify-content-between mb-1">
-                        <span>Daily Loss Limit</span>
-                        <span id="daily-loss-status">$0 / $500</span>
-                    </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar bg-success" role="progressbar" style="width: 0%"
-                             id="daily-loss-bar"></div>
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span>Position Limit</span>
-                        <span id="position-limit-status">0 / 5</span>
+                        <span>Collateral at Risk</span>
+                        <span id="collateral-risk-status">0% / 75%</span>
                     </div>
                     <div class="progress" style="height: 8px;">
                         <div class="progress-bar bg-info" role="progressbar" style="width: 0%"
-                             id="position-limit-bar"></div>
+                             id="collateral-risk-bar"></div>
                     </div>
+                    <small class="text-muted">% of account USDC used as collateral</small>
                 </div>
 
                 <div class="mb-0">
                     <div class="d-flex justify-content-between mb-1">
-                        <span>Daily Trades</span>
-                        <span id="daily-trades-status">0 / 20</span>
+                        <span>Cross Margin Used</span>
+                        <span id="cross-margin-status">0x / 10x</span>
                     </div>
                     <div class="progress" style="height: 8px;">
                         <div class="progress-bar bg-warning" role="progressbar" style="width: 0%"
-                             id="daily-trades-bar"></div>
+                             id="cross-margin-bar"></div>
                     </div>
+                    <small class="text-muted">Effective leverage vs max allowed</small>
                 </div>
             </div>
         </div>

@@ -212,25 +212,35 @@ function updateDailyStats(data) {
 }
 
 function updateRiskBars(data) {
-    // These would need actual limits from settings
-    const dailyLossLimit = 500;
-    const positionLimit = 5;
-    const dailyTradesLimit = 20;
+    // Get values from data or use defaults
+    const maxExposurePct = data.max_exposure_pct || 75;
+    const maxLeverage = data.max_leverage || 10;
+    const collateralAtRisk = data.collateral_at_risk_pct || 0;
+    const crossMarginUsed = data.cross_margin_used || 0;
 
-    const dailyLoss = Math.abs(data.total_pnl < 0 ? data.total_pnl : 0);
-    const dailyLossPct = (dailyLoss / dailyLossLimit) * 100;
-    document.getElementById('daily-loss-status').textContent = formatCurrency(dailyLoss) + ' / ' + formatCurrency(dailyLossLimit);
-    document.getElementById('daily-loss-bar').style.width = Math.min(dailyLossPct, 100) + '%';
-    document.getElementById('daily-loss-bar').className = 'progress-bar ' + (dailyLossPct > 80 ? 'bg-danger' : 'bg-success');
+    // Collateral at Risk (% of account used as collateral)
+    const collateralPct = (collateralAtRisk / maxExposurePct) * 100;
+    const collateralStatus = document.getElementById('collateral-risk-status');
+    const collateralBar = document.getElementById('collateral-risk-bar');
+    if (collateralStatus) {
+        collateralStatus.textContent = collateralAtRisk.toFixed(1) + '% / ' + maxExposurePct + '%';
+    }
+    if (collateralBar) {
+        collateralBar.style.width = Math.min(collateralPct, 100) + '%';
+        collateralBar.className = 'progress-bar ' + (collateralPct > 80 ? 'bg-danger' : collateralPct > 50 ? 'bg-warning' : 'bg-info');
+    }
 
-    const openPositions = data.open_trades || 0;
-    const positionPct = (openPositions / positionLimit) * 100;
-    document.getElementById('position-limit-status').textContent = openPositions + ' / ' + positionLimit;
-    document.getElementById('position-limit-bar').style.width = Math.min(positionPct, 100) + '%';
-
-    const dailyTradesPct = (data.total_trades / dailyTradesLimit) * 100;
-    document.getElementById('daily-trades-status').textContent = data.total_trades + ' / ' + dailyTradesLimit;
-    document.getElementById('daily-trades-bar').style.width = Math.min(dailyTradesPct, 100) + '%';
+    // Cross Margin Used (effective leverage vs max allowed)
+    const marginPct = (crossMarginUsed / maxLeverage) * 100;
+    const marginStatus = document.getElementById('cross-margin-status');
+    const marginBar = document.getElementById('cross-margin-bar');
+    if (marginStatus) {
+        marginStatus.textContent = crossMarginUsed.toFixed(1) + 'x / ' + maxLeverage + 'x';
+    }
+    if (marginBar) {
+        marginBar.style.width = Math.min(marginPct, 100) + '%';
+        marginBar.className = 'progress-bar ' + (marginPct > 80 ? 'bg-danger' : marginPct > 50 ? 'bg-warning' : 'bg-success');
+    }
 }
 
 function updatePositionsTable(positions) {
@@ -828,7 +838,7 @@ function updateCoinConfigTable(coins) {
     // Define coin groups
     const groups = {
         'MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
-        'DEFI': ['AAVE', 'ENA', 'PENDLE', 'AERO'],
+        'DEFI': ['AAVE', 'ENA', 'PENDLE', 'VIRTUAL', 'AERO'],
         'HIGH BETA / MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU']
     };
 
