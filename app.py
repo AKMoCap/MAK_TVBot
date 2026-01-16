@@ -36,9 +36,15 @@ from bot_manager import bot_manager
 # ============================================================================
 
 MAIN_WALLET_ADDRESS = os.environ.get("HL_MAIN_WALLET")
-API_WALLET_SECRET = os.environ.get("HL_API_SECRET")
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "your-secret-key-change-me")
 USE_TESTNET = os.environ.get("USE_TESTNET", "true").lower() == "true"
+
+# Select API secret based on network
+if USE_TESTNET:
+    API_WALLET_SECRET = os.environ.get("HL_TESTNET_API_SECRET")
+else:
+    API_WALLET_SECRET = os.environ.get("HL_API_SECRET")
+
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "your-secret-key-change-me")
 
 # ============================================================================
 # LOGGING
