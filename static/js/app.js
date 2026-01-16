@@ -342,6 +342,74 @@ function updateConnectionStatus(connected) {
     }
 }
 
+// Store coin configs globally for quick trade form
+let coinConfigsCache = {};
+
+async function loadCoinConfigsForQuickTrade() {
+    try {
+        const data = await apiCall('/coins');
+        if (data.coins) {
+            data.coins.forEach(coin => {
+                coinConfigsCache[coin.coin] = coin;
+            });
+            // Populate form with default coin (first one selected)
+            const coinSelect = document.getElementById('trade-coin');
+            if (coinSelect && coinSelect.value) {
+                populateQuickTradeForm(coinSelect.value);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load coin configs for quick trade:', error);
+    }
+}
+
+function populateQuickTradeForm(coin) {
+    const config = coinConfigsCache[coin];
+    if (!config) return;
+
+    // Update leverage
+    const leverageRange = document.getElementById('trade-leverage-range');
+    const leverageDisplay = document.getElementById('leverage-display');
+    if (leverageRange && config.default_leverage) {
+        leverageRange.value = config.default_leverage;
+        if (leverageDisplay) {
+            leverageDisplay.textContent = config.default_leverage + 'x';
+        }
+    }
+
+    // Update collateral
+    const collateralInput = document.getElementById('trade-collateral');
+    if (collateralInput && config.default_collateral) {
+        collateralInput.value = config.default_collateral;
+    }
+
+    // Update stop loss
+    const slInput = document.getElementById('trade-sl');
+    if (slInput && config.default_stop_loss_pct) {
+        slInput.value = config.default_stop_loss_pct;
+    }
+
+    // Update TP1
+    const tp1Input = document.getElementById('trade-tp1');
+    const tp1SizeInput = document.getElementById('trade-tp1-size');
+    if (tp1Input && config.tp1_pct) {
+        tp1Input.value = config.tp1_pct;
+    }
+    if (tp1SizeInput && config.tp1_size_pct) {
+        tp1SizeInput.value = config.tp1_size_pct;
+    }
+
+    // Update TP2
+    const tp2Input = document.getElementById('trade-tp2');
+    const tp2SizeInput = document.getElementById('trade-tp2-size');
+    if (tp2Input && config.tp2_pct) {
+        tp2Input.value = config.tp2_pct;
+    }
+    if (tp2SizeInput && config.tp2_size_pct) {
+        tp2SizeInput.value = config.tp2_size_pct;
+    }
+}
+
 function setupDashboardEvents() {
     // Leverage slider
     const leverageRange = document.getElementById('trade-leverage-range');
@@ -349,6 +417,14 @@ function setupDashboardEvents() {
     if (leverageRange) {
         leverageRange.addEventListener('input', function() {
             leverageDisplay.textContent = this.value + 'x';
+        });
+    }
+
+    // Coin dropdown - auto-populate form with coin defaults
+    const coinSelect = document.getElementById('trade-coin');
+    if (coinSelect) {
+        coinSelect.addEventListener('change', function() {
+            populateQuickTradeForm(this.value);
         });
     }
 
@@ -375,6 +451,9 @@ function setupDashboardEvents() {
     if (closeAllBtn) {
         closeAllBtn.addEventListener('click', closeAllPositions);
     }
+
+    // Load coin configs for quick trade
+    loadCoinConfigsForQuickTrade();
 }
 
 async function executeTrade(action) {
@@ -382,7 +461,12 @@ async function executeTrade(action) {
     const collateral = parseFloat(document.getElementById('trade-collateral').value);
     const leverage = parseInt(document.getElementById('trade-leverage-range').value);
     const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
-    const takeProfit = parseFloat(document.getElementById('trade-tp').value) || null;
+
+    // Get TP1 and TP2 values
+    const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
+    const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
+    const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
+    const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
 
     if (!coin || !collateral || !leverage) {
         showToast('Please fill in all required fields', 'warning');
@@ -396,7 +480,10 @@ async function executeTrade(action) {
             leverage,
             collateral_usd: collateral,
             stop_loss_pct: stopLoss,
-            take_profit_pct: takeProfit
+            tp1_pct: tp1Pct,
+            tp1_size_pct: tp1SizePct,
+            tp2_pct: tp2Pct,
+            tp2_size_pct: tp2SizePct
         });
 
         if (result.success) {
@@ -1001,5 +1088,71 @@ async function saveCoinConfig() {
         }
     } catch (error) {
         showToast('Failed to save coin configuration', 'error');
+    }
+}
+
+async function clearTradeHistory() {
+    if (!confirm('Are you sure you want to clear ALL trade history? This action cannot be undone.')) {
+        return;
+    }
+
+    // Double confirmation for safety
+    if (!confirm('This will permanently delete all trades. Are you ABSOLUTELY sure?')) {
+        return;
+    }
+
+    try {
+        const result = await apiCall('/trades/clear', 'DELETE');
+        if (result.success) {
+            showToast(`Cleared ${result.deleted} trades from history`, 'success');
+            // Refresh the page if on trades page, or refresh dashboard
+            if (typeof loadTradeHistory === 'function') {
+                loadTradeHistory();
+            }
+            if (typeof refreshDashboard === 'function') {
+                refreshDashboard();
+            }
+        } else {
+            showToast('Failed to clear trades: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showToast('Failed to clear trade history', 'error');
+    }
+}
+
+async function clearActivityLogs() {
+    if (!confirm('Are you sure you want to clear all activity logs?')) {
+        return;
+    }
+
+    try {
+        const result = await apiCall('/logs/clear', 'DELETE');
+        if (result.success) {
+            showToast(`Cleared ${result.deleted} log entries`, 'success');
+        } else {
+            showToast('Failed to clear logs: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showToast('Failed to clear activity logs', 'error');
+    }
+}
+
+// Setup event listeners for settings page buttons
+function setupSettingsEvents() {
+    const clearTradesBtn = document.getElementById('clear-trades');
+    if (clearTradesBtn) {
+        clearTradesBtn.addEventListener('click', clearTradeHistory);
+    }
+
+    const clearLogsBtn = document.getElementById('clear-logs');
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', clearActivityLogs);
+    }
+
+    const exportDataBtn = document.getElementById('export-data');
+    if (exportDataBtn) {
+        exportDataBtn.addEventListener('click', () => {
+            window.location.href = '/api/trades/export';
+        });
     }
 }

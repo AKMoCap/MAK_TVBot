@@ -168,31 +168,51 @@
                         </select>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Collateral (USD)</label>
-                        <input type="number" class="form-control bg-dark text-light border-secondary"
-                               id="trade-collateral" value="100" min="1" step="1">
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Collateral (USD)</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="trade-collateral" value="100" min="1" step="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Leverage</label>
+                            <div class="input-group">
+                                <input type="range" class="form-range" id="trade-leverage-range"
+                                       min="1" max="20" value="3" style="flex: 1;">
+                                <span class="ms-2 badge bg-primary" id="leverage-display">3x</span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Leverage</label>
-                        <div class="input-group">
-                            <input type="range" class="form-range" id="trade-leverage-range"
-                                   min="1" max="20" value="10">
-                            <span class="ms-3 badge bg-primary" id="leverage-display">10x</span>
+                        <label class="form-label">Stop Loss %</label>
+                        <input type="number" class="form-control bg-dark text-light border-secondary"
+                               id="trade-sl" value="15" step="0.1">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">TP1 Target %</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="trade-tp1" value="50" step="0.1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">TP1 Size %</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="trade-tp1-size" value="25" step="1">
                         </div>
                     </div>
 
                     <div class="row mb-3">
                         <div class="col-6">
-                            <label class="form-label">Stop Loss %</label>
+                            <label class="form-label">TP2 Target %</label>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-sl" placeholder="e.g., 2" step="0.1">
+                                   id="trade-tp2" value="100" step="0.1">
                         </div>
                         <div class="col-6">
-                            <label class="form-label">Take Profit %</label>
+                            <label class="form-label">TP2 Size %</label>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-tp" placeholder="e.g., 5" step="0.1">
+                                   id="trade-tp2-size" value="50" step="1">
                         </div>
                     </div>
 

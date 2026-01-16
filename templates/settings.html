@@ -333,6 +333,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     loadSettings();
     loadCoinConfigs();
+    setupSettingsEvents();
 
     document.getElementById('general-settings-form').addEventListener('submit', saveGeneralSettings);
     document.getElementById('risk-settings-form').addEventListener('submit', saveRiskSettings);

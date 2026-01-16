@@ -214,7 +214,7 @@ class RiskManager:
         """Get all open positions from database"""
         return Trade.query.filter_by(status='open').all()
 
-    def get_daily_stats(self, account_value=None, total_margin_used=None):
+    def get_daily_stats(self, account_value=None, total_margin_used=None, has_positions=False):
         """Get trading statistics for today"""
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -229,21 +229,25 @@ class RiskManager:
         settings = self.get_risk_settings()
 
         # Calculate collateral at risk (% of account used as margin)
+        # Only calculate if there are actual positions on the exchange
         collateral_at_risk_pct = 0
         cross_margin_used = 0
-        if account_value and account_value > 0:
-            # Total collateral in open positions
-            open_trades = Trade.query.filter_by(status='open').all()
-            total_collateral = sum(t.collateral_usd for t in open_trades)
-            collateral_at_risk_pct = (total_collateral / account_value) * 100
 
-            # Cross margin / effective leverage
-            if total_margin_used is not None and total_collateral > 0:
-                cross_margin_used = total_margin_used / total_collateral if total_collateral > 0 else 0
-            elif total_collateral > 0:
-                # Estimate from open trades
-                total_notional = sum(t.collateral_usd * t.leverage for t in open_trades)
-                cross_margin_used = total_notional / account_value if account_value > 0 else 0
+        if has_positions and account_value and account_value > 0:
+            # Use actual margin from exchange if available
+            if total_margin_used is not None and total_margin_used > 0:
+                collateral_at_risk_pct = (total_margin_used / account_value) * 100
+                # Cross margin is total notional / account value (effective leverage)
+                # For now, use margin as a proxy
+                cross_margin_used = total_margin_used / account_value if account_value > 0 else 0
+            else:
+                # Fallback to database records if exchange data not available
+                open_trades = Trade.query.filter_by(status='open').all()
+                total_collateral = sum(t.collateral_usd for t in open_trades)
+                if total_collateral > 0:
+                    collateral_at_risk_pct = (total_collateral / account_value) * 100
+                    total_notional = sum(t.collateral_usd * t.leverage for t in open_trades)
+                    cross_margin_used = total_notional / account_value
 
         return {
             'total_trades': len(trades_today),

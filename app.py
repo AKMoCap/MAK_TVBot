@@ -137,16 +137,20 @@ def api_daily_stats():
         # Get account info for risk calculations
         account_value = None
         total_margin_used = None
+        has_positions = False
         try:
             account_info = bot_manager.get_account_info()
             if account_info and 'account_value' in account_info:
                 account_value = account_info['account_value']
-            if account_info and 'margin_used' in account_info:
-                total_margin_used = account_info['margin_used']
+            if account_info and 'total_margin_used' in account_info:
+                total_margin_used = account_info['total_margin_used']
+            # Check if there are actual positions on the exchange
+            if account_info and account_info.get('positions'):
+                has_positions = len(account_info['positions']) > 0
         except:
             pass
 
-        stats = risk_manager.get_daily_stats(account_value, total_margin_used)
+        stats = risk_manager.get_daily_stats(account_value, total_margin_used, has_positions)
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -634,6 +638,33 @@ def api_logs():
         return jsonify({'logs': [log.to_dict() for log in logs]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/trades/clear', methods=['DELETE'])
+def api_clear_trades():
+    """Clear all trade history"""
+    try:
+        count = Trade.query.count()
+        Trade.query.delete()
+        db.session.commit()
+        log_activity('info', 'system', f'Cleared {count} trades from history')
+        return jsonify({'success': True, 'deleted': count})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/logs/clear', methods=['DELETE'])
+def api_clear_logs():
+    """Clear all activity logs"""
+    try:
+        count = ActivityLog.query.count()
+        ActivityLog.query.delete()
+        db.session.commit()
+        return jsonify({'success': True, 'deleted': count})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================================
