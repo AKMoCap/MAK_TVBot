@@ -97,7 +97,7 @@ class CoinConfig(db.Model):
     default_leverage = db.Column(db.Integer, default=3)
     default_collateral = db.Column(db.Float, default=100.0)
     max_position_size = db.Column(db.Float, default=1000.0)  # 10x default collateral
-    max_open_positions = db.Column(db.Integer, default=1)  # Per this coin
+    max_open_positions = db.Column(db.Integer, default=10)  # Per this coin
 
     # Stop Loss default
     default_stop_loss_pct = db.Column(db.Float, default=15.0)  # 15%
