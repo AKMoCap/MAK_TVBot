@@ -6,15 +6,80 @@ PostgreSQL database with SQLAlchemy for:
 - Bot configuration
 - Coin settings
 - Risk management parameters
+- User wallets and agent keys
 """
 
 import os
+import secrets
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
+from cryptography.fernet import Fernet
 
 db = SQLAlchemy()
 migrate = Migrate()
+
+# Encryption key for agent secrets (generated once, stored in env)
+def get_encryption_key():
+    key = os.environ.get('AGENT_ENCRYPTION_KEY')
+    if not key:
+        # Generate a new key if not set (should be set in production)
+        key = Fernet.generate_key().decode()
+        os.environ['AGENT_ENCRYPTION_KEY'] = key
+    return key.encode() if isinstance(key, str) else key
+
+
+class UserWallet(db.Model):
+    """User wallet connections and agent keys"""
+    __tablename__ = 'user_wallets'
+
+    id = db.Column(db.Integer, primary_key=True)
+    address = db.Column(db.String(42), unique=True, nullable=False, index=True)  # Ethereum address
+
+    # Agent wallet info (encrypted)
+    agent_address = db.Column(db.String(42), nullable=True)  # Agent wallet address
+    agent_key_encrypted = db.Column(db.Text, nullable=True)  # Encrypted agent private key
+    agent_name = db.Column(db.String(100), nullable=True)  # Optional agent name
+
+    # Network preference
+    use_testnet = db.Column(db.Boolean, default=True)
+
+    # Session tracking
+    last_connected = db.Column(db.DateTime, default=datetime.utcnow)
+    session_token = db.Column(db.String(64), nullable=True, index=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def set_agent_key(self, agent_key):
+        """Encrypt and store agent private key"""
+        if agent_key:
+            f = Fernet(get_encryption_key())
+            self.agent_key_encrypted = f.encrypt(agent_key.encode()).decode()
+
+    def get_agent_key(self):
+        """Decrypt and return agent private key"""
+        if self.agent_key_encrypted:
+            f = Fernet(get_encryption_key())
+            return f.decrypt(self.agent_key_encrypted.encode()).decode()
+        return None
+
+    def generate_session_token(self):
+        """Generate a new session token"""
+        self.session_token = secrets.token_hex(32)
+        return self.session_token
+
+    def has_agent_key(self):
+        """Check if user has an authorized agent"""
+        return bool(self.agent_key_encrypted and self.agent_address)
+
+    def to_dict(self):
+        return {
+            'address': self.address,
+            'agent_address': self.agent_address,
+            'has_agent_key': self.has_agent_key(),
+            'use_testnet': self.use_testnet,
+            'last_connected': self.last_connected.isoformat() if self.last_connected else None
+        }
 
 
 class Trade(db.Model):

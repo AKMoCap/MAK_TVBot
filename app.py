@@ -36,7 +36,7 @@ SITE_PASSWORD = os.environ.get('SITE_PASSWORD', '')
 SITE_PASSWORD_HASH = os.environ.get('SITE_PASSWORD_HASH', '')
 
 # Initialize database
-from models import db, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog
+from models import db, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog, UserWallet
 init_db(app)
 
 
@@ -213,7 +213,24 @@ def settings():
 def api_account():
     """Get account info and positions"""
     try:
-        data = bot_manager.get_account_info()
+        # Try to get user-specific account info if connected
+        user = get_current_user()
+        if user and user.has_agent_key():
+            data = bot_manager.get_account_info(
+                user_wallet=user.address,
+                user_agent_key=user.get_agent_key()
+            )
+        else:
+            # Return empty data if no user connected
+            data = {
+                'error': 'Please connect your wallet',
+                'account_value': 0,
+                'total_margin_used': 0,
+                'total_ntl_pos': 0,
+                'withdrawable': 0,
+                'positions': [],
+                'network': 'testnet' if USE_TESTNET else 'mainnet'
+            }
         return jsonify(data)
     except Exception as e:
         logger.exception(f"Error getting account info: {e}")
@@ -295,7 +312,15 @@ def api_daily_stats():
         total_margin_used = None
         has_positions = False
         try:
-            account_info = bot_manager.get_account_info()
+            # Try to get user-specific account info if connected
+            user = get_current_user()
+            if user and user.has_agent_key():
+                account_info = bot_manager.get_account_info(
+                    user_wallet=user.address,
+                    user_agent_key=user.get_agent_key()
+                )
+            else:
+                account_info = {}
             if account_info and 'account_value' in account_info:
                 account_value = account_info['account_value']
             if account_info and 'total_margin_used' in account_info:
@@ -331,6 +356,11 @@ def api_activity():
 def api_trade():
     """Execute a manual trade"""
     try:
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
         data = request.get_json()
 
         coin = data.get('coin', 'BTC')  # Preserve case - Hyperliquid uses case-sensitive names like kBONK
@@ -370,7 +400,7 @@ def api_trade():
         if tp2_size_pct is None and coin_config.tp2_size_pct:
             tp2_size_pct = coin_config.tp2_size_pct
 
-        # Execute trade
+        # Execute trade with user credentials
         result = bot_manager.execute_trade(
             coin=coin,
             action=action,
@@ -381,7 +411,9 @@ def api_trade():
             tp1_pct=tp1_pct,
             tp1_size_pct=tp1_size_pct,
             tp2_pct=tp2_pct,
-            tp2_size_pct=tp2_size_pct
+            tp2_size_pct=tp2_size_pct,
+            user_wallet=user.address,
+            user_agent_key=user.get_agent_key()
         )
 
         if result.get('success'):
@@ -417,13 +449,22 @@ def api_trade():
 def api_close_position():
     """Close a position"""
     try:
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
         data = request.get_json()
         coin = data.get('coin', '')  # Preserve case - Hyperliquid uses case-sensitive names
 
         if not coin:
             return jsonify({'success': False, 'error': 'Coin is required'})
 
-        result = bot_manager.close_position(coin)
+        result = bot_manager.close_position(
+            coin,
+            user_wallet=user.address,
+            user_agent_key=user.get_agent_key()
+        )
 
         if result.get('success'):
             # Update trade in database
@@ -459,7 +500,15 @@ def api_close_position():
 def api_close_all():
     """Close all open positions"""
     try:
-        account = bot_manager.get_account_info()
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        account = bot_manager.get_account_info(
+            user_wallet=user.address,
+            user_agent_key=user.get_agent_key()
+        )
         positions = account.get('positions', [])
 
         # Get current prices for all positions to calculate P&L
@@ -470,7 +519,11 @@ def api_close_all():
         total_pnl = 0
         for pos in positions:
             coin = pos['coin']
-            result = bot_manager.close_position(coin)
+            result = bot_manager.close_position(
+                coin,
+                user_wallet=user.address,
+                user_agent_key=user.get_agent_key()
+            )
 
             # Update trade record with exit price and P&L
             if result.get('success'):
@@ -818,7 +871,16 @@ def api_update_coin(coin):
 def api_test_connection():
     """Test Hyperliquid connection"""
     try:
-        data = bot_manager.get_account_info()
+        # Try to get user-specific account info if connected
+        user = get_current_user()
+        if user and user.has_agent_key():
+            data = bot_manager.get_account_info(
+                user_wallet=user.address,
+                user_agent_key=user.get_agent_key()
+            )
+        else:
+            return jsonify({'success': False, 'error': 'Please connect your wallet first'})
+
         if 'error' in data:
             return jsonify({'success': False, 'error': data['error']})
 
@@ -868,6 +930,255 @@ def api_clear_logs():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# WALLET CONNECTION API
+# ============================================================================
+
+import secrets
+from eth_account import Account
+from flask import session
+
+@app.route('/api/wallet/session', methods=['GET'])
+def api_wallet_session():
+    """Check if user has an existing wallet session"""
+    try:
+        session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+        if session_token:
+            user = UserWallet.query.filter_by(session_token=session_token).first()
+            if user:
+                return jsonify({
+                    'connected': True,
+                    'address': user.address,
+                    'has_agent_key': user.has_agent_key(),
+                    'use_testnet': user.use_testnet
+                })
+        return jsonify({'connected': False})
+    except Exception as e:
+        logger.error(f"Session check error: {e}")
+        return jsonify({'connected': False})
+
+
+@app.route('/api/wallet/connect', methods=['POST'])
+def api_wallet_connect():
+    """Connect a wallet address"""
+    try:
+        data = request.get_json()
+        address = data.get('address', '').lower()
+        chain_id = data.get('chain_id')
+
+        if not address or len(address) != 42 or not address.startswith('0x'):
+            return jsonify({'success': False, 'error': 'Invalid wallet address'}), 400
+
+        # Find or create user wallet
+        user = UserWallet.query.filter_by(address=address).first()
+        if not user:
+            user = UserWallet(address=address)
+            db.session.add(user)
+
+        # Generate session token
+        session_token = user.generate_session_token()
+        user.last_connected = datetime.utcnow()
+        db.session.commit()
+
+        # Set session
+        session['wallet_session'] = session_token
+        session['wallet_address'] = address
+
+        response = jsonify({
+            'success': True,
+            'address': address,
+            'has_agent_key': user.has_agent_key(),
+            'use_testnet': user.use_testnet
+        })
+        response.set_cookie('wallet_session', session_token, httponly=True, samesite='Lax', max_age=86400*30)
+        return response
+
+    except Exception as e:
+        logger.exception(f"Wallet connect error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/wallet/prepare-agent', methods=['POST'])
+def api_wallet_prepare_agent():
+    """Prepare agent wallet approval - generate agent key and EIP-712 data"""
+    try:
+        data = request.get_json()
+        address = data.get('address', '').lower()
+
+        # Verify session
+        session_address = session.get('wallet_address', '').lower()
+        if address != session_address:
+            return jsonify({'success': False, 'error': 'Session mismatch'}), 401
+
+        user = UserWallet.query.filter_by(address=address).first()
+        if not user:
+            return jsonify({'success': False, 'error': 'Wallet not connected'}), 401
+
+        # Generate new agent key
+        agent_key = '0x' + secrets.token_hex(32)
+        agent_account = Account.from_key(agent_key)
+        agent_address = agent_account.address
+
+        # Get timestamp for nonce
+        nonce = int(datetime.utcnow().timestamp() * 1000)
+
+        # Determine if using testnet
+        use_testnet = user.use_testnet
+
+        # Build EIP-712 typed data for Hyperliquid agent approval
+        # Hyperliquid uses specific domain and types
+        if use_testnet:
+            chain_id = 421614  # Arbitrum Sepolia
+            verifying_contract = "0x0000000000000000000000000000000000000000"
+        else:
+            chain_id = 42161  # Arbitrum One
+            verifying_contract = "0x0000000000000000000000000000000000000000"
+
+        sign_data = {
+            "domain": {
+                "name": "HyperliquidSignTransaction",
+                "version": "1",
+                "chainId": chain_id,
+                "verifyingContract": verifying_contract
+            },
+            "types": {
+                "HyperliquidTransaction:ApproveAgent": [
+                    {"name": "hyperliquidChain", "type": "string"},
+                    {"name": "agentAddress", "type": "address"},
+                    {"name": "agentName", "type": "string"},
+                    {"name": "nonce", "type": "uint64"}
+                ]
+            },
+            "message": {
+                "hyperliquidChain": "Testnet" if use_testnet else "Mainnet",
+                "agentAddress": agent_address,
+                "agentName": "",
+                "nonce": nonce
+            }
+        }
+
+        return jsonify({
+            'success': True,
+            'agent_address': agent_address,
+            'agent_key': agent_key,  # Sent securely, will be stored encrypted
+            'nonce': nonce,
+            'sign_data': sign_data
+        })
+
+    except Exception as e:
+        logger.exception(f"Prepare agent error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/wallet/approve-agent', methods=['POST'])
+def api_wallet_approve_agent():
+    """Submit agent approval to Hyperliquid and store agent key"""
+    try:
+        data = request.get_json()
+        address = data.get('address', '').lower()
+        signature = data.get('signature')
+        agent_address = data.get('agent_address')
+        agent_key = data.get('agent_key')
+        nonce = data.get('nonce')
+
+        # Verify session
+        session_address = session.get('wallet_address', '').lower()
+        if address != session_address:
+            return jsonify({'success': False, 'error': 'Session mismatch'}), 401
+
+        user = UserWallet.query.filter_by(address=address).first()
+        if not user:
+            return jsonify({'success': False, 'error': 'Wallet not connected'}), 401
+
+        # Submit approval to Hyperliquid
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+        import requests
+
+        api_url = constants.TESTNET_API_URL if user.use_testnet else constants.MAINNET_API_URL
+
+        # Build the action payload
+        action = {
+            "type": "approveAgent",
+            "agentAddress": agent_address,
+            "agentName": "",
+            "nonce": nonce
+        }
+
+        # Parse signature components (ethers returns full signature)
+        # Hyperliquid expects {r, s, v} format
+        sig_bytes = bytes.fromhex(signature[2:] if signature.startswith('0x') else signature)
+        r = '0x' + sig_bytes[:32].hex()
+        s = '0x' + sig_bytes[32:64].hex()
+        v = sig_bytes[64]
+
+        payload = {
+            "action": action,
+            "nonce": nonce,
+            "signature": {"r": r, "s": s, "v": v}
+        }
+
+        # Submit to Hyperliquid exchange endpoint
+        response = requests.post(
+            f"{api_url}/exchange",
+            json=payload,
+            headers={"Content-Type": "application/json"}
+        )
+
+        result = response.json()
+        logger.info(f"Hyperliquid agent approval response: {result}")
+
+        # Check if approval was successful
+        if result.get('status') == 'ok' or 'response' in result:
+            # Store agent key (encrypted)
+            user.agent_address = agent_address
+            user.set_agent_key(agent_key)
+            db.session.commit()
+
+            log_activity('info', 'wallet', f"Agent wallet approved for {address[:10]}...", {
+                'agent_address': agent_address
+            })
+
+            return jsonify({'success': True, 'message': 'Agent approved successfully'})
+        else:
+            error_msg = result.get('error', result.get('response', 'Unknown error'))
+            return jsonify({'success': False, 'error': str(error_msg)}), 400
+
+    except Exception as e:
+        logger.exception(f"Approve agent error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/wallet/disconnect', methods=['POST'])
+def api_wallet_disconnect():
+    """Disconnect wallet session"""
+    try:
+        session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+        if session_token:
+            user = UserWallet.query.filter_by(session_token=session_token).first()
+            if user:
+                user.session_token = None
+                db.session.commit()
+
+        session.pop('wallet_session', None)
+        session.pop('wallet_address', None)
+
+        response = jsonify({'success': True})
+        response.delete_cookie('wallet_session')
+        return response
+    except Exception as e:
+        logger.error(f"Disconnect error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def get_current_user():
+    """Get the current user from session"""
+    session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+    if session_token:
+        return UserWallet.query.filter_by(session_token=session_token).first()
+    return None
 
 
 # ============================================================================
@@ -1061,15 +1372,23 @@ def health():
 def status():
     """Account status endpoint"""
     try:
-        data = bot_manager.get_account_info()
+        # Try to get user-specific account info if connected
+        user = get_current_user()
+        if user and user.has_agent_key():
+            data = bot_manager.get_account_info(
+                user_wallet=user.address,
+                user_agent_key=user.get_agent_key()
+            )
+        else:
+            data = {'error': 'Please connect your wallet'}
         return jsonify({
-            "status": "success",
+            "status": "success" if 'error' not in data else "error",
             "network": data.get('network'),
             "account": {
                 "margin_summary": {
-                    "accountValue": data.get('account_value'),
-                    "totalMarginUsed": data.get('total_margin_used'),
-                    "withdrawable": data.get('withdrawable')
+                    "accountValue": data.get('account_value', 0),
+                    "totalMarginUsed": data.get('total_margin_used', 0),
+                    "withdrawable": data.get('withdrawable', 0)
                 },
                 "positions": data.get('positions', [])
             }
