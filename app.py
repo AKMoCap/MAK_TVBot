@@ -15,7 +15,9 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from functools import wraps
+from flask import Flask, request, jsonify, render_template, send_from_directory, redirect, url_for, session, flash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -23,9 +25,102 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-i
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///trading_bot.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Site password from environment (can be plain text or pre-hashed)
+SITE_PASSWORD = os.environ.get('SITE_PASSWORD', '')
+SITE_PASSWORD_HASH = os.environ.get('SITE_PASSWORD_HASH', '')
+
 # Initialize database
 from models import db, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog
 init_db(app)
+
+
+# ============================================================================
+# AUTHENTICATION
+# ============================================================================
+
+def is_password_protected():
+    """Check if password protection is enabled"""
+    return bool(SITE_PASSWORD or SITE_PASSWORD_HASH)
+
+
+def verify_password(password):
+    """Verify password against stored hash or plain text using secure comparison"""
+    import hmac
+    if SITE_PASSWORD_HASH:
+        # Use pre-hashed password for maximum security
+        return check_password_hash(SITE_PASSWORD_HASH, password)
+    elif SITE_PASSWORD:
+        # Use constant-time comparison to prevent timing attacks
+        return hmac.compare_digest(password, SITE_PASSWORD)
+    return True
+
+
+def login_required(f):
+    """Decorator to require login for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_password_protected():
+            # No password set, allow access
+            return f(*args, **kwargs)
+        if not session.get('authenticated'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# Public endpoints that don't require authentication
+PUBLIC_ENDPOINTS = {'login', 'logout', 'health', 'webhook', 'static'}
+
+
+@app.before_request
+def check_authentication():
+    """Check authentication for all requests except public endpoints"""
+    if not is_password_protected():
+        return None
+    
+    # Allow public endpoints
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    
+    # Allow static files
+    if request.path.startswith('/static/'):
+        return None
+    
+    # Check if authenticated
+    if not session.get('authenticated'):
+        # For API routes, return 401
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Authentication required'}), 401
+        # For web routes, redirect to login
+        return redirect(url_for('login'))
+    
+    return None
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if not is_password_protected():
+        # No password configured, redirect to dashboard
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        if verify_password(password):
+            session['authenticated'] = True
+            session.permanent = True
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Incorrect password', 'error')
+    
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """Logout and clear session"""
+    session.clear()
+    return redirect(url_for('login'))
 
 # Initialize managers
 from risk_manager import risk_manager
