@@ -1031,19 +1031,25 @@ def api_wallet_prepare_agent():
         use_testnet = user.use_testnet
 
         # Build EIP-712 typed data for Hyperliquid agent approval
-        # Hyperliquid uses chainId 1337 for L1 signing (both mainnet and testnet)
-        # The "hyperliquidChain" field in the message determines the network
-        chain_id = 1337  # Hyperliquid L1 signing chain
-        verifying_contract = "0x0000000000000000000000000000000000000000"
+        # Must use Arbitrum chain IDs (matching ShuttheBox implementation)
+        if use_testnet:
+            chain_id = 421614  # Arbitrum Sepolia
+            signature_chain_id = '0x66eee'  # Hex format for API
+            hyperliquid_chain = 'Testnet'
+        else:
+            chain_id = 42161  # Arbitrum One
+            signature_chain_id = '0xa4b1'  # Hex format for API
+            hyperliquid_chain = 'Mainnet'
 
-        sign_data = {
-            "domain": {
-                "name": "HyperliquidSignTransaction",
-                "version": "1",
-                "chainId": chain_id,
-                "verifyingContract": verifying_contract
-            },
+        # Full EIP-712 typed data structure
+        typed_data = {
             "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"}
+                ],
                 "HyperliquidTransaction:ApproveAgent": [
                     {"name": "hyperliquidChain", "type": "string"},
                     {"name": "agentAddress", "type": "address"},
@@ -1051,8 +1057,15 @@ def api_wallet_prepare_agent():
                     {"name": "nonce", "type": "uint64"}
                 ]
             },
+            "primaryType": "HyperliquidTransaction:ApproveAgent",
+            "domain": {
+                "name": "HyperliquidSignTransaction",
+                "version": "1",
+                "chainId": chain_id,
+                "verifyingContract": "0x0000000000000000000000000000000000000000"
+            },
             "message": {
-                "hyperliquidChain": "Testnet" if use_testnet else "Mainnet",
+                "hyperliquidChain": hyperliquid_chain,
                 "agentAddress": agent_address,
                 "agentName": "MAKTVBot",
                 "nonce": nonce
@@ -1062,9 +1075,11 @@ def api_wallet_prepare_agent():
         return jsonify({
             'success': True,
             'agent_address': agent_address,
-            'agent_key': agent_key,  # Sent securely, will be stored encrypted
+            'agent_key': agent_key,
             'nonce': nonce,
-            'sign_data': sign_data
+            'typed_data': typed_data,
+            'signature_chain_id': signature_chain_id,
+            'hyperliquid_chain': hyperliquid_chain
         })
 
     except Exception as e:
@@ -1100,11 +1115,21 @@ def api_wallet_approve_agent():
         from hyperliquid.utils import constants
         import requests
 
-        api_url = constants.TESTNET_API_URL if user.use_testnet else constants.MAINNET_API_URL
+        # Determine network settings
+        if user.use_testnet:
+            api_url = constants.TESTNET_API_URL
+            signature_chain_id = '0x66eee'  # Arbitrum Sepolia
+            hyperliquid_chain = 'Testnet'
+        else:
+            api_url = constants.MAINNET_API_URL
+            signature_chain_id = '0xa4b1'  # Arbitrum One
+            hyperliquid_chain = 'Mainnet'
 
-        # Build the action payload - must match what was signed
+        # Build the action payload - must match ShuttheBox format
         action = {
             "type": "approveAgent",
+            "hyperliquidChain": hyperliquid_chain,
+            "signatureChainId": signature_chain_id,
             "agentAddress": agent_address,
             "agentName": "MAKTVBot",
             "nonce": nonce
@@ -1120,8 +1145,12 @@ def api_wallet_approve_agent():
         payload = {
             "action": action,
             "nonce": nonce,
-            "signature": {"r": r, "s": s, "v": v}
+            "signature": {"r": r, "s": s, "v": v},
+            "vaultAddress": None
         }
+
+        logger.info(f"Submitting agent approval to Hyperliquid: {api_url}/exchange")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
 
         # Submit to Hyperliquid exchange endpoint
         response = requests.post(
