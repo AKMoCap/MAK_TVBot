@@ -66,11 +66,20 @@ class BotManager:
         self._enabled = False
         logger.info("Bot disabled")
 
-    def get_config(self):
-        """Get configuration from environment"""
+    def get_config(self, user_wallet=None, user_agent_key=None):
+        """Get configuration - can be user-specific or from environment"""
         use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
 
-        # Select API secret based on network
+        # If user credentials provided, use those
+        if user_wallet and user_agent_key:
+            return {
+                'main_wallet': user_wallet,
+                'api_secret': user_agent_key,
+                'webhook_secret': os.environ.get("WEBHOOK_SECRET"),
+                'use_testnet': use_testnet
+            }
+
+        # Fall back to environment variables (for webhook/legacy support)
         if use_testnet:
             api_secret = os.environ.get("HL_TESTNET_API_SECRET")
         else:
@@ -83,17 +92,17 @@ class BotManager:
             'use_testnet': use_testnet
         }
 
-    def is_configured(self):
+    def is_configured(self, user_wallet=None, user_agent_key=None):
         """Check if bot is properly configured"""
-        config = self.get_config()
+        config = self.get_config(user_wallet, user_agent_key)
         return bool(config['main_wallet'] and config['api_secret'])
 
-    def get_exchange(self):
-        """Get or create exchange connection"""
-        config = self.get_config()
+    def get_exchange(self, user_wallet=None, user_agent_key=None):
+        """Get or create exchange connection - can be user-specific"""
+        config = self.get_config(user_wallet, user_agent_key)
 
         if not config['main_wallet'] or not config['api_secret']:
-            raise ValueError("Missing wallet configuration")
+            raise ValueError("Missing wallet configuration. Please connect your wallet.")
 
         api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
 
@@ -102,6 +111,16 @@ class BotManager:
         exchange = Exchange(wallet, api_url, account_address=config['main_wallet'])
 
         return info, exchange
+
+    def get_exchange_for_user(self, user):
+        """Get exchange connection for a specific user from database model"""
+        if not user or not user.has_agent_key():
+            raise ValueError("User wallet not authorized. Please connect and authorize your wallet.")
+
+        return self.get_exchange(
+            user_wallet=user.address,
+            user_agent_key=user.get_agent_key()
+        )
 
     def _on_ws_prices(self, msg):
         """Callback for WebSocket price updates"""
@@ -160,14 +179,14 @@ class BotManager:
             self._ws_connected = False
             logger.info("WebSocket price streaming stopped")
 
-    def get_account_info(self):
+    def get_account_info(self, user_wallet=None, user_agent_key=None):
         """Get account balance and positions from Hyperliquid"""
         try:
-            config = self.get_config()
-            if not self.is_configured():
+            config = self.get_config(user_wallet, user_agent_key)
+            if not self.is_configured(user_wallet, user_agent_key):
                 return {'error': 'Bot not configured'}
 
-            info, _ = self.get_exchange()
+            info, _ = self.get_exchange(user_wallet, user_agent_key)
             user_state = info.user_state(config['main_wallet'])
 
             margin_summary = user_state.get('marginSummary', {})
@@ -384,13 +403,14 @@ class BotManager:
         raise last_error
 
     def execute_trade(self, coin, action, leverage, collateral_usd, stop_loss_pct=None, take_profit_pct=None,
-                       tp1_pct=None, tp1_size_pct=None, tp2_pct=None, tp2_size_pct=None, slippage=0.01):
+                       tp1_pct=None, tp1_size_pct=None, tp2_pct=None, tp2_size_pct=None, slippage=0.01,
+                       user_wallet=None, user_agent_key=None):
         """Execute a trade on Hyperliquid"""
         if not self._enabled:
             return {'success': False, 'error': 'Bot is disabled'}
 
         try:
-            info, exchange = self.get_exchange()
+            info, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             # Get full asset metadata (uses cache)
             asset_meta = self.get_asset_metadata()
@@ -495,7 +515,7 @@ class BotManager:
                     sl_price = float(f"{sl_price:.5g}")
 
                     # Place stop loss order on exchange
-                    sl_order_result = self.place_stop_loss_order(coin, side, sl_price, filled_size)
+                    sl_order_result = self.place_stop_loss_order(coin, side, sl_price, filled_size, user_wallet, user_agent_key)
                     if sl_order_result.get('success'):
                         logger.info(f"Stop loss order placed for {coin} at ${sl_price:.2f}")
                     else:
@@ -522,7 +542,7 @@ class BotManager:
                     # Only place order if size is valid
                     if tp1_size > 0:
                         # Place TP1 order on exchange
-                        tp1_order_result = self.place_take_profit_order(coin, side, tp1_price, tp1_size)
+                        tp1_order_result = self.place_take_profit_order(coin, side, tp1_price, tp1_size, user_wallet, user_agent_key)
                         if tp1_order_result.get('success'):
                             logger.info(f"TP1 order placed for {coin} at ${tp1_price:.2f} for {tp1_size_pct}% of position")
                         else:
@@ -546,7 +566,7 @@ class BotManager:
                     # Only place order if size is valid
                     if tp2_size > 0:
                         # Place TP2 order on exchange
-                        tp2_order_result = self.place_take_profit_order(coin, side, tp2_price, tp2_size)
+                        tp2_order_result = self.place_take_profit_order(coin, side, tp2_price, tp2_size, user_wallet, user_agent_key)
                         if tp2_order_result.get('success'):
                             logger.info(f"TP2 order placed for {coin} at ${tp2_price:.2f} for {tp2_size_pct}% of position")
                         else:
@@ -565,7 +585,7 @@ class BotManager:
                     tp_price = float(f"{tp_price:.5g}")
 
                     # Place take profit order on exchange
-                    tp_order_result = self.place_take_profit_order(coin, side, tp_price, filled_size)
+                    tp_order_result = self.place_take_profit_order(coin, side, tp_price, filled_size, user_wallet, user_agent_key)
                     if tp_order_result.get('success'):
                         logger.info(f"Take profit order placed for {coin} at ${tp_price:.2f}")
                     else:
@@ -604,10 +624,10 @@ class BotManager:
             logger.exception(f"Trade execution error: {e}")
             return {'success': False, 'error': str(e)}
 
-    def close_position(self, coin, size=None):
+    def close_position(self, coin, size=None, user_wallet=None, user_agent_key=None):
         """Close a position for a coin"""
         try:
-            _, exchange = self.get_exchange()
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             if size:
                 # Partial close - TODO: implement
@@ -622,10 +642,10 @@ class BotManager:
             logger.exception(f"Error closing position: {e}")
             return {'success': False, 'error': str(e)}
 
-    def place_stop_loss_order(self, coin, side, trigger_price, size):
+    def place_stop_loss_order(self, coin, side, trigger_price, size, user_wallet=None, user_agent_key=None):
         """Place a stop loss order on the exchange"""
         try:
-            _, exchange = self.get_exchange()
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             # Get size decimals for proper rounding
             sz_decimals = self.get_size_decimals(coin)
@@ -693,10 +713,10 @@ class BotManager:
             logger.exception(f"Error placing stop loss: {e}")
             return {'success': False, 'error': str(e)}
 
-    def place_take_profit_order(self, coin, side, trigger_price, size):
+    def place_take_profit_order(self, coin, side, trigger_price, size, user_wallet=None, user_agent_key=None):
         """Place a take profit order on the exchange"""
         try:
-            _, exchange = self.get_exchange()
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             # Get size decimals for proper rounding
             sz_decimals = self.get_size_decimals(coin)
@@ -764,22 +784,22 @@ class BotManager:
             logger.exception(f"Error placing take profit: {e}")
             return {'success': False, 'error': str(e)}
 
-    def get_open_orders(self):
+    def get_open_orders(self, user_wallet=None, user_agent_key=None):
         """Get all open orders"""
         try:
-            config = self.get_config()
-            info, _ = self.get_exchange()
+            config = self.get_config(user_wallet, user_agent_key)
+            info, _ = self.get_exchange(user_wallet, user_agent_key)
             orders = info.open_orders(config['main_wallet'])
             return orders
         except Exception as e:
             logger.exception(f"Error getting open orders: {e}")
             return []
 
-    def cancel_all_orders(self, coin=None):
+    def cancel_all_orders(self, coin=None, user_wallet=None, user_agent_key=None):
         """Cancel all open orders, optionally for a specific coin"""
         try:
-            _, exchange = self.get_exchange()
-            orders = self.get_open_orders()
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
+            orders = self.get_open_orders(user_wallet, user_agent_key)
 
             cancelled = []
             for order in orders:
