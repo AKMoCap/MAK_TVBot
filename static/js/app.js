@@ -603,35 +603,61 @@ async function executeCategoryTrade(category, action, collateral, leverage, stop
     let successCount = 0;
     let failedCoins = [];
 
-    // Execute trades sequentially to avoid overwhelming the API
-    for (const coin of coins) {
-        try {
-            const result = await apiCall('/trade', 'POST', {
-                coin,
-                action,
-                leverage,
-                collateral_usd: collateral,
-                stop_loss_pct: stopLoss,
-                tp1_pct: tp1Pct,
-                tp1_size_pct: tp1SizePct,
-                tp2_pct: tp2Pct,
-                tp2_size_pct: tp2SizePct
-            });
+    // Helper function to execute trade with retry logic
+    async function executeWithRetry(coin, maxRetries = 3) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const result = await apiCall('/trade', 'POST', {
+                    coin,
+                    action,
+                    leverage,
+                    collateral_usd: collateral,
+                    stop_loss_pct: stopLoss,
+                    tp1_pct: tp1Pct,
+                    tp1_size_pct: tp1SizePct,
+                    tp2_pct: tp2Pct,
+                    tp2_size_pct: tp2SizePct
+                });
 
-            if (result.success) {
-                successCount++;
-                showToast(`${coin} ${action.toUpperCase()} opened (${successCount}/${coins.length})`, 'success');
-            } else {
-                failedCoins.push(`${coin}: ${result.error || 'Unknown error'}`);
-                showToast(`${coin} failed: ${result.error || 'Unknown error'}`, 'error');
+                if (result.success) {
+                    return { success: true, result };
+                } else if (result.error && result.error.includes('429')) {
+                    // Rate limited - wait and retry
+                    if (attempt < maxRetries) {
+                        const waitTime = attempt * 3000; // 3s, 6s, 9s
+                        showToast(`${coin} rate limited, retrying in ${waitTime/1000}s...`, 'warning');
+                        await new Promise(resolve => setTimeout(resolve, waitTime));
+                        continue;
+                    }
+                }
+                return { success: false, error: result.error || 'Unknown error' };
+            } catch (error) {
+                if (attempt < maxRetries && error.message && error.message.includes('429')) {
+                    const waitTime = attempt * 3000;
+                    showToast(`${coin} rate limited, retrying in ${waitTime/1000}s...`, 'warning');
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    continue;
+                }
+                return { success: false, error: error.message || 'Request failed' };
             }
-        } catch (error) {
-            failedCoins.push(`${coin}: ${error.message || 'Failed'}`);
-            showToast(`${coin} failed: ${error.message || 'Request failed'}`, 'error');
+        }
+        return { success: false, error: 'Max retries exceeded' };
+    }
+
+    // Execute trades sequentially with longer delay to avoid rate limiting
+    for (const coin of coins) {
+        const result = await executeWithRetry(coin);
+
+        if (result.success) {
+            successCount++;
+            showToast(`${coin} ${action.toUpperCase()} opened (${successCount}/${coins.length})`, 'success');
+        } else {
+            failedCoins.push(`${coin}: ${result.error}`);
+            showToast(`${coin} failed: ${result.error}`, 'error');
         }
 
-        // Delay between trades to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Longer delay between trades to avoid rate limiting (2.5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 2500));
     }
 
     // Show final summary

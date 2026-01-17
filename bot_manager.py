@@ -276,6 +276,29 @@ class BotManager:
 
         return size, current_price
 
+    def _retry_api_call(self, func, max_retries=3, initial_delay=2):
+        """
+        Execute an API call with retry logic for rate limiting (429 errors).
+        Uses exponential backoff: 2s, 4s, 8s
+        """
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                # Check for rate limiting (429)
+                if '429' in error_str:
+                    if attempt < max_retries - 1:
+                        delay = initial_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Rate limited (429), retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                # Non-429 errors or max retries reached
+                raise
+        raise last_error
+
     def execute_trade(self, coin, action, leverage, collateral_usd, stop_loss_pct=None, take_profit_pct=None, slippage=0.01):
         """Execute a trade on Hyperliquid"""
         if not self._enabled:
@@ -313,7 +336,9 @@ class BotManager:
             # This is required for assets with onlyIsolated=True (like AERO)
             logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x, isolated margin)")
             try:
-                leverage_result = exchange.update_leverage(leverage, coin, is_cross=False)
+                leverage_result = self._retry_api_call(
+                    lambda: exchange.update_leverage(leverage, coin, is_cross=False)
+                )
                 logger.info(f"Leverage update result for {coin}: {leverage_result}")
             except Exception as lev_error:
                 error_msg = f"Failed to set leverage for {coin}: {str(lev_error)}"
@@ -323,16 +348,12 @@ class BotManager:
             # Calculate position size (uses cached prices and metadata)
             size, entry_price = self.calculate_position_size(coin, collateral_usd, leverage, asset_meta=asset_meta)
 
-            # Execute order
+            # Execute order with retry logic
             is_buy = action.lower() == 'buy'
             logger.info(f"Executing {'BUY' if is_buy else 'SELL'} {size} {coin} at ~${entry_price:.2f}")
 
-            order_result = exchange.market_open(
-                coin,
-                is_buy,
-                size,
-                None,  # Market price
-                slippage
+            order_result = self._retry_api_call(
+                lambda: exchange.market_open(coin, is_buy, size, None, slippage)
             )
 
             logger.info(f"Order result: {json.dumps(order_result, indent=2)}")
