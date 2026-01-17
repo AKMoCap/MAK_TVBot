@@ -2,6 +2,7 @@
 Bot Manager Module
 ==================
 Manages bot state, trading operations, and position monitoring.
+Uses WebSocket for real-time price streaming to minimize API calls.
 """
 
 import os
@@ -14,6 +15,13 @@ from eth_account import Account
 from hyperliquid.info import Info
 from hyperliquid.exchange import Exchange
 from hyperliquid.utils import constants
+
+# Try to import WebsocketManager for price streaming
+try:
+    from hyperliquid.websocket_manager import WebsocketManager
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    WEBSOCKET_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +42,17 @@ class BotManager:
         self._asset_meta_cache_time = 0
         self._asset_meta_cache_ttl = 300  # 5 minutes TTL
 
-        # Cache for market prices
+        # WebSocket price streaming
+        self._ws_manager = None
+        self._ws_prices = {}  # Real-time prices from WebSocket
+        self._ws_prices_lock = threading.Lock()
+        self._ws_connected = False
+        self._ws_last_update = 0
+
+        # Fallback cache for REST API prices (only used if WebSocket is down)
         self._prices_cache = {}
         self._prices_cache_time = 0
-        self._prices_cache_ttl = 2  # 2 seconds TTL for prices
+        self._prices_cache_ttl = 2  # 2 seconds TTL for REST fallback
 
     @property
     def is_enabled(self):
@@ -87,6 +102,63 @@ class BotManager:
         exchange = Exchange(wallet, api_url, account_address=config['main_wallet'])
 
         return info, exchange
+
+    def _on_ws_prices(self, msg):
+        """Callback for WebSocket price updates"""
+        try:
+            # allMids message format: {"channel": "allMids", "data": {"mids": {"BTC": "50000.5", ...}}}
+            if isinstance(msg, dict):
+                mids = msg.get('mids', msg.get('data', {}).get('mids', {}))
+                if mids:
+                    with self._ws_prices_lock:
+                        for coin, price in mids.items():
+                            self._ws_prices[coin] = float(price)
+                        self._ws_last_update = time.time()
+                        self._ws_connected = True
+        except Exception as e:
+            logger.error(f"Error processing WebSocket price update: {e}")
+
+    def start_price_stream(self):
+        """Start WebSocket price streaming"""
+        if not WEBSOCKET_AVAILABLE:
+            logger.warning("WebSocket not available, using REST API fallback")
+            return False
+
+        if self._ws_manager is not None:
+            logger.info("WebSocket already running")
+            return True
+
+        try:
+            config = self.get_config()
+            api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+            self._ws_manager = WebsocketManager(api_url)
+            self._ws_manager.start()
+
+            # Wait for connection
+            time.sleep(1)
+
+            # Subscribe to all mid prices
+            self._ws_manager.subscribe({"type": "allMids"}, self._on_ws_prices)
+
+            logger.info("WebSocket price streaming started")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Failed to start WebSocket: {e}")
+            self._ws_manager = None
+            return False
+
+    def stop_price_stream(self):
+        """Stop WebSocket price streaming"""
+        if self._ws_manager:
+            try:
+                self._ws_manager.stop()
+            except:
+                pass
+            self._ws_manager = None
+            self._ws_connected = False
+            logger.info("WebSocket price streaming stopped")
 
     def get_account_info(self):
         """Get account balance and positions from Hyperliquid"""
@@ -175,15 +247,27 @@ class BotManager:
             return {}
 
     def get_market_prices(self, coins=None, force_refresh=False):
-        """Get current market prices with short-term caching (2 seconds)"""
+        """
+        Get current market prices.
+        Uses WebSocket prices if available (no API call), falls back to REST API.
+        """
         current_time = time.time()
 
-        # Check if we can use cached prices
+        # Try WebSocket prices first (no API call needed)
+        if self._ws_connected and (current_time - self._ws_last_update) < 10:
+            with self._ws_prices_lock:
+                if self._ws_prices:
+                    if coins:
+                        return {coin: self._ws_prices.get(coin, 0) for coin in coins}
+                    return dict(self._ws_prices)
+
+        # Fallback: Check REST API cache
         if not force_refresh and self._prices_cache and (current_time - self._prices_cache_time) < self._prices_cache_ttl:
             if coins:
                 return {coin: self._prices_cache.get(coin, 0) for coin in coins}
             return self._prices_cache
 
+        # Fallback: Fetch from REST API
         try:
             info, _ = self.get_exchange()
             all_mids = info.all_mids()
