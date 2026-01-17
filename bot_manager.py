@@ -621,7 +621,25 @@ class BotManager:
                 reduce_only=True
             )
 
-            logger.info(f"Stop loss order placed for {coin}: trigger={trigger_price}, size={size}, result={result}")
+            logger.info(f"Stop loss order result for {coin}: trigger={trigger_price}, size={size}, result={result}")
+
+            # Check if order was successful
+            statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+            if statuses and len(statuses) > 0:
+                status = statuses[0]
+                if "error" in status:
+                    logger.error(f"Stop loss order error for {coin}: {status['error']}")
+                    return {'success': False, 'error': status['error']}
+                elif "resting" in status or "filled" in status:
+                    logger.info(f"Stop loss order placed successfully for {coin}")
+                    return {'success': True, 'result': result}
+
+            # Check for top-level error
+            if result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                logger.error(f"Stop loss order failed for {coin}: {error_msg}")
+                return {'success': False, 'error': str(error_msg)}
+
             return {'success': True, 'result': result}
         except Exception as e:
             logger.exception(f"Error placing stop loss: {e}")
@@ -647,7 +665,25 @@ class BotManager:
                 reduce_only=True
             )
 
-            logger.info(f"Take profit order placed for {coin}: trigger={trigger_price}, size={size}, result={result}")
+            logger.info(f"Take profit order result for {coin}: trigger={trigger_price}, size={size}, result={result}")
+
+            # Check if order was successful
+            statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+            if statuses and len(statuses) > 0:
+                status = statuses[0]
+                if "error" in status:
+                    logger.error(f"Take profit order error for {coin}: {status['error']}")
+                    return {'success': False, 'error': status['error']}
+                elif "resting" in status or "filled" in status:
+                    logger.info(f"Take profit order placed successfully for {coin}")
+                    return {'success': True, 'result': result}
+
+            # Check for top-level error
+            if result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                logger.error(f"Take profit order failed for {coin}: {error_msg}")
+                return {'success': False, 'error': str(error_msg)}
+
             return {'success': True, 'result': result}
         except Exception as e:
             logger.exception(f"Error placing take profit: {e}")
