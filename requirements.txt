@@ -4,6 +4,7 @@
 # Web framework
 flask>=3.0.0
 flask-sqlalchemy>=3.1.0
+flask-migrate>=4.0.0
 
 # Hyperliquid SDK
 hyperliquid-python-sdk>=0.20.0
@@ -21,3 +22,6 @@ requests>=2.31.0
 gunicorn>=21.0.0
 flask-sqlalchemy
 psycopg2-binary
+
+# Encryption
+cryptography>=41.0.0

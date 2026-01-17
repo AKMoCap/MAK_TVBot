@@ -24,7 +24,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:/
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize database
-from models import db, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog, UserWallet
+from models import db, migrate, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog, UserWallet
 init_db(app)
 
 # Initialize managers
