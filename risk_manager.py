@@ -3,8 +3,7 @@ Risk Management Module
 =======================
 Handles all risk checks before trade execution:
 - Position limits
-- Daily loss limits
-- Consecutive loss circuit breakers
+- Leverage limits
 - Stop-loss and take-profit calculations
 """
 
@@ -21,8 +20,6 @@ class RiskManager:
 
     def __init__(self, app=None):
         self.app = app
-        self._paused_until = None
-        self._consecutive_losses = 0
 
     def log_activity(self, level, category, message, details=None):
         """Log activity to database"""
@@ -68,11 +65,6 @@ class RiskManager:
         if not coin_config.enabled:
             return False, f"Trading disabled for {coin}"
 
-        # Check if bot is paused due to losses
-        if self._paused_until and datetime.utcnow() < self._paused_until:
-            remaining = (self._paused_until - datetime.utcnow()).seconds // 60
-            return False, f"Bot paused for {remaining} more minutes due to consecutive losses"
-
         # Check leverage limit
         if leverage > settings.max_leverage:
             return False, f"Leverage {leverage}x exceeds maximum {settings.max_leverage}x"
@@ -105,23 +97,9 @@ class RiskManager:
         return Trade.query.filter(Trade.timestamp >= today).count()
 
     def record_trade_result(self, pnl):
-        """Record trade result for consecutive loss tracking"""
-        settings = self.get_risk_settings()
-
-        if pnl < 0:
-            self._consecutive_losses += 1
-            if self._consecutive_losses >= settings.pause_on_consecutive_losses:
-                self._paused_until = datetime.utcnow() + timedelta(
-                    minutes=settings.pause_duration_minutes
-                )
-                self.log_activity(
-                    'warning', 'risk',
-                    f"Bot paused for {settings.pause_duration_minutes} minutes due to {self._consecutive_losses} consecutive losses",
-                    {'consecutive_losses': self._consecutive_losses}
-                )
-                self._consecutive_losses = 0
-        else:
-            self._consecutive_losses = 0
+        """Record trade result (placeholder for future analytics)"""
+        # Currently no action needed - P&L is recorded in the Trade model
+        pass
 
     def calculate_stop_loss_price(self, entry_price, side, stop_loss_pct):
         """Calculate stop loss price based on percentage"""
@@ -230,8 +208,6 @@ class RiskManager:
             'winning_trades': winning,
             'losing_trades': losing,
             'win_rate': (winning / len(closed_today) * 100) if closed_today else 0,
-            'consecutive_losses': self._consecutive_losses,
-            'is_paused': self._paused_until and datetime.utcnow() < self._paused_until,
             'collateral_at_risk_pct': collateral_at_risk_pct,
             'cross_margin_used': cross_margin_used,
             'max_exposure_pct': settings.max_total_exposure_pct,
