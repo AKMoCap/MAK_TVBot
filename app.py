@@ -672,9 +672,13 @@ def api_get_settings():
     try:
         risk = RiskSettings.query.first()
 
+        # Debug: log the actual value
+        logger.info(f"[SETTINGS] USE_TESTNET={USE_TESTNET}, returning use_testnet='{str(USE_TESTNET).lower()}'")
+
         return jsonify({
             'bot_enabled': BotConfig.get('bot_enabled', 'true'),
             'use_testnet': str(USE_TESTNET).lower(),  # Use actual environment variable
+            'network': 'testnet' if USE_TESTNET else 'mainnet',  # Add explicit network field
             'default_leverage': BotConfig.get('default_leverage', '3'),
             'default_collateral': BotConfig.get('default_collateral', '100'),
             'slippage_tolerance': BotConfig.get('slippage_tolerance', '0.003'),
