@@ -7,7 +7,8 @@ class WalletManager {
     constructor() {
         this.provider = null;
         this.signer = null;
-        this.address = null;
+        this.address = null;  // lowercase for comparisons
+        this.checksumAddress = null;  // original case for signing
         this.chainId = null;
         this.isConnected = false;
         this.agentKey = null;
@@ -36,22 +37,28 @@ class WalletManager {
             const data = await response.json();
 
             if (data.connected && data.address) {
-                this.address = data.address;
+                this.address = data.address.toLowerCase();
                 this.isConnected = true;
                 this.agentKey = data.has_agent_key;
                 this.updateUI();
 
                 // Try to reconnect Web3 provider silently
                 if (window.ethereum) {
-                    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-                    if (accounts.length > 0 && accounts[0].toLowerCase() === this.address.toLowerCase()) {
-                        this.provider = new ethers.BrowserProvider(window.ethereum);
-                        this.signer = await this.provider.getSigner();
+                    try {
+                        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                        if (accounts.length > 0 && accounts[0].toLowerCase() === this.address) {
+                            this.checksumAddress = accounts[0];
+                            this.provider = new ethers.BrowserProvider(window.ethereum);
+                            this.signer = await this.provider.getSigner();
+                            console.log('Reconnected Web3 provider for:', this.checksumAddress);
+                        }
+                    } catch (e) {
+                        console.log('Could not reconnect Web3 provider:', e);
                     }
                 }
             }
         } catch (error) {
-            console.log('No existing session');
+            console.log('No existing session:', error);
         }
     }
 
@@ -71,14 +78,17 @@ class WalletManager {
             this.provider = new ethers.BrowserProvider(window.ethereum);
             const accounts = await this.provider.send('eth_requestAccounts', []);
 
-            if (accounts.length === 0) {
+            if (!accounts || accounts.length === 0) {
                 throw new Error('No accounts found');
             }
 
             this.signer = await this.provider.getSigner();
-            this.address = await this.signer.getAddress();
+            this.checksumAddress = await this.signer.getAddress();
+            this.address = this.checksumAddress.toLowerCase();
             const network = await this.provider.getNetwork();
             this.chainId = Number(network.chainId);
+
+            console.log('Wallet connected:', this.checksumAddress, 'Chain:', this.chainId);
 
             // Register wallet with backend
             const response = await fetch('/api/wallet/connect', {
@@ -207,9 +217,20 @@ class WalletManager {
             // Sign using eth_signTypedData_v4 directly (like ShuttheBox)
             const typedData = prepData.typed_data;
 
+            // Use checksummed address for signing (MetaMask requires it)
+            // If we don't have checksumAddress, get it from wallet
+            let signingAddress = this.checksumAddress;
+            if (!signingAddress && window.ethereum) {
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                signingAddress = accounts[0];
+            }
+
+            console.log('Signing with address:', signingAddress);
+            console.log('Typed data:', JSON.stringify(typedData, null, 2));
+
             const signature = await window.ethereum.request({
                 method: 'eth_signTypedData_v4',
-                params: [this.address, JSON.stringify(typedData)]
+                params: [signingAddress, JSON.stringify(typedData)]
             });
 
             statusDiv.innerHTML = '<div class="text-muted">Submitting approval to Hyperliquid...</div>';
@@ -276,8 +297,11 @@ class WalletManager {
         this.provider = null;
         this.signer = null;
         this.address = null;
+        this.checksumAddress = null;
         this.isConnected = false;
         this.agentKey = null;
+
+        console.log('Wallet disconnected');
 
         // Close any open wallet menu
         const menu = document.getElementById('wallet-menu');
