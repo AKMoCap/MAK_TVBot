@@ -147,7 +147,7 @@ def webhook():
         # PARSE THE ALERT DATA
         # ====================================================================
         action = data.get("action", "").lower()  # "buy" or "sell"
-        coin = data.get("coin", "BTC").upper()   # e.g., "BTC", "ETH"
+        coin = data.get("coin", "BTC")  # Preserve case - Hyperliquid uses case-sensitive names like kBONK
         leverage = int(data.get("leverage", 10))
         collateral_usd = float(data.get("collateral_usd", 100))
         close_position = data.get("close_position", False)
