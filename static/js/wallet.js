@@ -18,6 +18,24 @@ class WalletManager {
         this.ARBITRUM_ONE_CHAIN_ID = 42161;
         this.ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
 
+        // Network configurations for adding/switching
+        this.NETWORKS = {
+            42161: {
+                chainId: '0xa4b1',
+                chainName: 'Arbitrum One',
+                nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+                blockExplorerUrls: ['https://arbiscan.io']
+            },
+            421614: {
+                chainId: '0x66eee',
+                chainName: 'Arbitrum Sepolia',
+                nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
+                blockExplorerUrls: ['https://sepolia.arbiscan.io']
+            }
+        };
+
         // Check for existing session on load
         this.checkExistingSession();
 
@@ -25,6 +43,59 @@ class WalletManager {
         if (window.ethereum) {
             window.ethereum.on('accountsChanged', (accounts) => this.handleAccountsChanged(accounts));
             window.ethereum.on('chainChanged', (chainId) => this.handleChainChanged(chainId));
+        }
+    }
+
+    /**
+     * Switch to the required network for Hyperliquid signing
+     */
+    async switchToRequiredNetwork(requiredChainId) {
+        const currentChainId = this.chainId;
+
+        if (currentChainId === requiredChainId) {
+            console.log('Already on correct network:', requiredChainId);
+            return true;
+        }
+
+        const networkConfig = this.NETWORKS[requiredChainId];
+        if (!networkConfig) {
+            throw new Error(`Unknown network: ${requiredChainId}`);
+        }
+
+        console.log(`Switching from chain ${currentChainId} to ${requiredChainId} (${networkConfig.chainName})`);
+
+        try {
+            // Try to switch to the network
+            await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: networkConfig.chainId }]
+            });
+
+            // Update our stored chain ID
+            this.chainId = requiredChainId;
+            console.log('Successfully switched to', networkConfig.chainName);
+            return true;
+
+        } catch (switchError) {
+            // Error code 4902 means the network hasn't been added yet
+            if (switchError.code === 4902) {
+                console.log('Network not found, adding it...');
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [networkConfig]
+                    });
+                    this.chainId = requiredChainId;
+                    console.log('Successfully added and switched to', networkConfig.chainName);
+                    return true;
+                } catch (addError) {
+                    console.error('Failed to add network:', addError);
+                    throw new Error(`Please add ${networkConfig.chainName} network to your wallet manually`);
+                }
+            } else {
+                console.error('Failed to switch network:', switchError);
+                throw new Error(`Please switch to ${networkConfig.chainName} in your wallet`);
+            }
         }
     }
 
@@ -211,11 +282,22 @@ class WalletManager {
                 throw new Error(prepData.error || 'Failed to prepare agent');
             }
 
+            // Get the typed data from backend
+            const typedData = prepData.typed_data;
+            const requiredChainId = typedData.domain.chainId;
+
+            // Switch to the required network for signing
+            statusDiv.innerHTML = '<div class="text-muted">Switching to required network...</div>';
+            approveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Switch Network...';
+
+            try {
+                await this.switchToRequiredNetwork(requiredChainId);
+            } catch (networkError) {
+                throw new Error(`Network switch failed: ${networkError.message}`);
+            }
+
             statusDiv.innerHTML = '<div class="text-muted">Please sign the message in your wallet...</div>';
             approveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sign in Wallet...';
-
-            // Sign using eth_signTypedData_v4 directly (like ShuttheBox)
-            const typedData = prepData.typed_data;
 
             // Use checksummed address for signing (MetaMask requires it)
             // If we don't have checksumAddress, get it from wallet
@@ -226,6 +308,7 @@ class WalletManager {
             }
 
             console.log('Signing with address:', signingAddress);
+            console.log('Required chain:', requiredChainId);
             console.log('Typed data:', JSON.stringify(typedData, null, 2));
 
             const signature = await window.ethereum.request({
