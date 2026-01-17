@@ -14,11 +14,12 @@ A full-featured trading bot that bridges TradingView alerts with Hyperliquid exc
 ```
 .
 ├── app.py               # Main Flask application with web UI and webhook endpoints
-├── models.py            # SQLAlchemy database models
+├── models.py            # SQLAlchemy database models with Flask-Migrate
 ├── bot_manager.py       # Trading bot logic and Hyperliquid integration
 ├── risk_manager.py      # Risk management logic
+├── migrations/          # Alembic database migrations (auto-run on startup)
 ├── static/              # Frontend assets (CSS, JS)
-├── templates/           # HTML templates
+├── templates/           # HTML templates (including login.html)
 ├── main.py              # Legacy simple webhook handler
 ├── requirements.txt     # Python dependencies
 └── README.md            # Basic project info
@@ -52,6 +53,7 @@ Database tables:
 - `WEBHOOK_SECRET` - Secret key for TradingView webhook validation
 - `USE_TESTNET` - Set to "true" for testnet, "false" for mainnet
 - `SECRET_KEY` - Flask session secret key
+- `SITE_PASSWORD` - Password to access the web dashboard (optional but recommended)
 
 ## TradingView Webhook Payload Format
 ```json
@@ -65,7 +67,18 @@ Database tables:
 }
 ```
 
+## Database Migrations
+The application uses Flask-Migrate (Alembic) for database schema management. Migrations run automatically on startup to prevent schema drift issues.
+
+To create a new migration after changing models:
+```bash
+FLASK_APP=app.py flask db migrate -m "Description of changes"
+FLASK_APP=app.py flask db upgrade
+```
+
 ## Recent Changes
+- 2026-01-17: Added password protection for web dashboard (login page with session-based auth)
+- 2026-01-17: Implemented Flask-Migrate for automated database migrations
 - 2026-01-16: Initial import and setup in Replit environment
 - 2026-01-16: Added flask-sqlalchemy for database support
 - 2026-01-16: Updated workflow to run app.py with web UI
