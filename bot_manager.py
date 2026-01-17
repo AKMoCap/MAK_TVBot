@@ -480,6 +480,7 @@ class BotManager:
                 # Calculate SL/TP prices
                 side = 'long' if is_buy else 'short'
                 filled_size = float(fills[0]['size']) if fills else size
+                sz_decimals = self.get_size_decimals(coin)
                 sl_price = None
                 tp_price = None
                 sl_order_result = None
@@ -490,6 +491,8 @@ class BotManager:
                         sl_price = actual_price * (1 - stop_loss_pct / 100)
                     else:
                         sl_price = actual_price * (1 + stop_loss_pct / 100)
+                    # Round to 5 significant figures
+                    sl_price = float(f"{sl_price:.5g}")
 
                     # Place stop loss order on exchange
                     sl_order_result = self.place_stop_loss_order(coin, side, sl_price, filled_size)
@@ -509,32 +512,48 @@ class BotManager:
                         tp1_price = actual_price * (1 + tp1_pct / 100)
                     else:
                         tp1_price = actual_price * (1 - tp1_pct / 100)
+                    # Round to 5 significant figures
+                    tp1_price = float(f"{tp1_price:.5g}")
 
-                    # Calculate TP1 size (percentage of position)
+                    # Calculate TP1 size (percentage of position) and round
                     tp1_size = filled_size * (tp1_size_pct / 100)
+                    tp1_size = round(tp1_size, sz_decimals)
 
-                    # Place TP1 order on exchange
-                    tp1_order_result = self.place_take_profit_order(coin, side, tp1_price, tp1_size)
-                    if tp1_order_result.get('success'):
-                        logger.info(f"TP1 order placed for {coin} at ${tp1_price:.2f} for {tp1_size_pct}% of position")
+                    # Only place order if size is valid
+                    if tp1_size > 0:
+                        # Place TP1 order on exchange
+                        tp1_order_result = self.place_take_profit_order(coin, side, tp1_price, tp1_size)
+                        if tp1_order_result.get('success'):
+                            logger.info(f"TP1 order placed for {coin} at ${tp1_price:.2f} for {tp1_size_pct}% of position")
+                        else:
+                            logger.warning(f"Failed to place TP1 for {coin}: {tp1_order_result.get('error')}")
                     else:
-                        logger.warning(f"Failed to place TP1 for {coin}: {tp1_order_result.get('error')}")
+                        logger.warning(f"TP1 size too small for {coin}: {tp1_size}")
+                        tp1_order_result = {'success': False, 'error': 'Size too small after rounding'}
 
                 if tp2_pct and tp2_size_pct:
                     if side == 'long':
                         tp2_price = actual_price * (1 + tp2_pct / 100)
                     else:
                         tp2_price = actual_price * (1 - tp2_pct / 100)
+                    # Round to 5 significant figures
+                    tp2_price = float(f"{tp2_price:.5g}")
 
-                    # Calculate TP2 size (percentage of position)
+                    # Calculate TP2 size (percentage of position) and round
                     tp2_size = filled_size * (tp2_size_pct / 100)
+                    tp2_size = round(tp2_size, sz_decimals)
 
-                    # Place TP2 order on exchange
-                    tp2_order_result = self.place_take_profit_order(coin, side, tp2_price, tp2_size)
-                    if tp2_order_result.get('success'):
-                        logger.info(f"TP2 order placed for {coin} at ${tp2_price:.2f} for {tp2_size_pct}% of position")
+                    # Only place order if size is valid
+                    if tp2_size > 0:
+                        # Place TP2 order on exchange
+                        tp2_order_result = self.place_take_profit_order(coin, side, tp2_price, tp2_size)
+                        if tp2_order_result.get('success'):
+                            logger.info(f"TP2 order placed for {coin} at ${tp2_price:.2f} for {tp2_size_pct}% of position")
+                        else:
+                            logger.warning(f"Failed to place TP2 for {coin}: {tp2_order_result.get('error')}")
                     else:
-                        logger.warning(f"Failed to place TP2 for {coin}: {tp2_order_result.get('error')}")
+                        logger.warning(f"TP2 size too small for {coin}: {tp2_size}")
+                        tp2_order_result = {'success': False, 'error': 'Size too small after rounding'}
 
                 # Fallback to single take_profit_pct if TP1/TP2 not specified
                 if take_profit_pct and not tp1_pct and not tp2_pct:
@@ -542,6 +561,8 @@ class BotManager:
                         tp_price = actual_price * (1 + take_profit_pct / 100)
                     else:
                         tp_price = actual_price * (1 - take_profit_pct / 100)
+                    # Round to 5 significant figures
+                    tp_price = float(f"{tp_price:.5g}")
 
                     # Place take profit order on exchange
                     tp_order_result = self.place_take_profit_order(coin, side, tp_price, filled_size)
@@ -606,10 +627,23 @@ class BotManager:
         try:
             _, exchange = self.get_exchange()
 
+            # Get size decimals for proper rounding
+            sz_decimals = self.get_size_decimals(coin)
+            size = round(size, sz_decimals)
+
+            # Skip if size is too small after rounding
+            if size <= 0:
+                logger.warning(f"Stop loss size too small for {coin} after rounding")
+                return {'success': False, 'error': 'Size too small'}
+
             # For stop loss, we want to close the position
             # If we're long, we sell on stop loss (is_buy=False)
             # If we're short, we buy on stop loss (is_buy=True)
             is_buy = side == 'short'
+
+            # Round prices to avoid floating point precision issues
+            # Use 5 significant figures like the SDK does
+            trigger_price = float(f"{trigger_price:.5g}")
 
             # Set limit price with slippage to ensure execution
             # For sell stop (long position): limit below trigger (price dropping)
@@ -621,6 +655,9 @@ class BotManager:
             else:
                 # Long position - selling, price is dropping, set limit lower
                 limit_price = trigger_price * (1 - slippage)
+
+            # Round limit price as well
+            limit_price = float(f"{limit_price:.5g}")
 
             order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "sl"}}
             result = exchange.order(
@@ -661,10 +698,23 @@ class BotManager:
         try:
             _, exchange = self.get_exchange()
 
+            # Get size decimals for proper rounding
+            sz_decimals = self.get_size_decimals(coin)
+            size = round(size, sz_decimals)
+
+            # Skip if size is too small after rounding
+            if size <= 0:
+                logger.warning(f"Take profit size too small for {coin} after rounding")
+                return {'success': False, 'error': 'Size too small'}
+
             # For take profit, we want to close the position
             # If we're long, we sell on take profit (is_buy=False)
             # If we're short, we buy on take profit (is_buy=True)
             is_buy = side == 'short'
+
+            # Round prices to avoid floating point precision issues
+            # Use 5 significant figures like the SDK does
+            trigger_price = float(f"{trigger_price:.5g}")
 
             # Set limit price with small slippage to ensure execution
             # For sell TP (long position): limit slightly below trigger
@@ -676,6 +726,9 @@ class BotManager:
             else:
                 # Long position - selling, set limit lower
                 limit_price = trigger_price * (1 - slippage)
+
+            # Round limit price as well
+            limit_price = float(f"{limit_price:.5g}")
 
             order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "tp"}}
             result = exchange.order(
