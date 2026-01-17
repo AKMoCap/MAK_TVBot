@@ -317,8 +317,11 @@ class ActivityLog(db.Model):
         }
 
 
-def init_db(app):
-    """Initialize database with default values"""
+def init_db(app, run_migrations=True):
+    """Initialize database with Flask-Migrate and seed default values"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     db.init_app(app)
     migrate.init_app(app, db)
 
