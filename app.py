@@ -1028,13 +1028,10 @@ def api_wallet_prepare_agent():
         use_testnet = user.use_testnet
 
         # Build EIP-712 typed data for Hyperliquid agent approval
-        # Hyperliquid uses specific domain and types
-        if use_testnet:
-            chain_id = 421614  # Arbitrum Sepolia
-            verifying_contract = "0x0000000000000000000000000000000000000000"
-        else:
-            chain_id = 42161  # Arbitrum One
-            verifying_contract = "0x0000000000000000000000000000000000000000"
+        # Hyperliquid uses chainId 1337 for L1 signing (both mainnet and testnet)
+        # The "hyperliquidChain" field in the message determines the network
+        chain_id = 1337  # Hyperliquid L1 signing chain
+        verifying_contract = "0x0000000000000000000000000000000000000000"
 
         sign_data = {
             "domain": {
@@ -1054,7 +1051,7 @@ def api_wallet_prepare_agent():
             "message": {
                 "hyperliquidChain": "Testnet" if use_testnet else "Mainnet",
                 "agentAddress": agent_address,
-                "agentName": "",
+                "agentName": "MAKTVBot",
                 "nonce": nonce
             }
         }
