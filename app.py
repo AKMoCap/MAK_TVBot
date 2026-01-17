@@ -964,8 +964,8 @@ def api_wallet_session():
 def api_wallet_connect():
     """Connect a wallet address"""
     try:
-        data = request.get_json()
-        address = data.get('address', '').lower()
+        data = request.get_json() or {}
+        address = (data.get('address') or '').lower().strip()
         chain_id = data.get('chain_id')
 
         if not address or len(address) != 42 or not address.startswith('0x'):
@@ -986,6 +986,8 @@ def api_wallet_connect():
         session['wallet_session'] = session_token
         session['wallet_address'] = address
 
+        logger.info(f"Wallet connected: {address[:10]}... session: {session_token[:10]}...")
+
         response = jsonify({
             'success': True,
             'address': address,
@@ -1004,11 +1006,16 @@ def api_wallet_connect():
 def api_wallet_prepare_agent():
     """Prepare agent wallet approval - generate agent key and EIP-712 data"""
     try:
-        data = request.get_json()
-        address = data.get('address', '').lower()
+        data = request.get_json() or {}
+        address = (data.get('address') or '').lower().strip()
+
+        if not address:
+            return jsonify({'success': False, 'error': 'No address provided'}), 400
 
         # Verify session using cookie (more reliable than Flask session)
         session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+        logger.info(f"Prepare agent - address: {address[:10]}..., session_token: {session_token[:10] if session_token else 'None'}...")
+
         if not session_token:
             return jsonify({'success': False, 'error': 'No session found. Please reconnect wallet.'}), 401
 
@@ -1016,7 +1023,7 @@ def api_wallet_prepare_agent():
         if not user:
             return jsonify({'success': False, 'error': 'Session expired. Please reconnect wallet.'}), 401
 
-        if user.address.lower() != address:
+        if not user.address or user.address.lower() != address:
             return jsonify({'success': False, 'error': 'Address mismatch. Please reconnect wallet.'}), 401
 
         # Generate new agent key
@@ -1091,15 +1098,20 @@ def api_wallet_prepare_agent():
 def api_wallet_approve_agent():
     """Submit agent approval to Hyperliquid and store agent key"""
     try:
-        data = request.get_json()
-        address = data.get('address', '').lower()
+        data = request.get_json() or {}
+        address = (data.get('address') or '').lower().strip()
         signature = data.get('signature')
         agent_address = data.get('agent_address')
         agent_key = data.get('agent_key')
         nonce = data.get('nonce')
 
+        if not address or not signature or not agent_address:
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
         # Verify session using cookie (more reliable than Flask session)
         session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+        logger.info(f"Approve agent - address: {address[:10]}..., session_token: {session_token[:10] if session_token else 'None'}...")
+
         if not session_token:
             return jsonify({'success': False, 'error': 'No session found. Please reconnect wallet.'}), 401
 
@@ -1107,7 +1119,7 @@ def api_wallet_approve_agent():
         if not user:
             return jsonify({'success': False, 'error': 'Session expired. Please reconnect wallet.'}), 401
 
-        if user.address.lower() != address:
+        if not user.address or user.address.lower() != address:
             return jsonify({'success': False, 'error': 'Address mismatch. Please reconnect wallet.'}), 401
 
         # Submit approval to Hyperliquid
