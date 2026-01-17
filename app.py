@@ -299,14 +299,42 @@ def api_close_all():
         account = bot_manager.get_account_info()
         positions = account.get('positions', [])
 
+        # Get current prices for all positions to calculate P&L
+        coins = [pos['coin'] for pos in positions]
+        prices = bot_manager.get_market_prices(coins) if coins else {}
+
         results = []
+        total_pnl = 0
         for pos in positions:
-            result = bot_manager.close_position(pos['coin'])
-            results.append({'coin': pos['coin'], 'result': result})
+            coin = pos['coin']
+            result = bot_manager.close_position(coin)
 
-        log_activity('info', 'trade', f"Closed all positions ({len(positions)} total)")
+            # Update trade record with exit price and P&L
+            if result.get('success'):
+                trade = Trade.query.filter_by(coin=coin, status='open').first()
+                if trade:
+                    exit_price = prices.get(coin, trade.entry_price)
+                    pnl, pnl_pct = risk_manager.calculate_pnl(trade, exit_price)
 
-        return jsonify({'success': True, 'results': results})
+                    trade.exit_price = exit_price
+                    trade.pnl = pnl
+                    trade.pnl_percent = pnl_pct
+                    trade.status = 'closed'
+                    trade.close_reason = 'manual'
+                    db.session.commit()
+
+                    risk_manager.record_trade_result(pnl)
+                    total_pnl += pnl
+
+                    result['exit_price'] = exit_price
+                    result['pnl'] = pnl
+                    result['pnl_percent'] = pnl_pct
+
+            results.append({'coin': coin, 'result': result})
+
+        log_activity('info', 'trade', f"Closed all positions ({len(positions)} total) with P&L: ${total_pnl:.2f}")
+
+        return jsonify({'success': True, 'results': results, 'total_pnl': total_pnl})
 
     except Exception as e:
         logger.exception(f"Close all error: {e}")

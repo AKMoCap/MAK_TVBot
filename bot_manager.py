@@ -122,8 +122,8 @@ class BotManager:
 
     def get_asset_metadata(self):
         """
-        Get asset metadata from Hyperliquid including szDecimals and maxLeverage.
-        Returns dict mapping coin -> {szDecimals, maxLeverage}
+        Get asset metadata from Hyperliquid including szDecimals, maxLeverage, and onlyIsolated.
+        Returns dict mapping coin -> {szDecimals, maxLeverage, onlyIsolated}
         """
         try:
             info, _ = self.get_exchange()
@@ -138,7 +138,8 @@ class BotManager:
                 if coin:
                     asset_meta[coin] = {
                         'szDecimals': asset.get('szDecimals', 2),
-                        'maxLeverage': asset.get('maxLeverage', 10)
+                        'maxLeverage': asset.get('maxLeverage', 10),
+                        'onlyIsolated': asset.get('onlyIsolated', False)
                     }
 
             logger.info(f"Loaded metadata for {len(asset_meta)} assets")
@@ -239,16 +240,31 @@ class BotManager:
         try:
             info, exchange = self.get_exchange()
 
+            # Get full asset metadata for this coin
+            asset_meta = self.get_asset_metadata()
+            coin_meta = asset_meta.get(coin, {})
+            max_leverage = coin_meta.get('maxLeverage', 10)
+            only_isolated = coin_meta.get('onlyIsolated', False)
+
+            # Log asset info for debugging
+            logger.info(f"Asset {coin}: maxLeverage={max_leverage}, onlyIsolated={only_isolated}")
+
             # Check max leverage for this coin
-            max_leverage = self.get_max_leverage(coin)
             if leverage > max_leverage:
                 error_msg = f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"
                 logger.error(error_msg)
                 return {'success': False, 'error': error_msg}
 
-            # Set leverage
-            logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x)")
-            exchange.update_leverage(leverage, coin, is_cross=False)
+            # Set leverage - always use isolated margin (is_cross=False)
+            # This is required for assets with onlyIsolated=True (like AERO)
+            logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x, isolated margin)")
+            try:
+                leverage_result = exchange.update_leverage(leverage, coin, is_cross=False)
+                logger.info(f"Leverage update result for {coin}: {leverage_result}")
+            except Exception as lev_error:
+                error_msg = f"Failed to set leverage for {coin}: {str(lev_error)}"
+                logger.error(error_msg)
+                return {'success': False, 'error': error_msg}
 
             # Calculate position size
             size, entry_price = self.calculate_position_size(coin, collateral_usd, leverage)
