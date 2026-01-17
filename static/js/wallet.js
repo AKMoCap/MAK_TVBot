@@ -12,9 +12,10 @@ class WalletManager {
         this.isConnected = false;
         this.agentKey = null;
 
-        // Hyperliquid uses chainId 1337 for EIP-712 signing (L1)
-        // Users can be connected to any network - signing is off-chain
-        this.HYPERLIQUID_SIGNING_CHAIN_ID = 1337;
+        // Hyperliquid chain IDs for EIP-712 signing
+        // Must match the network for signature validation
+        this.ARBITRUM_ONE_CHAIN_ID = 42161;
+        this.ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
 
         // Check for existing session on load
         this.checkExistingSession();
@@ -176,7 +177,7 @@ class WalletManager {
 
     /**
      * Approve agent wallet for Hyperliquid trading
-     * Signs EIP-712 typed data to authorize the agent
+     * Uses EIP-712 typed data signing matching Hyperliquid's requirements
      */
     async approveAgent() {
         const statusDiv = document.getElementById('approval-status');
@@ -203,8 +204,13 @@ class WalletManager {
             statusDiv.innerHTML = '<div class="text-muted">Please sign the message in your wallet...</div>';
             approveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sign in Wallet...';
 
-            // Sign the EIP-712 typed data
-            const signature = await this.signAgentApproval(prepData.sign_data);
+            // Sign using eth_signTypedData_v4 directly (like ShuttheBox)
+            const typedData = prepData.typed_data;
+
+            const signature = await window.ethereum.request({
+                method: 'eth_signTypedData_v4',
+                params: [this.address, JSON.stringify(typedData)]
+            });
 
             statusDiv.innerHTML = '<div class="text-muted">Submitting approval to Hyperliquid...</div>';
             approveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Submitting...';
@@ -255,25 +261,6 @@ class WalletManager {
     }
 
     /**
-     * Sign EIP-712 typed data for agent approval
-     */
-    async signAgentApproval(signData) {
-        // Hyperliquid uses EIP-712 typed data signing
-        const domain = signData.domain;
-        const types = signData.types;
-        const message = signData.message;
-
-        // Remove EIP712Domain from types if present (ethers handles it automatically)
-        const typesWithoutDomain = { ...types };
-        delete typesWithoutDomain.EIP712Domain;
-
-        // Sign using ethers.js
-        const signature = await this.signer.signTypedData(domain, typesWithoutDomain, message);
-
-        return signature;
-    }
-
-    /**
      * Disconnect wallet
      */
     async disconnect() {
@@ -292,8 +279,17 @@ class WalletManager {
         this.isConnected = false;
         this.agentKey = null;
 
+        // Close any open wallet menu
+        const menu = document.getElementById('wallet-menu');
+        if (menu) menu.remove();
+
         this.updateUI();
         this.showToast('Wallet disconnected', 'info');
+
+        // Refresh dashboard to clear data
+        if (typeof refreshDashboard === 'function') {
+            refreshDashboard();
+        }
     }
 
     /**
@@ -333,7 +329,7 @@ class WalletManager {
                 // Fully connected and authorized
                 btn.className = 'status-badge status-badge-primary';
                 statusText.textContent = shortAddress;
-                btn.onclick = () => this.showWalletMenu();
+                btn.onclick = (e) => { e.stopPropagation(); this.showWalletMenu(); };
             } else {
                 // Connected but needs agent approval
                 btn.className = 'status-badge status-badge-testnet';
@@ -362,7 +358,7 @@ class WalletManager {
      * Show wallet menu (connected state)
      */
     showWalletMenu() {
-        // Create dropdown menu for wallet options
+        // Remove existing menu if open
         const existingMenu = document.getElementById('wallet-menu');
         if (existingMenu) {
             existingMenu.remove();
@@ -374,22 +370,43 @@ class WalletManager {
 
         const menu = document.createElement('div');
         menu.id = 'wallet-menu';
-        menu.className = 'dropdown-menu show bg-dark border-secondary';
-        menu.style.cssText = `position: fixed; top: ${rect.bottom + 5}px; right: ${window.innerWidth - rect.right}px; z-index: 9999;`;
+        menu.className = 'dropdown-menu show';
+        menu.style.cssText = `
+            position: fixed;
+            top: ${rect.bottom + 5}px;
+            right: ${window.innerWidth - rect.right}px;
+            z-index: 9999;
+            background: #1a1d29;
+            border: 1px solid #2d3748;
+            border-radius: 8px;
+            min-width: 200px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
         menu.innerHTML = `
-            <div class="px-3 py-2 text-muted small border-bottom border-secondary">
+            <div class="px-3 py-2 text-muted small border-bottom" style="border-color: #2d3748 !important;">
+                <i class="bi bi-wallet2 me-1"></i>Connected Wallet
+            </div>
+            <div class="px-3 py-2 text-light small" style="word-break: break-all;">
                 ${this.address}
             </div>
-            <button class="dropdown-item text-light" onclick="walletManager.disconnect(); document.getElementById('wallet-menu')?.remove();">
-                <i class="bi bi-box-arrow-right me-2"></i>Disconnect
+            <div class="dropdown-divider" style="border-color: #2d3748;"></div>
+            <button class="dropdown-item text-danger d-flex align-items-center" id="disconnect-wallet-btn" style="background: transparent;">
+                <i class="bi bi-box-arrow-right me-2"></i>Disconnect Wallet
             </button>
         `;
 
         document.body.appendChild(menu);
 
+        // Add click handler for disconnect button
+        document.getElementById('disconnect-wallet-btn').onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.disconnect();
+        };
+
         // Close menu when clicking outside
         const closeMenu = (e) => {
-            if (!menu.contains(e.target) && e.target !== btn) {
+            if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
             }
