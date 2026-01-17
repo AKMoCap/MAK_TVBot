@@ -937,8 +937,8 @@ def api_wallet_prepare_agent():
         # Get timestamp for nonce
         nonce = int(datetime.utcnow().timestamp() * 1000)
 
-        # Determine if using testnet
-        use_testnet = user.use_testnet
+        # Use app's USE_TESTNET setting (not user's stored value)
+        use_testnet = USE_TESTNET
 
         # Build EIP-712 typed data for Hyperliquid agent approval
         # Must use Arbitrum chain IDs (matching ShuttheBox implementation)
@@ -1030,8 +1030,8 @@ def api_wallet_approve_agent():
         from hyperliquid.utils import constants
         import requests
 
-        # Determine network settings
-        if user.use_testnet:
+        # Use app's USE_TESTNET setting (not user's stored value)
+        if USE_TESTNET:
             api_url = constants.TESTNET_API_URL
             signature_chain_id = '0x66eee'  # Arbitrum Sepolia
             hyperliquid_chain = 'Testnet'
