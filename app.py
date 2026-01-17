@@ -42,13 +42,22 @@ from bot_manager import bot_manager
 # ============================================================================
 
 MAIN_WALLET_ADDRESS = os.environ.get("HL_MAIN_WALLET")
-USE_TESTNET = os.environ.get("USE_TESTNET", "true").lower() == "true"
+
+# Read USE_TESTNET - defaults to true for safety
+# IMPORTANT: After changing this secret, you must RESTART the deployment
+_use_testnet_raw = os.environ.get("USE_TESTNET", "true")
+USE_TESTNET = _use_testnet_raw.lower().strip() == "true"
+
+# Log the actual value for debugging
+print(f"[CONFIG] USE_TESTNET raw value: '{_use_testnet_raw}' -> parsed: {USE_TESTNET}")
 
 # Select API secret based on network
 if USE_TESTNET:
     API_WALLET_SECRET = os.environ.get("HL_TESTNET_API_SECRET")
+    print(f"[CONFIG] Using TESTNET API")
 else:
     API_WALLET_SECRET = os.environ.get("HL_API_SECRET")
+    print(f"[CONFIG] Using MAINNET API")
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "your-secret-key-change-me")
 
@@ -1311,13 +1320,18 @@ def webhook():
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint"""
+    """Health check endpoint - also shows current config for debugging"""
+    # Re-read env var to show what's actually set (vs cached value)
+    current_env_value = os.environ.get("USE_TESTNET", "not set")
     return jsonify({
         "status": "healthy",
         "network": "testnet" if USE_TESTNET else "mainnet",
+        "use_testnet_cached": USE_TESTNET,
+        "use_testnet_env_current": current_env_value,
         "wallet_configured": bool(MAIN_WALLET_ADDRESS and API_WALLET_SECRET),
         "bot_enabled": bot_manager.is_enabled,
-        "websocket_connected": bot_manager._ws_connected
+        "websocket_connected": bot_manager._ws_connected,
+        "note": "If use_testnet_cached differs from use_testnet_env_current, restart the deployment"
     })
 
 
