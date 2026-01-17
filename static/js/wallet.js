@@ -12,9 +12,9 @@ class WalletManager {
         this.isConnected = false;
         this.agentKey = null;
 
-        // Hyperliquid chain IDs
-        this.HYPERLIQUID_MAINNET_CHAIN_ID = 42161; // Arbitrum One
-        this.HYPERLIQUID_TESTNET_CHAIN_ID = 421614; // Arbitrum Sepolia
+        // Hyperliquid uses chainId 1337 for EIP-712 signing (L1)
+        // Users can be connected to any network - signing is off-chain
+        this.HYPERLIQUID_SIGNING_CHAIN_ID = 1337;
 
         // Check for existing session on load
         this.checkExistingSession();
