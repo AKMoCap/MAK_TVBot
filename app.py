@@ -238,6 +238,10 @@ def api_trade():
         collateral_usd = float(data.get('collateral_usd', 100))
         stop_loss_pct = data.get('stop_loss_pct')
         take_profit_pct = data.get('take_profit_pct')
+        tp1_pct = data.get('tp1_pct')
+        tp1_size_pct = data.get('tp1_size_pct')
+        tp2_pct = data.get('tp2_pct')
+        tp2_size_pct = data.get('tp2_size_pct')
 
         # Check if bot is enabled
         if not bot_manager.is_enabled:
@@ -255,6 +259,15 @@ def api_trade():
             stop_loss_pct = coin_config.default_stop_loss_pct
         if take_profit_pct is None and coin_config.default_take_profit_pct:
             take_profit_pct = coin_config.default_take_profit_pct
+        # Use coin config defaults for TP1/TP2 if not provided
+        if tp1_pct is None and coin_config.tp1_pct:
+            tp1_pct = coin_config.tp1_pct
+        if tp1_size_pct is None and coin_config.tp1_size_pct:
+            tp1_size_pct = coin_config.tp1_size_pct
+        if tp2_pct is None and coin_config.tp2_pct:
+            tp2_pct = coin_config.tp2_pct
+        if tp2_size_pct is None and coin_config.tp2_size_pct:
+            tp2_size_pct = coin_config.tp2_size_pct
 
         # Execute trade
         result = bot_manager.execute_trade(
@@ -263,7 +276,11 @@ def api_trade():
             leverage=leverage,
             collateral_usd=collateral_usd,
             stop_loss_pct=stop_loss_pct,
-            take_profit_pct=take_profit_pct
+            take_profit_pct=take_profit_pct,
+            tp1_pct=tp1_pct,
+            tp1_size_pct=tp1_size_pct,
+            tp2_pct=tp2_pct,
+            tp2_size_pct=tp2_size_pct
         )
 
         if result.get('success'):
@@ -852,6 +869,12 @@ def webhook():
         if take_profit_pct is None and coin_config.default_take_profit_pct:
             take_profit_pct = coin_config.default_take_profit_pct
 
+        # Use coin config defaults for TP1/TP2 (webhook uses coin config defaults)
+        tp1_pct = coin_config.tp1_pct
+        tp1_size_pct = coin_config.tp1_size_pct
+        tp2_pct = coin_config.tp2_pct
+        tp2_size_pct = coin_config.tp2_size_pct
+
         # Execute trade
         result = bot_manager.execute_trade(
             coin=coin,
@@ -859,7 +882,11 @@ def webhook():
             leverage=leverage,
             collateral_usd=collateral_usd,
             stop_loss_pct=stop_loss_pct,
-            take_profit_pct=take_profit_pct
+            take_profit_pct=take_profit_pct,
+            tp1_pct=tp1_pct,
+            tp1_size_pct=tp1_size_pct,
+            tp2_pct=tp2_pct,
+            tp2_size_pct=tp2_size_pct
         )
 
         if result.get('success'):

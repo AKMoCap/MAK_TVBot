@@ -383,7 +383,8 @@ class BotManager:
                 raise
         raise last_error
 
-    def execute_trade(self, coin, action, leverage, collateral_usd, stop_loss_pct=None, take_profit_pct=None, slippage=0.01):
+    def execute_trade(self, coin, action, leverage, collateral_usd, stop_loss_pct=None, take_profit_pct=None,
+                       tp1_pct=None, tp1_size_pct=None, tp2_pct=None, tp2_size_pct=None, slippage=0.01):
         """Execute a trade on Hyperliquid"""
         if not self._enabled:
             return {'success': False, 'error': 'Bot is disabled'}
@@ -478,8 +479,11 @@ class BotManager:
 
                 # Calculate SL/TP prices
                 side = 'long' if is_buy else 'short'
+                filled_size = float(fills[0]['size']) if fills else size
                 sl_price = None
                 tp_price = None
+                sl_order_result = None
+                tp_order_result = None
 
                 if stop_loss_pct:
                     if side == 'long':
@@ -487,11 +491,64 @@ class BotManager:
                     else:
                         sl_price = actual_price * (1 + stop_loss_pct / 100)
 
-                if take_profit_pct:
+                    # Place stop loss order on exchange
+                    sl_order_result = self.place_stop_loss_order(coin, side, sl_price, filled_size)
+                    if sl_order_result.get('success'):
+                        logger.info(f"Stop loss order placed for {coin} at ${sl_price:.2f}")
+                    else:
+                        logger.warning(f"Failed to place stop loss for {coin}: {sl_order_result.get('error')}")
+
+                # Handle TP1 and TP2 (multi-level take profits)
+                tp1_price = None
+                tp2_price = None
+                tp1_order_result = None
+                tp2_order_result = None
+
+                if tp1_pct and tp1_size_pct:
+                    if side == 'long':
+                        tp1_price = actual_price * (1 + tp1_pct / 100)
+                    else:
+                        tp1_price = actual_price * (1 - tp1_pct / 100)
+
+                    # Calculate TP1 size (percentage of position)
+                    tp1_size = filled_size * (tp1_size_pct / 100)
+
+                    # Place TP1 order on exchange
+                    tp1_order_result = self.place_take_profit_order(coin, side, tp1_price, tp1_size)
+                    if tp1_order_result.get('success'):
+                        logger.info(f"TP1 order placed for {coin} at ${tp1_price:.2f} for {tp1_size_pct}% of position")
+                    else:
+                        logger.warning(f"Failed to place TP1 for {coin}: {tp1_order_result.get('error')}")
+
+                if tp2_pct and tp2_size_pct:
+                    if side == 'long':
+                        tp2_price = actual_price * (1 + tp2_pct / 100)
+                    else:
+                        tp2_price = actual_price * (1 - tp2_pct / 100)
+
+                    # Calculate TP2 size (percentage of position)
+                    tp2_size = filled_size * (tp2_size_pct / 100)
+
+                    # Place TP2 order on exchange
+                    tp2_order_result = self.place_take_profit_order(coin, side, tp2_price, tp2_size)
+                    if tp2_order_result.get('success'):
+                        logger.info(f"TP2 order placed for {coin} at ${tp2_price:.2f} for {tp2_size_pct}% of position")
+                    else:
+                        logger.warning(f"Failed to place TP2 for {coin}: {tp2_order_result.get('error')}")
+
+                # Fallback to single take_profit_pct if TP1/TP2 not specified
+                if take_profit_pct and not tp1_pct and not tp2_pct:
                     if side == 'long':
                         tp_price = actual_price * (1 + take_profit_pct / 100)
                     else:
                         tp_price = actual_price * (1 - take_profit_pct / 100)
+
+                    # Place take profit order on exchange
+                    tp_order_result = self.place_take_profit_order(coin, side, tp_price, filled_size)
+                    if tp_order_result.get('success'):
+                        logger.info(f"Take profit order placed for {coin} at ${tp_price:.2f}")
+                    else:
+                        logger.warning(f"Failed to place take profit for {coin}: {tp_order_result.get('error')}")
 
                 logger.info(f"Trade filled: {coin} {action} {fills[0]['size']} @ ${actual_price:.2f}")
 
@@ -505,7 +562,13 @@ class BotManager:
                     'leverage': leverage,
                     'collateral_usd': collateral_usd,
                     'stop_loss': sl_price,
-                    'take_profit': tp_price,
+                    'take_profit': tp_price or tp1_price,  # Use tp1 as primary TP for backward compat
+                    'tp1_price': tp1_price,
+                    'tp2_price': tp2_price,
+                    'sl_order': sl_order_result,
+                    'tp_order': tp_order_result,
+                    'tp1_order': tp1_order_result,
+                    'tp2_order': tp2_order_result,
                     'fills': fills,
                     'order_id': fills[0]['oid'] if fills else None
                 }
@@ -539,7 +602,7 @@ class BotManager:
             return {'success': False, 'error': str(e)}
 
     def place_stop_loss_order(self, coin, side, trigger_price, size):
-        """Place a stop loss order"""
+        """Place a stop loss order on the exchange"""
         try:
             _, exchange = self.get_exchange()
 
@@ -548,34 +611,43 @@ class BotManager:
             # If we're short, we buy on stop loss
             is_buy = side == 'short'
 
+            order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "sl"}}
             result = exchange.order(
                 coin,
                 is_buy,
                 size,
                 trigger_price,
-                {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "sl"}}
+                order_type,
+                reduce_only=True
             )
 
+            logger.info(f"Stop loss order placed for {coin}: trigger={trigger_price}, size={size}, result={result}")
             return {'success': True, 'result': result}
         except Exception as e:
             logger.exception(f"Error placing stop loss: {e}")
             return {'success': False, 'error': str(e)}
 
     def place_take_profit_order(self, coin, side, trigger_price, size):
-        """Place a take profit order"""
+        """Place a take profit order on the exchange"""
         try:
             _, exchange = self.get_exchange()
 
+            # For take profit, we want to close the position
+            # If we're long, we sell on take profit
+            # If we're short, we buy on take profit
             is_buy = side == 'short'
 
+            order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "tp"}}
             result = exchange.order(
                 coin,
                 is_buy,
                 size,
                 trigger_price,
-                {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "tp"}}
+                order_type,
+                reduce_only=True
             )
 
+            logger.info(f"Take profit order placed for {coin}: trigger={trigger_price}, size={size}, result={result}")
             return {'success': True, 'result': result}
         except Exception as e:
             logger.exception(f"Error placing take profit: {e}")
