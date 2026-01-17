@@ -181,16 +181,28 @@ function updateAccountCards(data) {
     const positions = data.positions || [];
     let totalCollateral = 0;
     let totalPnl = 0;
+    let totalPositionValue = 0;
 
     positions.forEach(pos => {
         totalCollateral += Math.abs(pos.margin_used || pos.collateral || 0);
         totalPnl += pos.unrealized_pnl || 0;
+        // Calculate position value (notional): size * mark_price
+        const posValue = Math.abs(pos.size || 0) * (pos.mark_price || pos.entry_price || 0);
+        totalPositionValue += posValue;
     });
 
     // Update Collateral at Risk
     const collateralEl = document.getElementById('collateral-at-risk');
     if (collateralEl) {
         collateralEl.textContent = formatCurrency(totalCollateral);
+    }
+
+    // Update Account Leverage (total position value / account value)
+    const acctLeverageEl = document.getElementById('account-leverage');
+    if (acctLeverageEl) {
+        const accountValue = parseFloat(data.account_value) || 0;
+        const acctLeverage = accountValue > 0 ? totalPositionValue / accountValue : 0;
+        acctLeverageEl.textContent = acctLeverage.toFixed(1) + 'x';
     }
 
     // Update Current P&L with color coding
