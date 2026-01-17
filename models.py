@@ -323,7 +323,51 @@ def init_db(app):
     migrate.init_app(app, db)
 
     with app.app_context():
-        db.create_all()
+        # Create all tables - this will create any missing tables
+        # For PostgreSQL, we need to ensure tables are created
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            db.create_all()
+            logger.info("Database tables created/verified")
+        except Exception as e:
+            logger.warning(f"db.create_all warning: {e}")
+
+        # Verify user_wallets table exists - create if missing
+        try:
+            UserWallet.query.first()
+            logger.info("UserWallet table verified")
+        except Exception as e:
+            logger.warning(f"UserWallet table missing, creating: {e}")
+            # Try to create tables again
+            try:
+                db.create_all()
+            except Exception as e2:
+                logger.error(f"Failed to create tables: {e2}")
+                # As last resort, try raw SQL for PostgreSQL
+                try:
+                    from sqlalchemy import text
+                    db.session.execute(text('''
+                        CREATE TABLE IF NOT EXISTS user_wallets (
+                            id SERIAL PRIMARY KEY,
+                            address VARCHAR(42) UNIQUE NOT NULL,
+                            agent_address VARCHAR(42),
+                            agent_key_encrypted TEXT,
+                            agent_name VARCHAR(100),
+                            use_testnet BOOLEAN DEFAULT TRUE,
+                            last_connected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            session_token VARCHAR(64),
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_user_wallets_address ON user_wallets(address)'))
+                    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_user_wallets_session_token ON user_wallets(session_token)'))
+                    db.session.commit()
+                    logger.info("UserWallet table created via raw SQL")
+                except Exception as e3:
+                    logger.error(f"Raw SQL table creation failed: {e3}")
 
         # Create default risk settings if not exist
         if not RiskSettings.query.first():
