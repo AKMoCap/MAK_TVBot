@@ -856,13 +856,27 @@ def api_wallet_session():
         if session_token:
             user = UserWallet.query.filter_by(session_token=session_token).first()
             if user:
+                # Check if agent was authorized on a different network
+                # If user has an agent but it was for a different network, they need to re-authorize
+                has_valid_agent = user.has_agent_key() and user.use_testnet == USE_TESTNET
+
+                # If network changed, clear the old agent key (it won't work)
+                if user.has_agent_key() and user.use_testnet != USE_TESTNET:
+                    logger.info(f"Network changed for {user.address[:10]}... clearing old agent key")
+                    user.agent_key_encrypted = None
+                    user.agent_address = None
+                    user.use_testnet = USE_TESTNET
+                    db.session.commit()
+                    has_valid_agent = False
+
                 return jsonify({
                     'connected': True,
                     'address': user.address,
-                    'has_agent_key': user.has_agent_key(),
-                    'use_testnet': USE_TESTNET  # Use app config
+                    'has_agent_key': has_valid_agent,
+                    'use_testnet': USE_TESTNET,
+                    'network': 'testnet' if USE_TESTNET else 'mainnet'
                 })
-        return jsonify({'connected': False, 'use_testnet': USE_TESTNET})
+        return jsonify({'connected': False, 'use_testnet': USE_TESTNET, 'network': 'testnet' if USE_TESTNET else 'mainnet'})
     except Exception as e:
         logger.error(f"Session check error: {e}")
         return jsonify({'connected': False, 'use_testnet': USE_TESTNET})
@@ -881,12 +895,21 @@ def api_wallet_connect():
 
         # Find or create user wallet
         user = UserWallet.query.filter_by(address=address).first()
+        network_changed = False
+
         if not user:
             # Use app's USE_TESTNET setting for new users
             user = UserWallet(address=address, use_testnet=USE_TESTNET)
             db.session.add(user)
         else:
-            # Update existing user's testnet setting to match app config
+            # Check if network changed - if so, clear old agent (it won't work on new network)
+            if user.has_agent_key() and user.use_testnet != USE_TESTNET:
+                logger.info(f"Network changed for {address[:10]}... from {'testnet' if user.use_testnet else 'mainnet'} to {'testnet' if USE_TESTNET else 'mainnet'}")
+                user.agent_key_encrypted = None
+                user.agent_address = None
+                network_changed = True
+
+            # Update to match app config
             user.use_testnet = USE_TESTNET
 
         # Generate session token
@@ -898,13 +921,15 @@ def api_wallet_connect():
         session['wallet_session'] = session_token
         session['wallet_address'] = address
 
-        logger.info(f"Wallet connected: {address[:10]}... session: {session_token[:10]}... testnet: {USE_TESTNET}")
+        logger.info(f"Wallet connected: {address[:10]}... session: {session_token[:10]}... network: {'testnet' if USE_TESTNET else 'mainnet'}")
 
         response = jsonify({
             'success': True,
             'address': address,
-            'has_agent_key': user.has_agent_key(),
-            'use_testnet': USE_TESTNET  # Use app config, not user's stored value
+            'has_agent_key': user.has_agent_key(),  # Will be False if we cleared it above
+            'use_testnet': USE_TESTNET,
+            'network': 'testnet' if USE_TESTNET else 'mainnet',
+            'network_changed': network_changed
         })
         response.set_cookie('wallet_session', session_token, httponly=True, samesite='Lax', max_age=86400*30)
         return response

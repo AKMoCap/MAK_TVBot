@@ -174,12 +174,19 @@ class WalletManager {
                 this.isConnected = true;
                 this.agentKey = data.has_agent_key;
 
+                // Handle network change notification
+                if (data.network_changed) {
+                    this.showToast(`Network changed to ${data.network}. Please re-authorize trading.`, 'warning');
+                }
+
                 if (!data.has_agent_key) {
                     // Need to create agent wallet
-                    this.showToast('Wallet connected! Now authorize trading to continue.', 'info');
+                    const networkName = data.network === 'mainnet' ? 'Mainnet' : 'Testnet';
+                    this.showToast(`Wallet connected to ${networkName}! Authorize trading to continue.`, 'info');
                     await this.promptAgentApproval();
                 } else {
-                    this.showToast('Wallet connected and ready to trade!', 'success');
+                    const networkName = data.network === 'mainnet' ? 'Mainnet' : 'Testnet';
+                    this.showToast(`Wallet connected to ${networkName} and ready to trade!`, 'success');
                 }
 
                 this.updateUI();
