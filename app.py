@@ -21,7 +21,13 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    import secrets
+    SECRET_KEY = secrets.token_hex(32)
+    import logging
+    logging.warning("No SECRET_KEY set - generated random key (sessions will reset on restart)")
+app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///trading_bot.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
