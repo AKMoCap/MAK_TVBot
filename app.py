@@ -857,12 +857,12 @@ def api_wallet_session():
                     'connected': True,
                     'address': user.address,
                     'has_agent_key': user.has_agent_key(),
-                    'use_testnet': user.use_testnet
+                    'use_testnet': USE_TESTNET  # Use app config
                 })
-        return jsonify({'connected': False})
+        return jsonify({'connected': False, 'use_testnet': USE_TESTNET})
     except Exception as e:
         logger.error(f"Session check error: {e}")
-        return jsonify({'connected': False})
+        return jsonify({'connected': False, 'use_testnet': USE_TESTNET})
 
 
 @app.route('/api/wallet/connect', methods=['POST'])
@@ -879,8 +879,12 @@ def api_wallet_connect():
         # Find or create user wallet
         user = UserWallet.query.filter_by(address=address).first()
         if not user:
-            user = UserWallet(address=address)
+            # Use app's USE_TESTNET setting for new users
+            user = UserWallet(address=address, use_testnet=USE_TESTNET)
             db.session.add(user)
+        else:
+            # Update existing user's testnet setting to match app config
+            user.use_testnet = USE_TESTNET
 
         # Generate session token
         session_token = user.generate_session_token()
@@ -891,13 +895,13 @@ def api_wallet_connect():
         session['wallet_session'] = session_token
         session['wallet_address'] = address
 
-        logger.info(f"Wallet connected: {address[:10]}... session: {session_token[:10]}...")
+        logger.info(f"Wallet connected: {address[:10]}... session: {session_token[:10]}... testnet: {USE_TESTNET}")
 
         response = jsonify({
             'success': True,
             'address': address,
             'has_agent_key': user.has_agent_key(),
-            'use_testnet': user.use_testnet
+            'use_testnet': USE_TESTNET  # Use app config, not user's stored value
         })
         response.set_cookie('wallet_session', session_token, httponly=True, samesite='Lax', max_age=86400*30)
         return response
