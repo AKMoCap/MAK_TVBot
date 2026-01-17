@@ -1007,14 +1007,17 @@ def api_wallet_prepare_agent():
         data = request.get_json()
         address = data.get('address', '').lower()
 
-        # Verify session
-        session_address = session.get('wallet_address', '').lower()
-        if address != session_address:
-            return jsonify({'success': False, 'error': 'Session mismatch'}), 401
+        # Verify session using cookie (more reliable than Flask session)
+        session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+        if not session_token:
+            return jsonify({'success': False, 'error': 'No session found. Please reconnect wallet.'}), 401
 
-        user = UserWallet.query.filter_by(address=address).first()
+        user = UserWallet.query.filter_by(session_token=session_token).first()
         if not user:
-            return jsonify({'success': False, 'error': 'Wallet not connected'}), 401
+            return jsonify({'success': False, 'error': 'Session expired. Please reconnect wallet.'}), 401
+
+        if user.address.lower() != address:
+            return jsonify({'success': False, 'error': 'Address mismatch. Please reconnect wallet.'}), 401
 
         # Generate new agent key
         agent_key = '0x' + secrets.token_hex(32)
@@ -1080,14 +1083,17 @@ def api_wallet_approve_agent():
         agent_key = data.get('agent_key')
         nonce = data.get('nonce')
 
-        # Verify session
-        session_address = session.get('wallet_address', '').lower()
-        if address != session_address:
-            return jsonify({'success': False, 'error': 'Session mismatch'}), 401
+        # Verify session using cookie (more reliable than Flask session)
+        session_token = request.cookies.get('wallet_session') or session.get('wallet_session')
+        if not session_token:
+            return jsonify({'success': False, 'error': 'No session found. Please reconnect wallet.'}), 401
 
-        user = UserWallet.query.filter_by(address=address).first()
+        user = UserWallet.query.filter_by(session_token=session_token).first()
         if not user:
-            return jsonify({'success': False, 'error': 'Wallet not connected'}), 401
+            return jsonify({'success': False, 'error': 'Session expired. Please reconnect wallet.'}), 401
+
+        if user.address.lower() != address:
+            return jsonify({'success': False, 'error': 'Address mismatch. Please reconnect wallet.'}), 401
 
         # Submit approval to Hyperliquid
         from hyperliquid.info import Info
@@ -1096,11 +1102,11 @@ def api_wallet_approve_agent():
 
         api_url = constants.TESTNET_API_URL if user.use_testnet else constants.MAINNET_API_URL
 
-        # Build the action payload
+        # Build the action payload - must match what was signed
         action = {
             "type": "approveAgent",
             "agentAddress": agent_address,
-            "agentName": "",
+            "agentName": "MAKTVBot",
             "nonce": nonce
         }
 
