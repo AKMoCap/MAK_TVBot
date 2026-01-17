@@ -607,21 +607,50 @@ class BotManager:
             _, exchange = self.get_exchange()
 
             # For stop loss, we want to close the position
-            # If we're long, we sell on stop loss
-            # If we're short, we buy on stop loss
+            # If we're long, we sell on stop loss (is_buy=False)
+            # If we're short, we buy on stop loss (is_buy=True)
             is_buy = side == 'short'
+
+            # Set limit price with slippage to ensure execution
+            # For sell stop (long position): limit below trigger (price dropping)
+            # For buy stop (short position): limit above trigger (price rising)
+            slippage = 0.05  # 5% slippage allowance for stop loss
+            if is_buy:
+                # Short position - buying back, price is rising, set limit higher
+                limit_price = trigger_price * (1 + slippage)
+            else:
+                # Long position - selling, price is dropping, set limit lower
+                limit_price = trigger_price * (1 - slippage)
 
             order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "sl"}}
             result = exchange.order(
                 coin,
                 is_buy,
                 size,
-                trigger_price,
+                limit_price,
                 order_type,
                 reduce_only=True
             )
 
-            logger.info(f"Stop loss order placed for {coin}: trigger={trigger_price}, size={size}, result={result}")
+            logger.info(f"Stop loss order result for {coin}: trigger={trigger_price}, size={size}, result={result}")
+
+            # Check if order was successful
+            statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+            if statuses and len(statuses) > 0:
+                status = statuses[0]
+                if "error" in status:
+                    logger.error(f"Stop loss order error for {coin}: {status['error']}")
+                    return {'success': False, 'error': status['error']}
+                elif "resting" in status or "filled" in status:
+                    logger.info(f"Stop loss order placed successfully for {coin}")
+                    return {'success': True, 'result': result}
+
+            # Check for top-level error
+            if result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                logger.error(f"Stop loss order failed for {coin}: {error_msg}")
+                return {'success': False, 'error': str(error_msg)}
+
             return {'success': True, 'result': result}
         except Exception as e:
             logger.exception(f"Error placing stop loss: {e}")
@@ -633,21 +662,50 @@ class BotManager:
             _, exchange = self.get_exchange()
 
             # For take profit, we want to close the position
-            # If we're long, we sell on take profit
-            # If we're short, we buy on take profit
+            # If we're long, we sell on take profit (is_buy=False)
+            # If we're short, we buy on take profit (is_buy=True)
             is_buy = side == 'short'
+
+            # Set limit price with small slippage to ensure execution
+            # For sell TP (long position): limit slightly below trigger
+            # For buy TP (short position): limit slightly above trigger
+            slippage = 0.02  # 2% slippage allowance for take profit
+            if is_buy:
+                # Short position - buying back, set limit higher
+                limit_price = trigger_price * (1 + slippage)
+            else:
+                # Long position - selling, set limit lower
+                limit_price = trigger_price * (1 - slippage)
 
             order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "tp"}}
             result = exchange.order(
                 coin,
                 is_buy,
                 size,
-                trigger_price,
+                limit_price,
                 order_type,
                 reduce_only=True
             )
 
-            logger.info(f"Take profit order placed for {coin}: trigger={trigger_price}, size={size}, result={result}")
+            logger.info(f"Take profit order result for {coin}: trigger={trigger_price}, size={size}, result={result}")
+
+            # Check if order was successful
+            statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+            if statuses and len(statuses) > 0:
+                status = statuses[0]
+                if "error" in status:
+                    logger.error(f"Take profit order error for {coin}: {status['error']}")
+                    return {'success': False, 'error': status['error']}
+                elif "resting" in status or "filled" in status:
+                    logger.info(f"Take profit order placed successfully for {coin}")
+                    return {'success': True, 'result': result}
+
+            # Check for top-level error
+            if result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                logger.error(f"Take profit order failed for {coin}: {error_msg}")
+                return {'success': False, 'error': str(error_msg)}
+
             return {'success': True, 'result': result}
         except Exception as e:
             logger.exception(f"Error placing take profit: {e}")
