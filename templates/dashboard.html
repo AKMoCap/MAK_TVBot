@@ -10,65 +10,65 @@
             <!-- Account Value -->
             <div class="col-md-3">
                 <div class="card bg-darker border-secondary h-100">
-                    <div class="card-body">
+                    <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="text-muted mb-1">Account Value</h6>
-                                <h3 class="mb-0" id="account-value">$0.00</h3>
+                                <h6 class="text-muted mb-1 small">Account Value</h6>
+                                <h4 class="mb-0" id="account-value">$0.00</h4>
                             </div>
-                            <div class="bg-primary bg-opacity-25 p-3 rounded">
-                                <i class="bi bi-wallet2 text-primary fs-4"></i>
+                            <div class="bg-primary bg-opacity-25 p-2 rounded">
+                                <i class="bi bi-wallet2 text-primary fs-5"></i>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Total P&L Today -->
+            <!-- Collateral at Risk -->
             <div class="col-md-3">
                 <div class="card bg-darker border-secondary h-100">
-                    <div class="card-body">
+                    <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="text-muted mb-1">Today's P&L</h6>
-                                <h3 class="mb-0" id="daily-pnl">$0.00</h3>
+                                <h6 class="text-muted mb-1 small">Collateral at Risk</h6>
+                                <h4 class="mb-0" id="collateral-at-risk">$0.00</h4>
                             </div>
-                            <div class="bg-success bg-opacity-25 p-3 rounded" id="pnl-icon-container">
-                                <i class="bi bi-graph-up text-success fs-4" id="pnl-icon"></i>
+                            <div class="bg-info bg-opacity-25 p-2 rounded">
+                                <i class="bi bi-shield-exclamation text-info fs-5"></i>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Open Positions -->
+            <!-- Cross Margin Used -->
             <div class="col-md-3">
                 <div class="card bg-darker border-secondary h-100">
-                    <div class="card-body">
+                    <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="text-muted mb-1">Open Positions</h6>
-                                <h3 class="mb-0" id="open-positions">0</h3>
+                                <h6 class="text-muted mb-1 small">Cross Margin Used</h6>
+                                <h4 class="mb-0" id="effective-leverage">0.0x</h4>
                             </div>
-                            <div class="bg-info bg-opacity-25 p-3 rounded">
-                                <i class="bi bi-layers text-info fs-4"></i>
+                            <div class="bg-warning bg-opacity-25 p-2 rounded">
+                                <i class="bi bi-speedometer2 text-warning fs-5"></i>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Trades Today -->
+            <!-- Current P&L -->
             <div class="col-md-3">
                 <div class="card bg-darker border-secondary h-100">
-                    <div class="card-body">
+                    <div class="card-body py-2">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h6 class="text-muted mb-1">Trades Today</h6>
-                                <h3 class="mb-0" id="trades-today">0</h3>
+                                <h6 class="text-muted mb-1 small">Current P&L</h6>
+                                <h4 class="mb-0" id="current-pnl">$0.00</h4>
                             </div>
-                            <div class="bg-warning bg-opacity-25 p-3 rounded">
-                                <i class="bi bi-arrow-left-right text-warning fs-4"></i>
+                            <div class="bg-success bg-opacity-25 p-2 rounded" id="current-pnl-icon-container">
+                                <i class="bi bi-graph-up text-success fs-5" id="current-pnl-icon"></i>
                             </div>
                         </div>
                     </div>
@@ -80,105 +80,63 @@
     <!-- Main Content Row -->
     <div class="col-lg-8">
         <!-- TradingView Chart -->
-        <div class="card bg-darker border-secondary mb-4">
-            <div class="card-header bg-transparent border-secondary">
-                <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Chart</h5>
+        <div class="card bg-darker border-secondary" id="tradingview-card">
+            <!-- TradingView Widget BEGIN -->
+            <div class="tradingview-widget-container" style="height:100%;width:100%">
+                <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
+                <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/symbols/BTCUSDT/?exchange=BINANCE" rel="noopener nofollow" target="_blank"><span class="blue-text">BTCUSDT price</span></a><span class="trademark"> by TradingView</span></div>
+                <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+                {
+                    "allow_symbol_change": true,
+                    "calendar": false,
+                    "details": false,
+                    "hide_side_toolbar": true,
+                    "hide_top_toolbar": false,
+                    "hide_legend": false,
+                    "hide_volume": false,
+                    "hotlist": false,
+                    "interval": "240",
+                    "locale": "en",
+                    "save_image": false,
+                    "style": "1",
+                    "symbol": "BINANCE:BTCUSDT",
+                    "theme": "dark",
+                    "timezone": "America/New_York",
+                    "backgroundColor": "#0d1117",
+                    "gridColor": "rgba(242, 242, 242, 0.06)",
+                    "watchlist": [
+                        "BINANCE:BTCUSDT",
+                        "BINANCE:ETHUSDT",
+                        "BINANCE:SOLUSDT",
+                        "PYTH:HYPEUSD",
+                        "BINANCE:AAVEUSDT",
+                        "BINANCE:ENAUSDT",
+                        "CRYPTOCAP:PENDLE",
+                        "COINBASE:AEROUSD",
+                        "BINANCE:VIRTUALUSDT",
+                        "CRYPTOCAP:DOGE",
+                        "BINANCE:BONKUSDT",
+                        "BINANCE:PEPEUSDT",
+                        "CRYPTO:FARTCOINUSD"
+                    ],
+                    "withdateranges": false,
+                    "range": "YTD",
+                    "compareSymbols": [],
+                    "studies": [
+                        "STD;RSI"
+                    ],
+                    "autosize": true
+                }
+                </script>
             </div>
-            <div class="card-body p-0" style="height: 500px;">
-                <!-- TradingView Widget BEGIN -->
-                <div class="tradingview-widget-container" style="height:100%;width:100%">
-                    <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
-                    <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/symbols/BTCUSDT/?exchange=BINANCE" rel="noopener nofollow" target="_blank"><span class="blue-text">BTCUSDT price</span></a><span class="trademark"> by TradingView</span></div>
-                    <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-                    {
-                        "allow_symbol_change": true,
-                        "calendar": false,
-                        "details": false,
-                        "hide_side_toolbar": true,
-                        "hide_top_toolbar": false,
-                        "hide_legend": false,
-                        "hide_volume": false,
-                        "hotlist": false,
-                        "interval": "240",
-                        "locale": "en",
-                        "save_image": false,
-                        "style": "1",
-                        "symbol": "BINANCE:BTCUSDT",
-                        "theme": "dark",
-                        "timezone": "America/New_York",
-                        "backgroundColor": "#0F0F0F",
-                        "gridColor": "rgba(242, 242, 242, 0.06)",
-                        "watchlist": [
-                            "BINANCE:BTCUSDT",
-                            "BINANCE:ETHUSDT",
-                            "BINANCE:SOLUSDT",
-                            "PYTH:HYPEUSD",
-                            "BINANCE:AAVEUSDT",
-                            "BINANCE:ENAUSDT",
-                            "CRYPTOCAP:PENDLE",
-                            "COINBASE:AEROUSD",
-                            "BINANCE:VIRTUALUSDT",
-                            "CRYPTOCAP:DOGE",
-                            "BINANCE:BONKUSDT",
-                            "BINANCE:PEPEUSDT",
-                            "CRYPTO:FARTCOINUSD"
-                        ],
-                        "withdateranges": false,
-                        "range": "YTD",
-                        "compareSymbols": [],
-                        "studies": [
-                            "STD;RSI"
-                        ],
-                        "autosize": true
-                    }
-                    </script>
-                </div>
-                <!-- TradingView Widget END -->
-            </div>
-        </div>
-
-        <!-- Open Positions Table -->
-        <div class="card bg-darker border-secondary">
-            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Open Positions</h5>
-                <button class="btn btn-outline-danger btn-sm" id="close-all-btn">
-                    <i class="bi bi-x-circle me-1"></i>Close All
-                </button>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0">
-                        <thead>
-                            <tr>
-                                <th>Coin</th>
-                                <th>Side</th>
-                                <th>Size</th>
-                                <th>Entry</th>
-                                <th>Mark</th>
-                                <th>Liq. Price</th>
-                                <th>P&L</th>
-                                <th>Leverage</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="positions-table">
-                            <tr>
-                                <td colspan="9" class="text-center text-muted py-4">
-                                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                                    No open positions
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <!-- TradingView Widget END -->
         </div>
     </div>
 
     <!-- Right Sidebar -->
     <div class="col-lg-4">
         <!-- Quick Trade Panel -->
-        <div class="card bg-darker border-secondary mb-4">
+        <div class="card bg-darker border-secondary" id="quick-trade-card">
             <div class="card-header bg-transparent border-secondary">
                 <h5 class="mb-0"><i class="bi bi-lightning me-2"></i>Quick Trade</h5>
             </div>
@@ -275,35 +233,42 @@
                 </form>
             </div>
         </div>
+    </div>
 
-        <!-- Risk Status -->
+    <!-- Open Positions Table - Full Width -->
+    <div class="col-12">
         <div class="card bg-darker border-secondary">
-            <div class="card-header bg-transparent border-secondary">
-                <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Risk Status</h5>
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Open Positions</h5>
+                <button class="btn btn-outline-danger btn-sm" id="close-all-btn">
+                    <i class="bi bi-x-circle me-1"></i>Close All
+                </button>
             </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span>Collateral at Risk</span>
-                        <span id="collateral-risk-status">0% / 75%</span>
-                    </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar bg-info" role="progressbar" style="width: 0%"
-                             id="collateral-risk-bar"></div>
-                    </div>
-                    <small class="text-muted">% of account USDC used as collateral</small>
-                </div>
-
-                <div class="mb-0">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span>Cross Margin Used</span>
-                        <span id="cross-margin-status">0x / 10x</span>
-                    </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar bg-warning" role="progressbar" style="width: 0%"
-                             id="cross-margin-bar"></div>
-                    </div>
-                    <small class="text-muted">Effective leverage vs max allowed</small>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Side</th>
+                                <th>Size</th>
+                                <th>Entry</th>
+                                <th>Mark</th>
+                                <th>Liq. Price</th>
+                                <th>P&L</th>
+                                <th>Leverage</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-table">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                    No open positions
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -338,6 +303,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Refresh data every 5 seconds
     setInterval(refreshDashboard, 5000);
+
+    // Sync TradingView chart height with Quick Trade panel
+    function syncChartHeight() {
+        const quickTradeCard = document.getElementById('quick-trade-card');
+        const tradingviewCard = document.getElementById('tradingview-card');
+        if (quickTradeCard && tradingviewCard) {
+            tradingviewCard.style.height = quickTradeCard.offsetHeight + 'px';
+        }
+    }
+
+    // Sync on load and resize
+    syncChartHeight();
+    window.addEventListener('resize', syncChartHeight);
+    // Also sync after a short delay to ensure Quick Trade panel is fully rendered
+    setTimeout(syncChartHeight, 100);
 });
 </script>
 {% endblock %}

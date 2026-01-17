@@ -176,7 +176,39 @@ async function refreshDashboard() {
 
 function updateAccountCards(data) {
     document.getElementById('account-value').textContent = formatCurrency(data.account_value);
-    document.getElementById('open-positions').textContent = (data.positions || []).length;
+
+    // Calculate totals from positions
+    const positions = data.positions || [];
+    let totalCollateral = 0;
+    let totalPnl = 0;
+
+    positions.forEach(pos => {
+        totalCollateral += Math.abs(pos.margin_used || pos.collateral || 0);
+        totalPnl += pos.unrealized_pnl || 0;
+    });
+
+    // Update Collateral at Risk
+    const collateralEl = document.getElementById('collateral-at-risk');
+    if (collateralEl) {
+        collateralEl.textContent = formatCurrency(totalCollateral);
+    }
+
+    // Update Current P&L with color coding
+    const currentPnlEl = document.getElementById('current-pnl');
+    const pnlIcon = document.getElementById('current-pnl-icon');
+    const pnlIconContainer = document.getElementById('current-pnl-icon-container');
+    if (currentPnlEl) {
+        currentPnlEl.textContent = formatCurrency(totalPnl);
+        if (totalPnl >= 0) {
+            currentPnlEl.className = 'mb-0 text-success';
+            if (pnlIcon) pnlIcon.className = 'bi bi-graph-up text-success fs-5';
+            if (pnlIconContainer) pnlIconContainer.className = 'bg-success bg-opacity-25 p-2 rounded';
+        } else {
+            currentPnlEl.className = 'mb-0 text-danger';
+            if (pnlIcon) pnlIcon.className = 'bi bi-graph-down text-danger fs-5';
+            if (pnlIconContainer) pnlIconContainer.className = 'bg-danger bg-opacity-25 p-2 rounded';
+        }
+    }
 
     // Update network badge
     const networkBadge = document.getElementById('network-badge');
@@ -190,25 +222,12 @@ function updateAccountCards(data) {
 }
 
 function updateDailyStats(data) {
-    const dailyPnl = document.getElementById('daily-pnl');
-    const pnlIcon = document.getElementById('pnl-icon');
-    const pnlIconContainer = document.getElementById('pnl-icon-container');
-
-    dailyPnl.textContent = formatCurrency(data.total_pnl);
-    if (data.total_pnl >= 0) {
-        dailyPnl.className = 'mb-0 text-success';
-        pnlIcon.className = 'bi bi-graph-up text-success fs-4';
-        pnlIconContainer.className = 'bg-success bg-opacity-25 p-3 rounded';
-    } else {
-        dailyPnl.className = 'mb-0 text-danger';
-        pnlIcon.className = 'bi bi-graph-down text-danger fs-4';
-        pnlIconContainer.className = 'bg-danger bg-opacity-25 p-3 rounded';
+    // Update Effective Leverage (Cross Margin Used)
+    const effectiveLeverageEl = document.getElementById('effective-leverage');
+    if (effectiveLeverageEl) {
+        const crossMarginUsed = data.cross_margin_used || 0;
+        effectiveLeverageEl.textContent = crossMarginUsed.toFixed(1) + 'x';
     }
-
-    document.getElementById('trades-today').textContent = data.total_trades || 0;
-
-    // Update risk status bars
-    updateRiskBars(data);
 }
 
 function updateRiskBars(data) {
