@@ -326,38 +326,51 @@ def init_db(app, run_migrations=True):
     migrate.init_app(app, db)
 
     with app.app_context():
-        if run_migrations:
-            # Run migrations automatically on startup
-            from flask_migrate import upgrade
-            import os
-            migrations_dir = os.path.join(os.path.dirname(__file__), 'migrations')
-            if os.path.exists(migrations_dir):
-                try:
-                    upgrade()
-                    logger.info("Database migrations applied successfully")
-                except Exception as e:
-                    logger.error(f"Migration upgrade failed: {e}")
-                    # Only fall back to create_all if alembic_version table doesn't exist
-                    # (meaning this is a fresh database)
-                    try:
-                        from sqlalchemy import inspect
-                        inspector = inspect(db.engine)
-                        if 'alembic_version' not in inspector.get_table_names():
-                            logger.warning("No alembic_version table - creating schema from scratch")
-                            db.create_all()
-                        else:
-                            # DB has migrations but upgrade failed - this is a real error
-                            raise e
-                    except Exception as inner_e:
-                        logger.error(f"Database initialization failed: {inner_e}")
-                        raise
-            else:
-                # No migrations folder yet, use create_all for initial setup
-                logger.warning("No migrations folder found - using db.create_all()")
-                db.create_all()
-        else:
-            # Fallback for development/testing
+        # Create all tables - this will create any missing tables
+        # For PostgreSQL, we need to ensure tables are created
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
             db.create_all()
+            logger.info("Database tables created/verified")
+        except Exception as e:
+            logger.warning(f"db.create_all warning: {e}")
+
+        # Verify user_wallets table exists - create if missing
+        try:
+            UserWallet.query.first()
+            logger.info("UserWallet table verified")
+        except Exception as e:
+            logger.warning(f"UserWallet table missing, creating: {e}")
+            # Try to create tables again
+            try:
+                db.create_all()
+            except Exception as e2:
+                logger.error(f"Failed to create tables: {e2}")
+                # As last resort, try raw SQL for PostgreSQL
+                try:
+                    from sqlalchemy import text
+                    db.session.execute(text('''
+                        CREATE TABLE IF NOT EXISTS user_wallets (
+                            id SERIAL PRIMARY KEY,
+                            address VARCHAR(42) UNIQUE NOT NULL,
+                            agent_address VARCHAR(42),
+                            agent_key_encrypted TEXT,
+                            agent_name VARCHAR(100),
+                            use_testnet BOOLEAN DEFAULT TRUE,
+                            last_connected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            session_token VARCHAR(64),
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_user_wallets_address ON user_wallets(address)'))
+                    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_user_wallets_session_token ON user_wallets(session_token)'))
+                    db.session.commit()
+                    logger.info("UserWallet table created via raw SQL")
+                except Exception as e3:
+                    logger.error(f"Raw SQL table creation failed: {e3}")
 
         # Create default risk settings if not exist
         if not RiskSettings.query.first():
