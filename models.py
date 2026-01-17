@@ -1,7 +1,7 @@
 """
 Database Models for Trading Bot
 ================================
-PostgreSQL database with SQLAlchemy for:
+PostgreSQL/SQLite database with SQLAlchemy for:
 - Trade history
 - Bot configuration
 - Coin settings
@@ -13,6 +13,7 @@ import os
 import secrets
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from cryptography.fernet import Fernet
 
 db = SQLAlchemy()

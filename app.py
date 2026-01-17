@@ -36,7 +36,7 @@ SITE_PASSWORD = os.environ.get('SITE_PASSWORD', '')
 SITE_PASSWORD_HASH = os.environ.get('SITE_PASSWORD_HASH', '')
 
 # Initialize database
-from models import db, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog, UserWallet
+from models import db, migrate, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog, UserWallet
 init_db(app)
 
 
