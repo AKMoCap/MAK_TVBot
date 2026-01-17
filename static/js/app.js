@@ -372,9 +372,13 @@ async function loadAssetMetadata() {
 }
 
 function getMaxLeverage(coin) {
-    // Get max leverage from asset metadata, default to 10
+    // Get max leverage from asset metadata (stored in database, refreshed daily)
     if (assetMetaCache[coin]) {
         return assetMetaCache[coin].maxLeverage || 10;
+    }
+    // Fallback to coin config if available
+    if (coinConfigsCache[coin] && coinConfigsCache[coin].hl_max_leverage) {
+        return coinConfigsCache[coin].hl_max_leverage;
     }
     return 10;
 }

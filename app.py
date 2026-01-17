@@ -132,12 +132,57 @@ def api_prices():
 
 @app.route('/api/asset-meta', methods=['GET'])
 def api_asset_metadata():
-    """Get asset metadata from Hyperliquid (szDecimals, maxLeverage)"""
+    """Get asset metadata from database (no API call - use /api/asset-meta/refresh to update)"""
     try:
-        meta = bot_manager.get_asset_metadata()
+        # Return metadata from database - no API call needed
+        configs = CoinConfig.query.all()
+        meta = {}
+        for config in configs:
+            meta[config.coin] = {
+                'szDecimals': config.hl_sz_decimals,
+                'maxLeverage': config.hl_max_leverage,
+                'onlyIsolated': config.hl_only_isolated
+            }
         return jsonify(meta)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/asset-meta/refresh', methods=['POST'])
+def api_refresh_asset_metadata():
+    """Refresh asset metadata from Hyperliquid API and store in database"""
+    try:
+        # Fetch fresh metadata from Hyperliquid API
+        meta = bot_manager.get_asset_metadata(force_refresh=True)
+
+        if not meta:
+            return jsonify({'success': False, 'error': 'Failed to fetch metadata from API'}), 500
+
+        updated_count = 0
+        now = datetime.utcnow()
+
+        for coin, data in meta.items():
+            config = CoinConfig.query.filter_by(coin=coin).first()
+            if config:
+                # Update existing config
+                config.hl_max_leverage = data.get('maxLeverage', 10)
+                config.hl_sz_decimals = data.get('szDecimals', 2)
+                config.hl_only_isolated = data.get('onlyIsolated', False)
+                config.hl_metadata_updated = now
+                updated_count += 1
+
+        db.session.commit()
+
+        log_activity('info', 'system', f'Refreshed Hyperliquid metadata for {updated_count} coins')
+        return jsonify({
+            'success': True,
+            'updated': updated_count,
+            'total_coins': len(meta)
+        })
+
+    except Exception as e:
+        logger.exception(f"Error refreshing metadata: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/stats/daily', methods=['GET'])
@@ -879,7 +924,8 @@ def health():
         "status": "healthy",
         "network": "testnet" if USE_TESTNET else "mainnet",
         "wallet_configured": bool(MAIN_WALLET_ADDRESS and API_WALLET_SECRET),
-        "bot_enabled": bot_manager.is_enabled
+        "bot_enabled": bot_manager.is_enabled,
+        "websocket_connected": bot_manager._ws_connected
     })
 
 
@@ -905,6 +951,53 @@ def status():
 
 
 # ============================================================================
+# STARTUP INITIALIZATION
+# ============================================================================
+
+def initialize_on_startup():
+    """Initialize WebSocket and refresh metadata on startup"""
+    with app.app_context():
+        try:
+            # Start WebSocket price streaming
+            logger.info("Starting WebSocket price streaming...")
+            if bot_manager.start_price_stream():
+                logger.info("WebSocket connected successfully")
+            else:
+                logger.warning("WebSocket not available, using REST API fallback")
+
+            # Check if metadata needs refresh (older than 24 hours)
+            from models import CoinConfig
+            configs = CoinConfig.query.filter(CoinConfig.hl_metadata_updated.isnot(None)).first()
+            needs_refresh = True
+
+            if configs and configs.hl_metadata_updated:
+                age_hours = (datetime.utcnow() - configs.hl_metadata_updated).total_seconds() / 3600
+                if age_hours < 24:
+                    needs_refresh = False
+                    logger.info(f"Metadata is {age_hours:.1f} hours old, no refresh needed")
+
+            if needs_refresh:
+                logger.info("Refreshing Hyperliquid metadata...")
+                meta = bot_manager.get_asset_metadata(force_refresh=True)
+                if meta:
+                    now = datetime.utcnow()
+                    updated = 0
+                    for coin, data in meta.items():
+                        config = CoinConfig.query.filter_by(coin=coin).first()
+                        if config:
+                            config.hl_max_leverage = data.get('maxLeverage', 10)
+                            config.hl_sz_decimals = data.get('szDecimals', 2)
+                            config.hl_only_isolated = data.get('onlyIsolated', False)
+                            config.hl_metadata_updated = now
+                            updated += 1
+                    db.session.commit()
+                    logger.info(f"Updated metadata for {updated} coins")
+
+        except Exception as e:
+            logger.exception(f"Startup initialization error: {e}")
+
+
+# ============================================================================
 # RUN SERVER
 # ============================================================================
 
@@ -915,6 +1008,9 @@ if __name__ == '__main__':
     logger.info(f"Wallet configured: {bool(MAIN_WALLET_ADDRESS and API_WALLET_SECRET)}")
     logger.info("Web UI available at http://localhost:5000")
     logger.info("=" * 60)
+
+    # Initialize WebSocket and metadata
+    initialize_on_startup()
 
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
