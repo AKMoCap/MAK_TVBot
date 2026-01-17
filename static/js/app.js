@@ -116,10 +116,18 @@ async function fetchBotStatus() {
     try {
         const settings = await apiCall('/settings');
 
-        // Update network badge
+        // Debug: log what we received
+        console.log('[fetchBotStatus] Settings received:', {
+            use_testnet: settings.use_testnet,
+            network: settings.network,
+            type: typeof settings.use_testnet
+        });
+
+        // Update network badge - use explicit network field if available
         const networkBadge = document.getElementById('network-badge');
         if (networkBadge) {
-            if (settings.use_testnet === 'false') {
+            const isMainnet = settings.network === 'mainnet' || settings.use_testnet === 'false' || settings.use_testnet === false;
+            if (isMainnet) {
                 networkBadge.className = 'status-badge status-badge-primary';
                 networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
             } else {
