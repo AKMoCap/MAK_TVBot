@@ -607,16 +607,27 @@ class BotManager:
             _, exchange = self.get_exchange()
 
             # For stop loss, we want to close the position
-            # If we're long, we sell on stop loss
-            # If we're short, we buy on stop loss
+            # If we're long, we sell on stop loss (is_buy=False)
+            # If we're short, we buy on stop loss (is_buy=True)
             is_buy = side == 'short'
+
+            # Set limit price with slippage to ensure execution
+            # For sell stop (long position): limit below trigger (price dropping)
+            # For buy stop (short position): limit above trigger (price rising)
+            slippage = 0.05  # 5% slippage allowance for stop loss
+            if is_buy:
+                # Short position - buying back, price is rising, set limit higher
+                limit_price = trigger_price * (1 + slippage)
+            else:
+                # Long position - selling, price is dropping, set limit lower
+                limit_price = trigger_price * (1 - slippage)
 
             order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "sl"}}
             result = exchange.order(
                 coin,
                 is_buy,
                 size,
-                trigger_price,
+                limit_price,
                 order_type,
                 reduce_only=True
             )
@@ -651,16 +662,27 @@ class BotManager:
             _, exchange = self.get_exchange()
 
             # For take profit, we want to close the position
-            # If we're long, we sell on take profit
-            # If we're short, we buy on take profit
+            # If we're long, we sell on take profit (is_buy=False)
+            # If we're short, we buy on take profit (is_buy=True)
             is_buy = side == 'short'
+
+            # Set limit price with small slippage to ensure execution
+            # For sell TP (long position): limit slightly below trigger
+            # For buy TP (short position): limit slightly above trigger
+            slippage = 0.02  # 2% slippage allowance for take profit
+            if is_buy:
+                # Short position - buying back, set limit higher
+                limit_price = trigger_price * (1 + slippage)
+            else:
+                # Long position - selling, set limit lower
+                limit_price = trigger_price * (1 - slippage)
 
             order_type = {"trigger": {"triggerPx": trigger_price, "isMarket": True, "tpsl": "tp"}}
             result = exchange.order(
                 coin,
                 is_buy,
                 size,
-                trigger_price,
+                limit_price,
                 order_type,
                 reduce_only=True
             )
