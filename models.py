@@ -1,7 +1,7 @@
 """
 Database Models for Trading Bot
 ================================
-SQLite database with SQLAlchemy for:
+PostgreSQL database with SQLAlchemy for:
 - Trade history
 - Bot configuration
 - Coin settings
@@ -16,6 +16,7 @@ from flask_sqlalchemy import SQLAlchemy
 from cryptography.fernet import Fernet
 
 db = SQLAlchemy()
+migrate = Migrate()
 
 # Encryption key for agent secrets (generated once, stored in env)
 def get_encryption_key():
@@ -315,12 +316,47 @@ class ActivityLog(db.Model):
         }
 
 
-def init_db(app):
-    """Initialize database with default values"""
+def init_db(app, run_migrations=True):
+    """Initialize database with Flask-Migrate and seed default values"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     db.init_app(app)
+    migrate.init_app(app, db)
 
     with app.app_context():
-        db.create_all()
+        if run_migrations:
+            # Run migrations automatically on startup
+            from flask_migrate import upgrade
+            import os
+            migrations_dir = os.path.join(os.path.dirname(__file__), 'migrations')
+            if os.path.exists(migrations_dir):
+                try:
+                    upgrade()
+                    logger.info("Database migrations applied successfully")
+                except Exception as e:
+                    logger.error(f"Migration upgrade failed: {e}")
+                    # Only fall back to create_all if alembic_version table doesn't exist
+                    # (meaning this is a fresh database)
+                    try:
+                        from sqlalchemy import inspect
+                        inspector = inspect(db.engine)
+                        if 'alembic_version' not in inspector.get_table_names():
+                            logger.warning("No alembic_version table - creating schema from scratch")
+                            db.create_all()
+                        else:
+                            # DB has migrations but upgrade failed - this is a real error
+                            raise e
+                    except Exception as inner_e:
+                        logger.error(f"Database initialization failed: {inner_e}")
+                        raise
+            else:
+                # No migrations folder yet, use create_all for initial setup
+                logger.warning("No migrations folder found - using db.create_all()")
+                db.create_all()
+        else:
+            # Fallback for development/testing
+            db.create_all()
 
         # Create default risk settings if not exist
         if not RiskSettings.query.first():
