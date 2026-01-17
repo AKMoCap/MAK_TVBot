@@ -29,6 +29,16 @@ class BotManager:
         self._position_monitor_thread = None
         self._stop_monitoring = False
 
+        # Cache for asset metadata to reduce API calls
+        self._asset_meta_cache = {}
+        self._asset_meta_cache_time = 0
+        self._asset_meta_cache_ttl = 300  # 5 minutes TTL
+
+        # Cache for market prices
+        self._prices_cache = {}
+        self._prices_cache_time = 0
+        self._prices_cache_ttl = 2  # 2 seconds TTL for prices
+
     @property
     def is_enabled(self):
         return self._enabled
@@ -120,11 +130,18 @@ class BotManager:
             logger.exception(f"Error getting account info: {e}")
             return {'error': str(e)}
 
-    def get_asset_metadata(self):
+    def get_asset_metadata(self, force_refresh=False):
         """
         Get asset metadata from Hyperliquid including szDecimals, maxLeverage, and onlyIsolated.
         Returns dict mapping coin -> {szDecimals, maxLeverage, onlyIsolated}
+        Uses caching to reduce API calls (5 minute TTL).
         """
+        current_time = time.time()
+
+        # Return cached data if still valid
+        if not force_refresh and self._asset_meta_cache and (current_time - self._asset_meta_cache_time) < self._asset_meta_cache_ttl:
+            return self._asset_meta_cache
+
         try:
             info, _ = self.get_exchange()
             meta = info.meta()
@@ -142,24 +159,50 @@ class BotManager:
                         'onlyIsolated': asset.get('onlyIsolated', False)
                     }
 
-            logger.info(f"Loaded metadata for {len(asset_meta)} assets")
+            # Update cache
+            self._asset_meta_cache = asset_meta
+            self._asset_meta_cache_time = current_time
+
+            logger.info(f"Loaded metadata for {len(asset_meta)} assets (cached for {self._asset_meta_cache_ttl}s)")
             return asset_meta
 
         except Exception as e:
             logger.exception(f"Error getting asset metadata: {e}")
+            # Return stale cache if available
+            if self._asset_meta_cache:
+                logger.warning("Returning stale metadata cache due to error")
+                return self._asset_meta_cache
             return {}
 
-    def get_market_prices(self, coins=None):
-        """Get current market prices"""
+    def get_market_prices(self, coins=None, force_refresh=False):
+        """Get current market prices with short-term caching (2 seconds)"""
+        current_time = time.time()
+
+        # Check if we can use cached prices
+        if not force_refresh and self._prices_cache and (current_time - self._prices_cache_time) < self._prices_cache_ttl:
+            if coins:
+                return {coin: self._prices_cache.get(coin, 0) for coin in coins}
+            return self._prices_cache
+
         try:
             info, _ = self.get_exchange()
             all_mids = info.all_mids()
 
+            # Update cache
+            self._prices_cache = {coin: float(price) for coin, price in all_mids.items()}
+            self._prices_cache_time = current_time
+
             if coins:
-                return {coin: float(all_mids.get(coin, 0)) for coin in coins}
-            return {coin: float(price) for coin, price in all_mids.items()}
+                return {coin: self._prices_cache.get(coin, 0) for coin in coins}
+            return self._prices_cache
         except Exception as e:
             logger.exception(f"Error getting prices: {e}")
+            # Return stale cache if available
+            if self._prices_cache:
+                logger.warning("Returning stale price cache due to error")
+                if coins:
+                    return {coin: self._prices_cache.get(coin, 0) for coin in coins}
+                return self._prices_cache
             return {}
 
     def get_size_decimals(self, coin, asset_meta=None):
@@ -206,8 +249,9 @@ class BotManager:
 
         return 10  # Default
 
-    def calculate_position_size(self, coin, collateral_usd, leverage):
+    def calculate_position_size(self, coin, collateral_usd, leverage, asset_meta=None):
         """Calculate position size based on collateral and leverage"""
+        # Use cached prices
         prices = self.get_market_prices([coin])
         current_price = prices.get(coin, 0)
 
@@ -217,8 +261,8 @@ class BotManager:
         notional_value = collateral_usd * leverage
         size = notional_value / current_price
 
-        # Get szDecimals from API
-        decimals = self.get_size_decimals(coin)
+        # Get szDecimals from passed metadata or cache
+        decimals = self.get_size_decimals(coin, asset_meta)
         size = round(size, decimals)
 
         # Ensure minimum size (at least 1 unit for 0 decimal coins)
@@ -240,9 +284,19 @@ class BotManager:
         try:
             info, exchange = self.get_exchange()
 
-            # Get full asset metadata for this coin
+            # Get full asset metadata (uses cache)
             asset_meta = self.get_asset_metadata()
             coin_meta = asset_meta.get(coin, {})
+
+            # Check if coin exists in Hyperliquid universe
+            if not coin_meta:
+                # Log available coins for debugging
+                available_coins = list(asset_meta.keys())
+                similar = [c for c in available_coins if coin.lower() in c.lower() or c.lower() in coin.lower()]
+                error_msg = f"Coin '{coin}' not found in Hyperliquid. Similar: {similar[:5]}"
+                logger.error(error_msg)
+                return {'success': False, 'error': error_msg}
+
             max_leverage = coin_meta.get('maxLeverage', 10)
             only_isolated = coin_meta.get('onlyIsolated', False)
 
@@ -266,8 +320,8 @@ class BotManager:
                 logger.error(error_msg)
                 return {'success': False, 'error': error_msg}
 
-            # Calculate position size
-            size, entry_price = self.calculate_position_size(coin, collateral_usd, leverage)
+            # Calculate position size (uses cached prices and metadata)
+            size, entry_price = self.calculate_position_size(coin, collateral_usd, leverage, asset_meta=asset_meta)
 
             # Execute order
             is_buy = action.lower() == 'buy'

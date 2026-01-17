@@ -187,7 +187,7 @@ def api_trade():
     try:
         data = request.get_json()
 
-        coin = data.get('coin', 'BTC').upper()
+        coin = data.get('coin', 'BTC')  # Preserve case - Hyperliquid uses case-sensitive names like kBONK
         action = data.get('action', '').lower()
         leverage = int(data.get('leverage', 10))
         collateral_usd = float(data.get('collateral_usd', 100))
@@ -255,7 +255,7 @@ def api_close_position():
     """Close a position"""
     try:
         data = request.get_json()
-        coin = data.get('coin', '').upper()
+        coin = data.get('coin', '')  # Preserve case - Hyperliquid uses case-sensitive names
 
         if not coin:
             return jsonify({'success': False, 'error': 'Coin is required'})
@@ -615,7 +615,8 @@ def api_get_coins():
 def api_get_coin(coin):
     """Get single coin configuration"""
     try:
-        config = CoinConfig.query.filter_by(coin=coin.upper()).first()
+        # Preserve case - Hyperliquid uses case-sensitive names like kBONK
+        config = CoinConfig.query.filter_by(coin=coin).first()
         if config:
             return jsonify(config.to_dict())
         return jsonify({'error': 'Coin not found'}), 404
@@ -628,10 +629,11 @@ def api_update_coin(coin):
     """Update coin configuration"""
     try:
         data = request.get_json()
-        config = CoinConfig.query.filter_by(coin=coin.upper()).first()
+        # Preserve case - Hyperliquid uses case-sensitive names like kBONK
+        config = CoinConfig.query.filter_by(coin=coin).first()
 
         if not config:
-            config = CoinConfig(coin=coin.upper())
+            config = CoinConfig(coin=coin)
             db.session.add(config)
 
         for key in ['enabled', 'default_leverage', 'default_collateral', 'max_position_size',
@@ -744,7 +746,7 @@ def webhook():
 
         # Parse data
         action = data.get("action", "").lower()
-        coin = data.get("coin", "BTC").upper()
+        coin = data.get("coin", "BTC")  # Preserve case - Hyperliquid uses case-sensitive names
         leverage = int(data.get("leverage", 10))
         collateral_usd = float(data.get("collateral_usd", 100))
         close_position = data.get("close_position", False)
