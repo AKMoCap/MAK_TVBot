@@ -27,6 +27,9 @@ class HyperliquidWebSocket {
 
         // Cache for HIP-3 positions (from REST API, not available via WebSocket)
         this._hip3PositionsCache = [];
+
+        // Cache for funding rates (from REST API, not available via WebSocket)
+        this._fundingRatesCache = {};
     }
 
     /**
@@ -40,6 +43,13 @@ class HyperliquidWebSocket {
         if (this._hip3PositionsCache.length > 0) {
             console.log('[HL-WS] Updated HIP-3 cache:', this._hip3PositionsCache.length, 'positions');
         }
+
+        // Also cache funding rates from all positions
+        positions.forEach(p => {
+            if (p.coin && p.funding_rate !== undefined) {
+                this._fundingRatesCache[p.coin] = p.funding_rate;
+            }
+        });
     }
 
     /**
@@ -294,8 +304,9 @@ class HyperliquidWebSocket {
                 .map(pos => {
                     const position = pos.position || pos;
                     const size = parseFloat(position.szi || 0);
+                    const coin = position.coin;
 
-                    console.log('[HL-WS] Parsing position:', position.coin, 'size:', size);
+                    console.log('[HL-WS] Parsing position:', coin, 'size:', size);
 
                     if (size === 0) return null;
 
@@ -303,8 +314,11 @@ class HyperliquidWebSocket {
                     const positionValue = parseFloat(position.positionValue || 0);
                     const markPx = size !== 0 ? Math.abs(positionValue / size) : entryPx;
 
+                    // Get cached funding rate if available
+                    const fundingRate = this._fundingRatesCache[coin];
+
                     return {
-                        coin: position.coin,
+                        coin: coin,
                         size: size,
                         entry_price: entryPx,
                         mark_price: markPx,
@@ -313,7 +327,8 @@ class HyperliquidWebSocket {
                         liquidation_price: position.liquidationPx ? parseFloat(position.liquidationPx) : null,
                         margin_used: parseFloat(position.marginUsed || 0),
                         side: size > 0 ? 'long' : 'short',
-                        is_hip3: false
+                        is_hip3: false,
+                        funding_rate: fundingRate
                     };
                 })
                 .filter(p => p !== null);
