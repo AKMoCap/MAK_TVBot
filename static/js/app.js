@@ -209,6 +209,12 @@ async function refreshDashboard() {
             updateAccountCards(accountData);
             updatePositionsTable(accountData.positions || []);
             connected = true;
+
+            // Update WebSocket HIP-3 cache with positions from REST API
+            // This ensures HIP-3 positions persist between WebSocket updates
+            if (typeof hlWebSocket !== 'undefined' && hlWebSocket.updateHip3Cache) {
+                hlWebSocket.updateHip3Cache(accountData.positions || []);
+            }
         }
     } catch (error) {
         console.error('[Dashboard] Account fetch failed:', error);

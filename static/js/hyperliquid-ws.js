@@ -24,6 +24,29 @@ class HyperliquidWebSocket {
         // Buffer for data received before callbacks are set
         this._lastAccountData = null;
         this._lastPositions = null;
+
+        // Cache for HIP-3 positions (from REST API, not available via WebSocket)
+        this._hip3PositionsCache = [];
+    }
+
+    /**
+     * Update the HIP-3 positions cache from REST API data
+     * Call this when REST API returns positions to preserve HIP-3 data
+     */
+    updateHip3Cache(positions) {
+        if (!positions || !Array.isArray(positions)) return;
+        // Extract only HIP-3 positions
+        this._hip3PositionsCache = positions.filter(p => p.is_hip3 === true);
+        if (this._hip3PositionsCache.length > 0) {
+            console.log('[HL-WS] Updated HIP-3 cache:', this._hip3PositionsCache.length, 'positions');
+        }
+    }
+
+    /**
+     * Clear the HIP-3 cache (e.g., on disconnect)
+     */
+    clearHip3Cache() {
+        this._hip3PositionsCache = [];
     }
 
     // Callback setters that also replay buffered data
@@ -337,6 +360,20 @@ class HyperliquidWebSocket {
             }
 
             console.log('[HL-WS] Total positions after HIP-3:', positions.length);
+        }
+
+        // Merge cached HIP-3 positions with native positions from WebSocket
+        // WebSocket doesn't provide HIP-3 positions, so we preserve them from REST API
+        if (this._hip3PositionsCache && this._hip3PositionsCache.length > 0) {
+            // Get coins from native positions to avoid duplicates
+            const nativeCoins = new Set(positions.map(p => p.coin));
+            // Add cached HIP-3 positions that aren't already in the list
+            for (const hip3Pos of this._hip3PositionsCache) {
+                if (!nativeCoins.has(hip3Pos.coin)) {
+                    positions.push(hip3Pos);
+                }
+            }
+            console.log('[HL-WS] Merged with HIP-3 cache, total positions:', positions.length);
         }
 
         // Buffer the data for late callback setup
