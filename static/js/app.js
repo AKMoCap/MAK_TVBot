@@ -257,8 +257,17 @@ async function refreshDashboard() {
     updateConnectionStatus(connected);
 }
 
+// Global cache for stablecoin balances (for transfer modal)
+let stablecoinBalances = {
+    usdcPerps: 0,
+    usdcSpot: 0,
+    usdh: 0
+};
+
 function updateAccountCards(data) {
-    document.getElementById('account-value').textContent = formatCurrency(data.account_value);
+    // Store perps account value and USDC balance
+    const perpsAccountValue = parseFloat(data.account_value) || 0;
+    stablecoinBalances.usdcPerps = parseFloat(data.withdrawable) || perpsAccountValue;
 
     // Calculate totals from positions
     const positions = data.positions || [];
@@ -274,6 +283,9 @@ function updateAccountCards(data) {
         totalPositionValue += posValue;
     });
 
+    // Fetch spot balances for total calculation
+    updateStablecoinBreakdown(perpsAccountValue);
+
     // Update Collateral at Risk
     const collateralEl = document.getElementById('collateral-at-risk');
     if (collateralEl) {
@@ -283,8 +295,7 @@ function updateAccountCards(data) {
     // Update Account Leverage (total position value / account value)
     const acctLeverageEl = document.getElementById('account-leverage');
     if (acctLeverageEl) {
-        const accountValue = parseFloat(data.account_value) || 0;
-        const acctLeverage = accountValue > 0 ? totalPositionValue / accountValue : 0;
+        const acctLeverage = perpsAccountValue > 0 ? totalPositionValue / perpsAccountValue : 0;
         acctLeverageEl.textContent = acctLeverage.toFixed(1) + 'x';
     }
 
@@ -305,6 +316,133 @@ function updateAccountCards(data) {
         }
     }
     // Note: Network badge is updated by fetchBotStatus() from /api/settings only
+}
+
+/**
+ * Update stablecoin breakdown and total account value
+ */
+async function updateStablecoinBreakdown(perpsAccountValue) {
+    const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
+    if (!walletAddress) return;
+
+    try {
+        const data = await apiCall(`/spot-balances?address=${walletAddress}`);
+        const balances = data.balances || [];
+
+        // Find stablecoin balances
+        let usdcSpot = 0;
+        let usdh = 0;
+        let totalSpotValue = 0;
+
+        balances.forEach(bal => {
+            const value = parseFloat(bal.value_usd) || 0;
+            totalSpotValue += value;
+
+            if (bal.token === 'USDC') {
+                usdcSpot = parseFloat(bal.total) || 0;
+                stablecoinBalances.usdcSpot = usdcSpot;
+            } else if (bal.token === 'USDH') {
+                usdh = parseFloat(bal.total) || 0;
+                stablecoinBalances.usdh = usdh;
+            }
+        });
+
+        // Update total account value (perps + spot)
+        const totalValue = perpsAccountValue + totalSpotValue;
+        document.getElementById('account-value').textContent = formatCurrency(totalValue);
+
+        // Update stablecoin breakdown
+        document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
+        document.getElementById('usdc-spot').textContent = formatCurrency(usdcSpot);
+        document.getElementById('usdh-balance').textContent = formatCurrency(usdh);
+
+    } catch (error) {
+        console.error('Failed to fetch spot balances for breakdown:', error);
+        // Still show perps value
+        document.getElementById('account-value').textContent = formatCurrency(perpsAccountValue);
+        document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
+    }
+}
+
+/**
+ * Setup transfer modal functionality
+ */
+function setupTransferModal() {
+    const directionSelect = document.getElementById('transfer-direction');
+    const amountInput = document.getElementById('transfer-amount');
+    const maxBtn = document.getElementById('transfer-max-btn');
+    const confirmBtn = document.getElementById('confirm-transfer-btn');
+    const availableEl = document.getElementById('transfer-available');
+
+    // Update available balance when direction changes
+    const updateAvailable = () => {
+        const direction = directionSelect.value;
+        const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerps;
+        availableEl.textContent = formatCurrency(available);
+    };
+
+    if (directionSelect) {
+        directionSelect.addEventListener('change', updateAvailable);
+    }
+
+    // Update available when modal opens
+    const transferModal = document.getElementById('transferModal');
+    if (transferModal) {
+        transferModal.addEventListener('show.bs.modal', updateAvailable);
+    }
+
+    // Max button
+    if (maxBtn) {
+        maxBtn.addEventListener('click', () => {
+            const direction = directionSelect.value;
+            const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerps;
+            amountInput.value = available.toFixed(2);
+        });
+    }
+
+    // Confirm transfer
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', async () => {
+            const direction = directionSelect.value;
+            const amount = parseFloat(amountInput.value);
+
+            if (!amount || amount <= 0) {
+                showToast('Please enter a valid amount', 'warning');
+                return;
+            }
+
+            const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerps;
+            if (amount > available) {
+                showToast('Amount exceeds available balance', 'error');
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Transferring...';
+
+            try {
+                const result = await apiCall('/transfer-usdc', 'POST', {
+                    direction,
+                    amount
+                });
+
+                if (result.success) {
+                    showToast(`Successfully transferred ${formatCurrency(amount)} USDC`, 'success');
+                    bootstrap.Modal.getInstance(transferModal).hide();
+                    amountInput.value = '';
+                    // Refresh dashboard to update balances
+                    refreshDashboard();
+                } else {
+                    showToast('Transfer failed: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showToast('Transfer failed: ' + error.message, 'error');
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="bi bi-arrow-left-right me-1"></i>Transfer';
+            }
+        });
+    }
 }
 
 function updateDailyStats(data) {
@@ -996,6 +1134,9 @@ function setupDashboardEvents() {
 
     // Setup sortable table headers for Perps
     setupPerpsTableSorting();
+
+    // Setup transfer modal
+    setupTransferModal();
 
     // Leverage slider
     const leverageRange = document.getElementById('trade-leverage-range');

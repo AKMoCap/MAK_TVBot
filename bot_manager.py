@@ -1208,6 +1208,79 @@ class BotManager:
             logger.exception(f"Error fetching spot balances: {e}")
             return []
 
+    def transfer_usdc(self, wallet_address, agent_key, amount, to_perp):
+        """
+        Transfer USDC between Spot and Perps accounts.
+
+        Args:
+            wallet_address: User's wallet address
+            agent_key: Agent private key for signing
+            amount: Amount in USD to transfer
+            to_perp: True for Spot->Perps, False for Perps->Spot
+        """
+        import requests
+        import time
+        from eth_account import Account
+        from hyperliquid.utils import constants
+        from hyperliquid.utils.signing import sign_usd_class_transfer_action, get_timestamp_ms
+
+        config = self.get_config()
+        api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+        try:
+            # Create the transfer action
+            timestamp = get_timestamp_ms()
+
+            # Build the action for usdClassTransfer
+            action = {
+                "type": "usdClassTransfer",
+                "amount": str(amount),
+                "toPerp": to_perp,
+                "nonce": timestamp
+            }
+
+            # Sign the action using the agent key
+            account = Account.from_key(agent_key)
+
+            # Use the SDK's signing function
+            signature = sign_usd_class_transfer_action(
+                account,
+                action,
+                config['use_testnet']
+            )
+
+            # Build the request payload
+            payload = {
+                "action": action,
+                "nonce": timestamp,
+                "signature": signature,
+                "vaultAddress": None
+            }
+
+            logger.info(f"Transferring {amount} USDC {'to perps' if to_perp else 'to spot'} for {wallet_address}")
+
+            # Make the API request to the exchange endpoint
+            response = requests.post(
+                f"{api_url}/exchange",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+
+            result = response.json()
+            logger.info(f"Transfer response: {json.dumps(result)[:500]}")
+
+            if result.get('status') == 'ok':
+                return {'success': True}
+            else:
+                error_msg = result.get('response', {}).get('data', {}).get('error', 'Unknown error')
+                if not error_msg:
+                    error_msg = str(result)
+                return {'success': False, 'error': error_msg}
+
+        except Exception as e:
+            logger.exception(f"Error transferring USDC: {e}")
+            return {'success': False, 'error': str(e)}
+
 
 # Global bot manager instance
 bot_manager = BotManager()
