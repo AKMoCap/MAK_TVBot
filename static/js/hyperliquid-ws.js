@@ -16,11 +16,42 @@ class HyperliquidWebSocket {
         this.subscriptionId = null;
 
         // Callbacks
-        this.onPositionUpdate = null;
-        this.onAccountUpdate = null;
-        this.onOrderUpdate = null;
-        this.onFillUpdate = null;
+        this._onPositionUpdate = null;
+        this._onAccountUpdate = null;
+        this._onOrderUpdate = null;
+        this._onFillUpdate = null;
+
+        // Buffer for data received before callbacks are set
+        this._lastAccountData = null;
+        this._lastPositions = null;
     }
+
+    // Callback setters that also replay buffered data
+    set onAccountUpdate(callback) {
+        this._onAccountUpdate = callback;
+        // Replay buffered data if available
+        if (callback && this._lastAccountData) {
+            console.log('[HL-WS] Replaying buffered account data');
+            callback(this._lastAccountData);
+        }
+    }
+    get onAccountUpdate() { return this._onAccountUpdate; }
+
+    set onPositionUpdate(callback) {
+        this._onPositionUpdate = callback;
+        // Replay buffered data if available
+        if (callback && this._lastPositions) {
+            console.log('[HL-WS] Replaying buffered position data');
+            callback(this._lastPositions);
+        }
+    }
+    get onPositionUpdate() { return this._onPositionUpdate; }
+
+    set onOrderUpdate(callback) { this._onOrderUpdate = callback; }
+    get onOrderUpdate() { return this._onOrderUpdate; }
+
+    set onFillUpdate(callback) { this._onFillUpdate = callback; }
+    get onFillUpdate() { return this._onFillUpdate; }
 
     /**
      * Get WebSocket URL based on network
@@ -48,7 +79,19 @@ class HyperliquidWebSocket {
             return false;
         }
 
-        this.userAddress = userAddress.toLowerCase();
+        // IMPORTANT: Use the address as-is, Hyperliquid may need checksum format
+        // Convert to checksum if it's all lowercase
+        this.userAddress = userAddress;
+
+        // If address is all lowercase, try to get checksum from ethers
+        if (userAddress === userAddress.toLowerCase() && typeof ethers !== 'undefined') {
+            try {
+                this.userAddress = ethers.getAddress(userAddress);
+                console.log('[HL-WS] Converted to checksum address:', this.userAddress);
+            } catch (e) {
+                console.log('[HL-WS] Using address as-is:', userAddress);
+            }
+        }
 
         // Disconnect existing connection if any
         this.disconnect();
@@ -129,14 +172,18 @@ class HyperliquidWebSocket {
         try {
             const msg = JSON.parse(data);
 
+            // Debug: log all messages
+            console.log('[HL-WS] Raw message channel:', msg.channel);
+
             // Handle subscription confirmation
             if (msg.channel === 'subscriptionResponse') {
                 console.log('[HL-WS] Subscription response:', msg.data);
                 return;
             }
 
-            // Handle webData2 updates
-            if (msg.channel === 'webData2') {
+            // Handle webData2 updates - check both possible channel names
+            if (msg.channel === 'webData2' || msg.channel === 'user') {
+                console.log('[HL-WS] User data received, has clearinghouseState:', !!msg.data?.clearinghouseState);
                 this.processWebData2(msg.data);
                 return;
             }
@@ -146,8 +193,14 @@ class HyperliquidWebSocket {
                 return;
             }
 
+            // Handle error messages
+            if (msg.channel === 'error' || msg.error) {
+                console.error('[HL-WS] Error from server:', msg);
+                return;
+            }
+
             // Log other messages for debugging
-            console.log('[HL-WS] Message:', msg);
+            console.log('[HL-WS] Unhandled message:', msg);
 
         } catch (error) {
             console.error('[HL-WS] Error parsing message:', error, data);
@@ -158,7 +211,12 @@ class HyperliquidWebSocket {
      * Process webData2 updates - contains positions, account info, orders
      */
     processWebData2(data) {
-        if (!data) return;
+        if (!data) {
+            console.log('[HL-WS] processWebData2: no data');
+            return;
+        }
+
+        console.log('[HL-WS] processWebData2 keys:', Object.keys(data));
 
         // Extract clearinghouse state (positions, margin, account value)
         const clearinghouse = data.clearinghouseState;
@@ -169,12 +227,25 @@ class HyperliquidWebSocket {
             const totalMarginUsed = parseFloat(marginSummary.totalMarginUsed || 0);
             const withdrawable = parseFloat(marginSummary.withdrawable || 0);
 
+            console.log('[HL-WS] Account value:', accountValue, 'Margin used:', totalMarginUsed);
+
             // Positions
             const assetPositions = clearinghouse.assetPositions || [];
+            console.log('[HL-WS] Raw assetPositions count:', assetPositions.length);
+
+            // Debug: log first position structure
+            if (assetPositions.length > 0) {
+                console.log('[HL-WS] First position structure:', JSON.stringify(assetPositions[0], null, 2));
+            }
+
             const positions = assetPositions
                 .map(pos => {
                     const position = pos.position || pos;
                     const size = parseFloat(position.szi || 0);
+
+                    // Debug: log each position parsing
+                    console.log('[HL-WS] Parsing position:', position.coin, 'size:', size);
+
                     if (size === 0) return null;
 
                     const entryPx = parseFloat(position.entryPx || 0);
@@ -195,30 +266,43 @@ class HyperliquidWebSocket {
                 })
                 .filter(p => p !== null);
 
+            console.log('[HL-WS] Filtered positions count:', positions.length);
+
+            // Buffer the data for late callback setup
+            this._lastPositions = positions;
+            const accountData = {
+                account_value: accountValue,
+                total_margin_used: totalMarginUsed,
+                withdrawable: withdrawable,
+                positions: positions
+            };
+            this._lastAccountData = accountData;
+
             // Call position update callback
-            if (this.onPositionUpdate) {
-                this.onPositionUpdate(positions);
+            if (this._onPositionUpdate) {
+                this._onPositionUpdate(positions);
+            } else {
+                console.log('[HL-WS] No position callback set, data buffered');
             }
 
             // Call account update callback
-            if (this.onAccountUpdate) {
-                this.onAccountUpdate({
-                    account_value: accountValue,
-                    total_margin_used: totalMarginUsed,
-                    withdrawable: withdrawable,
-                    positions: positions
-                });
+            if (this._onAccountUpdate) {
+                this._onAccountUpdate(accountData);
+            } else {
+                console.log('[HL-WS] No account callback set, data buffered');
             }
+        } else {
+            console.log('[HL-WS] No clearinghouseState in data');
         }
 
         // Extract open orders
-        if (data.openOrders && this.onOrderUpdate) {
-            this.onOrderUpdate(data.openOrders);
+        if (data.openOrders && this._onOrderUpdate) {
+            this._onOrderUpdate(data.openOrders);
         }
 
         // Extract fills (recent trades)
-        if (data.fills && this.onFillUpdate) {
-            this.onFillUpdate(data.fills);
+        if (data.fills && this._onFillUpdate) {
+            this._onFillUpdate(data.fills);
         }
     }
 

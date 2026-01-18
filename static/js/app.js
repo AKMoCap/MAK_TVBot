@@ -106,17 +106,18 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 // ============================================================================
 
 async function initDashboard() {
-    // First fetch settings to get network and bot status
+    // Setup real-time WebSocket callbacks FIRST (before any connections)
+    setupHyperliquidWebSocket();
+
+    // Then fetch settings to get network and bot status
     await fetchBotStatus();
     await refreshDashboard();
     setupDashboardEvents();
-
-    // Setup real-time WebSocket for position updates
-    setupHyperliquidWebSocket();
 }
 
 /**
  * Setup Hyperliquid WebSocket for real-time position updates
+ * This should be called early, before wallet connects
  */
 function setupHyperliquidWebSocket() {
     if (typeof hlWebSocket === 'undefined') {
@@ -124,9 +125,11 @@ function setupHyperliquidWebSocket() {
         return;
     }
 
+    console.log('[Dashboard] Setting up Hyperliquid WebSocket callbacks');
+
     // Set up callbacks for real-time updates
     hlWebSocket.onAccountUpdate = (data) => {
-        console.log('[WS] Account update received');
+        console.log('[WS] Account update received, positions:', data.positions?.length || 0);
         updateAccountCards(data);
         updatePositionsTable(data.positions || []);
         updateConnectionStatus(true);
@@ -142,11 +145,18 @@ function setupHyperliquidWebSocket() {
         // Could update activity list here if needed
     };
 
-    // Connect if wallet is already connected
+    // If wallet is already connected (session restored), connect WebSocket now
     if (typeof walletManager !== 'undefined' && walletManager.isConnected && walletManager.address) {
-        console.log('[Dashboard] Connecting WebSocket for wallet:', walletManager.address);
+        console.log('[Dashboard] Wallet already connected, connecting WebSocket for:', walletManager.address);
         hlWebSocket.connect(walletManager.address);
     }
+}
+
+// Setup WebSocket callbacks immediately when script loads
+// This ensures callbacks are ready before wallet.js tries to connect
+if (typeof hlWebSocket !== 'undefined') {
+    console.log('[app.js] Setting up WebSocket callbacks on load');
+    setupHyperliquidWebSocket();
 }
 
 async function fetchBotStatus() {
@@ -333,7 +343,13 @@ function updateRiskBars(data) {
 }
 
 function updatePositionsTable(positions) {
+    console.log('[updatePositionsTable] Called with', positions?.length || 0, 'positions');
+
     const tbody = document.getElementById('positions-table');
+    if (!tbody) {
+        console.error('[updatePositionsTable] positions-table element not found!');
+        return;
+    }
 
     if (!positions || positions.length === 0) {
         tbody.innerHTML = `
@@ -346,6 +362,8 @@ function updatePositionsTable(positions) {
         `;
         return;
     }
+
+    console.log('[updatePositionsTable] Rendering positions:', positions);
 
     tbody.innerHTML = positions.map(pos => {
         const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
