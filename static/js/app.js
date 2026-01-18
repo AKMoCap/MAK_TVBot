@@ -110,6 +110,43 @@ async function initDashboard() {
     await fetchBotStatus();
     await refreshDashboard();
     setupDashboardEvents();
+
+    // Setup real-time WebSocket for position updates
+    setupHyperliquidWebSocket();
+}
+
+/**
+ * Setup Hyperliquid WebSocket for real-time position updates
+ */
+function setupHyperliquidWebSocket() {
+    if (typeof hlWebSocket === 'undefined') {
+        console.warn('[Dashboard] HyperliquidWebSocket not available');
+        return;
+    }
+
+    // Set up callbacks for real-time updates
+    hlWebSocket.onAccountUpdate = (data) => {
+        console.log('[WS] Account update received');
+        updateAccountCards(data);
+        updatePositionsTable(data.positions || []);
+        updateConnectionStatus(true);
+    };
+
+    hlWebSocket.onPositionUpdate = (positions) => {
+        console.log('[WS] Position update:', positions.length, 'positions');
+        updatePositionsTable(positions);
+    };
+
+    hlWebSocket.onFillUpdate = (fills) => {
+        console.log('[WS] Fill update:', fills.length, 'fills');
+        // Could update activity list here if needed
+    };
+
+    // Connect if wallet is already connected
+    if (typeof walletManager !== 'undefined' && walletManager.isConnected && walletManager.address) {
+        console.log('[Dashboard] Connecting WebSocket for wallet:', walletManager.address);
+        hlWebSocket.connect(walletManager.address);
+    }
 }
 
 async function fetchBotStatus() {
