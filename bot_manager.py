@@ -122,6 +122,70 @@ class BotManager:
             user_agent_key=user.get_agent_key()
         )
 
+    def enable_dex_abstraction(self, user_wallet=None, user_agent_key=None):
+        """
+        Enable HIP-3 DEX abstraction for the user's agent wallet.
+        This allows trading on HIP-3 perps (builder-deployed perpetuals).
+        Must be called after agent wallet is approved.
+        """
+        try:
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
+
+            # Check if the SDK has the method
+            if hasattr(exchange, 'agent_enable_dex_abstraction'):
+                result = exchange.agent_enable_dex_abstraction()
+                logger.info(f"DEX abstraction enabled via SDK for {user_wallet[:10]}...: {result}")
+                return {'success': True, 'result': result}
+            else:
+                # Fallback: manually call the API if SDK doesn't have the method
+                import requests
+                from hyperliquid.utils import constants
+                from hyperliquid.utils.signing import get_timestamp_ms, sign_l1_action
+
+                config = self.get_config(user_wallet, user_agent_key)
+                api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+                timestamp = get_timestamp_ms()
+                action = {"type": "agentEnableDexAbstraction"}
+
+                # Get the wallet from exchange
+                wallet = exchange.wallet
+
+                # Sign the action
+                signature = sign_l1_action(
+                    wallet,
+                    action,
+                    None,  # vault_address
+                    timestamp,
+                    None,  # expires_after
+                    not config['use_testnet'],  # is_mainnet
+                )
+
+                payload = {
+                    "action": action,
+                    "nonce": timestamp,
+                    "signature": signature,
+                    "vaultAddress": None
+                }
+
+                response = requests.post(
+                    f"{api_url}/exchange",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+
+                result = response.json()
+                logger.info(f"DEX abstraction enabled manually for {user_wallet[:10]}...: {result}")
+
+                if result.get('status') == 'ok' or 'response' in result:
+                    return {'success': True, 'result': result}
+                else:
+                    return {'success': False, 'error': result.get('error', 'Unknown error')}
+
+        except Exception as e:
+            logger.exception(f"Error enabling DEX abstraction: {e}")
+            return {'success': False, 'error': str(e)}
+
     def _on_ws_prices(self, msg):
         """Callback for WebSocket price updates"""
         try:

@@ -217,10 +217,20 @@ class HyperliquidWebSocket {
         }
 
         console.log('[HL-WS] processWebData2 keys:', Object.keys(data));
+        console.log('[HL-WS] Subscribed address:', this.userAddress);
+        console.log('[HL-WS] Data user field:', data.user);
+
+        // Check if there's a spot position
+        if (data.spotState) {
+            console.log('[HL-WS] spotState:', JSON.stringify(data.spotState, null, 2));
+        }
 
         // Extract clearinghouse state (positions, margin, account value)
         const clearinghouse = data.clearinghouseState;
         if (clearinghouse) {
+            // Debug: log the full clearinghouse structure
+            console.log('[HL-WS] clearinghouseState keys:', Object.keys(clearinghouse));
+
             // Account summary
             const marginSummary = clearinghouse.marginSummary || {};
             const accountValue = parseFloat(marginSummary.accountValue || 0);
@@ -229,13 +239,20 @@ class HyperliquidWebSocket {
 
             console.log('[HL-WS] Account value:', accountValue, 'Margin used:', totalMarginUsed);
 
-            // Positions
-            const assetPositions = clearinghouse.assetPositions || [];
+            // Positions - check both assetPositions and crossMarginSummary
+            let assetPositions = clearinghouse.assetPositions || [];
             console.log('[HL-WS] Raw assetPositions count:', assetPositions.length);
 
-            // Debug: log first position structure
+            // Debug: log first position structure if any
             if (assetPositions.length > 0) {
                 console.log('[HL-WS] First position structure:', JSON.stringify(assetPositions[0], null, 2));
+            } else {
+                // Check if positions might be elsewhere in the data
+                console.log('[HL-WS] No assetPositions, checking other fields...');
+                console.log('[HL-WS] marginSummary:', JSON.stringify(marginSummary, null, 2));
+                if (clearinghouse.crossMarginSummary) {
+                    console.log('[HL-WS] crossMarginSummary:', JSON.stringify(clearinghouse.crossMarginSummary, null, 2));
+                }
             }
 
             const positions = assetPositions
