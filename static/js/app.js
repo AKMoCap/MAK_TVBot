@@ -229,16 +229,7 @@ function updateAccountCards(data) {
             if (pnlIconContainer) pnlIconContainer.className = 'bg-danger bg-opacity-25 p-2 rounded';
         }
     }
-
-    // Update network badge
-    const networkBadge = document.getElementById('network-badge');
-    if (data.network === 'mainnet') {
-        networkBadge.className = 'badge bg-danger';
-        networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
-    } else {
-        networkBadge.className = 'badge bg-warning text-dark';
-        networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>TESTNET';
-    }
+    // Note: Network badge is updated by fetchBotStatus() from /api/settings only
 }
 
 function updateDailyStats(data) {
@@ -1096,18 +1087,7 @@ async function loadSettings() {
 
         // Update navbar bot toggle to match
         updateBotToggleButton(botEnabled);
-
-        // Update network badge
-        const networkBadge = document.getElementById('network-badge');
-        if (networkBadge) {
-            if (data.use_testnet === 'false') {
-                networkBadge.className = 'status-badge status-badge-primary';
-                networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>MAINNET';
-            } else {
-                networkBadge.className = 'status-badge status-badge-testnet';
-                networkBadge.innerHTML = '<i class="bi bi-hdd-network me-1"></i>TESTNET';
-            }
-        }
+        // Note: Network badge is updated by fetchBotStatus() only
 
         // Risk settings
         if (data.risk) {
