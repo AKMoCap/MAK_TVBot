@@ -1049,22 +1049,74 @@ class BotManager:
             logger.exception(f"Error placing take profit: {e}")
             return {'success': False, 'error': str(e)}
 
-    def get_open_orders(self, user_wallet=None, user_agent_key=None):
-        """Get all open orders"""
+    def get_open_orders(self, wallet_address):
+        """
+        Get all open orders for a wallet address.
+        Uses direct API call with type: openOrders
+        """
+        import requests
+        from hyperliquid.utils import constants
+
+        config = self.get_config()
+        api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
         try:
-            config = self.get_config(user_wallet, user_agent_key)
-            info, _ = self.get_exchange(user_wallet, user_agent_key)
-            orders = info.open_orders(config['main_wallet'])
-            return orders
+            all_orders = []
+
+            # Get native perps + spot open orders (dex: "")
+            response = requests.post(
+                f"{api_url}/info",
+                json={
+                    "type": "openOrders",
+                    "user": wallet_address
+                },
+                headers={"Content-Type": "application/json"}
+            )
+
+            native_orders = response.json()
+            if isinstance(native_orders, list):
+                all_orders.extend(native_orders)
+                logger.info(f"Fetched {len(native_orders)} native open orders for {wallet_address}")
+
+            # Also fetch HIP-3 open orders from each DEX
+            dex_response = requests.post(
+                f"{api_url}/info",
+                json={"type": "perpDexs"},
+                headers={"Content-Type": "application/json"}
+            )
+            dex_list = dex_response.json()
+
+            if dex_list and isinstance(dex_list, list):
+                for dex_info in dex_list:
+                    dex_name = dex_info.get('name', dex_info.get('dex', '')) if isinstance(dex_info, dict) else str(dex_info)
+                    if not dex_name:
+                        continue
+
+                    hip3_response = requests.post(
+                        f"{api_url}/info",
+                        json={
+                            "type": "openOrders",
+                            "user": wallet_address,
+                            "dex": dex_name
+                        },
+                        headers={"Content-Type": "application/json"}
+                    )
+                    hip3_orders = hip3_response.json()
+                    if isinstance(hip3_orders, list) and hip3_orders:
+                        all_orders.extend(hip3_orders)
+                        logger.info(f"Fetched {len(hip3_orders)} HIP-3 orders from {dex_name}")
+
+            return all_orders
+
         except Exception as e:
             logger.exception(f"Error getting open orders: {e}")
             return []
 
-    def cancel_all_orders(self, coin=None, user_wallet=None, user_agent_key=None):
+    def cancel_all_orders(self, wallet_address, agent_key, coin=None):
         """Cancel all open orders, optionally for a specific coin"""
         try:
-            _, exchange = self.get_exchange(user_wallet, user_agent_key)
-            orders = self.get_open_orders(user_wallet, user_agent_key)
+            _, exchange = self.get_exchange(wallet_address, agent_key)
+            orders = self.get_open_orders(wallet_address)
 
             cancelled = []
             for order in orders:
@@ -1097,12 +1149,15 @@ class BotManager:
         """
         Get spot balances for a wallet.
         Returns list of token balances with USD values.
+        Uses spotClearinghouseState API endpoint.
         """
         import requests
         from hyperliquid.utils import constants
 
         config = self.get_config()
         api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+        logger.info(f"Fetching spot balances for {wallet_address} from {api_url}")
 
         try:
             # Fetch spot balances using spotClearinghouseState
@@ -1116,6 +1171,7 @@ class BotManager:
             )
 
             data = response.json()
+            logger.info(f"Spot balances API response: {json.dumps(data)[:500] if data else 'None'}")
             balances = []
 
             if data and isinstance(data, dict):

@@ -185,11 +185,13 @@ def api_spot_balances():
     try:
         # Check if wallet is connected
         wallet_address = session.get('wallet_address')
+        logger.info(f"[spot-balances] wallet_address from session: {wallet_address}")
         if not wallet_address:
-            return jsonify({'error': 'Not connected', 'balances': []})
+            return jsonify({'error': 'Wallet not connected', 'balances': []})
 
         # Fetch spot balances from Hyperliquid
         balances = bot_manager.get_spot_balances(wallet_address)
+        logger.info(f"[spot-balances] Returning {len(balances)} balances")
         return jsonify({'balances': balances})
     except Exception as e:
         logger.exception(f"Error getting spot balances: {e}")
@@ -202,11 +204,13 @@ def api_open_orders():
     try:
         # Check if wallet is connected
         wallet_address = session.get('wallet_address')
+        logger.info(f"[open-orders] wallet_address from session: {wallet_address}")
         if not wallet_address:
-            return jsonify({'error': 'Not connected', 'orders': []})
+            return jsonify({'error': 'Wallet not connected', 'orders': []})
 
         # Fetch open orders from Hyperliquid
         orders = bot_manager.get_open_orders(wallet_address)
+        logger.info(f"[open-orders] Returning {len(orders)} orders")
         return jsonify({'orders': orders})
     except Exception as e:
         logger.exception(f"Error getting open orders: {e}")
