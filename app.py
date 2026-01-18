@@ -173,6 +173,65 @@ def api_prices():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/spot-balances', methods=['GET'])
+def api_spot_balances():
+    """Get spot balances for the connected wallet"""
+    try:
+        # Check if wallet is connected
+        wallet_address = session.get('wallet_address')
+        if not wallet_address:
+            return jsonify({'error': 'Not connected', 'balances': []})
+
+        # Fetch spot balances from Hyperliquid
+        balances = bot_manager.get_spot_balances(wallet_address)
+        return jsonify({'balances': balances})
+    except Exception as e:
+        logger.exception(f"Error getting spot balances: {e}")
+        return jsonify({'error': str(e), 'balances': []}), 500
+
+
+@app.route('/api/open-orders', methods=['GET'])
+def api_open_orders():
+    """Get open orders for the connected wallet"""
+    try:
+        # Check if wallet is connected
+        wallet_address = session.get('wallet_address')
+        if not wallet_address:
+            return jsonify({'error': 'Not connected', 'orders': []})
+
+        # Fetch open orders from Hyperliquid
+        orders = bot_manager.get_open_orders(wallet_address)
+        return jsonify({'orders': orders})
+    except Exception as e:
+        logger.exception(f"Error getting open orders: {e}")
+        return jsonify({'error': str(e), 'orders': []}), 500
+
+
+@app.route('/api/cancel-order', methods=['POST'])
+def api_cancel_order():
+    """Cancel an open order"""
+    try:
+        # Check if wallet is connected and authorized
+        wallet_address = session.get('wallet_address')
+        agent_key = session.get('agent_private_key')
+
+        if not wallet_address or not agent_key:
+            return jsonify({'success': False, 'error': 'Not authorized'})
+
+        data = request.json
+        oid = data.get('oid')
+        coin = data.get('coin')
+
+        if not oid or not coin:
+            return jsonify({'success': False, 'error': 'Missing oid or coin'})
+
+        result = bot_manager.cancel_order(wallet_address, agent_key, oid, coin)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error cancelling order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/asset-meta', methods=['GET'])
 def api_asset_metadata():
     """Get asset metadata from database (no API call - use /api/asset-meta/refresh to update)"""

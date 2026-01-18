@@ -383,13 +383,12 @@ function updatePositionsTable(positions) {
         // Margin used
         const margin = pos.margin_used || 0;
 
-        // Funding - show hourly rate and annualized rate
+        // Funding - show annualized rate only
         let fundingDisplay = '--';
         if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
-            const hourlyPct = (pos.funding_rate * 100).toFixed(1);
             const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
             const rateClass = pos.funding_rate >= 0 ? 'text-danger' : 'text-success';
-            fundingDisplay = `<span class="${rateClass}">${hourlyPct}% / ${annualPct}%</span>`;
+            fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
         }
 
         return `
@@ -632,7 +631,194 @@ function clearQuickTradeForm() {
     if (tp2SizeInput) tp2SizeInput.value = '';
 }
 
+/**
+ * Setup tab switching for Perps/Spot/Open Orders
+ */
+function setupPositionTabs() {
+    const tabs = document.querySelectorAll('.positions-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            // Remove active class from all tabs
+            tabs.forEach(t => t.classList.remove('active'));
+            // Add active class to clicked tab
+            this.classList.add('active');
+
+            // Hide all tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+
+            // Show selected tab content
+            const tabName = this.dataset.tab;
+            const tabContent = document.getElementById('tab-' + tabName);
+            if (tabContent) {
+                tabContent.style.display = 'block';
+            }
+
+            // Load data for the selected tab
+            if (tabName === 'spot') {
+                loadSpotBalances();
+            } else if (tabName === 'orders') {
+                loadOpenOrders();
+            }
+        });
+    });
+}
+
+/**
+ * Load spot balances from API
+ */
+async function loadSpotBalances() {
+    const tbody = document.getElementById('spot-table');
+    if (!tbody) return;
+
+    try {
+        const data = await apiCall('/spot-balances');
+        if (data.error) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">
+                        <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
+                        ${data.error}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        const balances = data.balances || [];
+        if (balances.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">
+                        <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                        No spot balances
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = balances.map(bal => `
+            <tr>
+                <td><strong>${bal.token}</strong></td>
+                <td>${parseFloat(bal.total).toFixed(4)}</td>
+                <td>${parseFloat(bal.available || bal.total).toFixed(4)}</td>
+                <td>${parseFloat(bal.in_orders || 0).toFixed(4)}</td>
+                <td>${formatCurrency(bal.value_usd)}</td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load spot balances:', error);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted py-3">
+                    <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
+                    Failed to load balances
+                </td>
+            </tr>
+        `;
+    }
+}
+
+/**
+ * Load open orders from API
+ */
+async function loadOpenOrders() {
+    const tbody = document.getElementById('orders-table');
+    if (!tbody) return;
+
+    try {
+        const data = await apiCall('/open-orders');
+        if (data.error) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-3">
+                        <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
+                        ${data.error}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        const orders = data.orders || [];
+        if (orders.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-3">
+                        <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                        No open orders
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = orders.map(order => {
+            // Hyperliquid returns 'B' for buy, 'A' for sell (ask)
+            const sideClass = order.side === 'B' ? 'badge-long' : 'badge-short';
+            const sideText = order.side === 'B' ? 'BUY' : 'SELL';
+            // Field names from Hyperliquid: sz (size), limitPx (price), orderType
+            const size = parseFloat(order.sz || order.size || 0);
+            const price = parseFloat(order.limitPx || order.price || 0);
+            const orderValue = size * price;
+            const origSz = parseFloat(order.origSz || order.sz || size);
+            const filledPct = origSz > 0 ? (((origSz - size) / origSz) * 100).toFixed(0) : '0';
+
+            return `
+                <tr>
+                    <td><strong>${order.coin}</strong></td>
+                    <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${sideText}</span></td>
+                    <td>${order.orderType || 'Limit'}</td>
+                    <td>${size.toFixed(4)}</td>
+                    <td>${formatPrice(price)}</td>
+                    <td>${formatCurrency(orderValue)}</td>
+                    <td>${filledPct}%</td>
+                    <td>
+                        <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="cancelOrder(${order.oid}, '${order.coin}')">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load open orders:', error);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-muted py-3">
+                    <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
+                    Failed to load orders
+                </td>
+            </tr>
+        `;
+    }
+}
+
+/**
+ * Cancel an open order
+ */
+async function cancelOrder(oid, coin) {
+    if (!confirm(`Cancel order for ${coin}?`)) return;
+
+    try {
+        const result = await apiCall('/cancel-order', 'POST', { oid, coin });
+        if (result.success) {
+            showToast(`Order cancelled for ${coin}`, 'success');
+            loadOpenOrders();
+        } else {
+            showToast('Failed to cancel order: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Failed to cancel order', 'error');
+    }
+}
+
 function setupDashboardEvents() {
+    // Setup positions/spot/orders tab switching
+    setupPositionTabs();
+
     // Leverage slider
     const leverageRange = document.getElementById('trade-leverage-range');
     const leverageDisplay = document.getElementById('leverage-display');
