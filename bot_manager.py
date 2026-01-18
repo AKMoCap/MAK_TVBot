@@ -299,6 +299,10 @@ class BotManager:
         """
         Get HIP-3 (builder-deployed perpetual) positions.
         These are separate from native perps and require DEX abstraction to be enabled.
+
+        HIP-3 API requires:
+        1. First fetch all DEX names via type: "perpDexs"
+        2. Then query clearinghouseState with dex parameter for each DEX
         """
         import requests
         from hyperliquid.utils import constants
@@ -306,61 +310,63 @@ class BotManager:
         config = self.get_config()
         api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
 
-        # Query perp dex clearinghouse state for HIP-3 positions
-        # Using the info endpoint with perpDexClearinghouseState type
         try:
-            response = requests.post(
+            # Step 1: Get list of all HIP-3 DEXs
+            dex_response = requests.post(
                 f"{api_url}/info",
-                json={
-                    "type": "perpDexClearinghouseState",
-                    "user": wallet_address
-                },
+                json={"type": "perpDexs"},
                 headers={"Content-Type": "application/json"}
             )
 
-            result = response.json()
-            logger.info(f"HIP-3 perpDexClearinghouseState response: {json.dumps(result)[:500]}")
+            dex_list = dex_response.json()
+            logger.info(f"HIP-3 perpDexs response: {json.dumps(dex_list)[:500]}")
 
-            if not result or isinstance(result, str):
+            if not dex_list or not isinstance(dex_list, list):
+                logger.info("No HIP-3 DEXs found")
                 return []
 
-            # Parse HIP-3 positions from the response
-            # The structure may vary, so handle different formats
             hip3_positions = []
 
-            # Check if result is a list of clearinghouse states (one per DEX)
-            if isinstance(result, list):
-                for dex_state in result:
-                    positions = dex_state.get('assetPositions', [])
-                    dex_name = dex_state.get('dexName', 'HIP-3')
+            # Step 2: Query clearinghouseState for each DEX
+            for dex_info in dex_list:
+                # dex_info could be a string (dex name) or a dict with dex details
+                if isinstance(dex_info, dict):
+                    dex_name = dex_info.get('name', dex_info.get('dex', ''))
+                else:
+                    dex_name = str(dex_info)
 
-                    for pos in positions:
-                        position = pos.get('position', pos)
-                        size = float(position.get('szi', 0))
-                        if size != 0:
-                            coin_name = position.get('coin', '')
-                            hip3_positions.append({
-                                'coin': coin_name,
-                                'size': size,
-                                'entry_price': float(position.get('entryPx', 0)),
-                                'mark_price': float(position.get('positionValue', 0)) / abs(size) if size != 0 else 0,
-                                'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
-                                'leverage': int(position.get('leverage', {}).get('value', 1)) if isinstance(position.get('leverage'), dict) else int(position.get('leverage', 1)),
-                                'liquidation_price': float(position.get('liquidationPx', 0)) if position.get('liquidationPx') else None,
-                                'margin_used': float(position.get('marginUsed', 0)),
-                                'side': 'long' if size > 0 else 'short',
-                                'is_hip3': True,
-                                'dex_name': dex_name
-                            })
-            elif isinstance(result, dict):
-                # Single clearinghouse state
-                positions = result.get('assetPositions', [])
+                if not dex_name:
+                    continue
+
+                logger.info(f"Fetching HIP-3 positions for DEX: {dex_name}")
+
+                # Query clearinghouseState with dex parameter
+                state_response = requests.post(
+                    f"{api_url}/info",
+                    json={
+                        "type": "clearinghouseState",
+                        "user": wallet_address,
+                        "dex": dex_name
+                    },
+                    headers={"Content-Type": "application/json"}
+                )
+
+                state = state_response.json()
+                logger.info(f"HIP-3 clearinghouseState for {dex_name}: {json.dumps(state)[:500]}")
+
+                if not state or isinstance(state, str):
+                    continue
+
+                # Parse positions from clearinghouseState
+                positions = state.get('assetPositions', [])
                 for pos in positions:
                     position = pos.get('position', pos)
                     size = float(position.get('szi', 0))
                     if size != 0:
+                        coin_name = position.get('coin', '')
+                        # HIP-3 coins have format "dex:COIN" e.g., "xyz:BTC"
                         hip3_positions.append({
-                            'coin': position.get('coin', ''),
+                            'coin': coin_name,
                             'size': size,
                             'entry_price': float(position.get('entryPx', 0)),
                             'mark_price': float(position.get('positionValue', 0)) / abs(size) if size != 0 else 0,
@@ -369,9 +375,11 @@ class BotManager:
                             'liquidation_price': float(position.get('liquidationPx', 0)) if position.get('liquidationPx') else None,
                             'margin_used': float(position.get('marginUsed', 0)),
                             'side': 'long' if size > 0 else 'short',
-                            'is_hip3': True
+                            'is_hip3': True,
+                            'dex_name': dex_name
                         })
 
+            logger.info(f"Total HIP-3 positions found: {len(hip3_positions)}")
             return hip3_positions
 
         except Exception as e:
