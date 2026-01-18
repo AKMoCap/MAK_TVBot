@@ -347,6 +347,48 @@ class BotManager:
             logger.warning(f"Error fetching funding rates: {e}")
             return {}
 
+    def _get_hip3_funding_rates(self, api_url, dex_name):
+        """
+        Get funding rates for a specific HIP-3 DEX.
+        Returns dict mapping "dex:COIN" -> funding_rate (hourly)
+        """
+        import requests
+
+        try:
+            # Fetch metaAndAssetCtxs with dex parameter for HIP-3 perps
+            response = requests.post(
+                f"{api_url}/info",
+                json={
+                    "type": "metaAndAssetCtxs",
+                    "dex": dex_name
+                },
+                headers={"Content-Type": "application/json"}
+            )
+
+            data = response.json()
+            funding_rates = {}
+
+            if data and isinstance(data, list) and len(data) >= 2:
+                meta = data[0]
+                asset_ctxs = data[1]
+                universe = meta.get('universe', [])
+
+                for i, asset in enumerate(universe):
+                    # HIP-3 coins are stored as "dex:COIN" format
+                    coin = asset.get('name', '')
+                    if coin and i < len(asset_ctxs):
+                        ctx = asset_ctxs[i]
+                        funding_rate = float(ctx.get('funding', 0))
+                        funding_rates[coin] = funding_rate
+                        logger.debug(f"HIP-3 funding rate for {coin}: {funding_rate}")
+
+            logger.info(f"Fetched {len(funding_rates)} HIP-3 funding rates for DEX: {dex_name}")
+            return funding_rates
+
+        except Exception as e:
+            logger.warning(f"Error fetching HIP-3 funding rates for {dex_name}: {e}")
+            return {}
+
     def _get_hip3_positions(self, info, wallet_address):
         """
         Get HIP-3 (builder-deployed perpetual) positions.
@@ -409,6 +451,9 @@ class BotManager:
                 if not state or isinstance(state, str):
                     continue
 
+                # Fetch HIP-3 funding rates for this DEX
+                hip3_funding_rates = self._get_hip3_funding_rates(api_url, dex_name)
+
                 # Parse positions from clearinghouseState
                 positions = state.get('assetPositions', [])
                 for pos in positions:
@@ -417,6 +462,8 @@ class BotManager:
                     if size != 0:
                         coin_name = position.get('coin', '')
                         # HIP-3 coins have format "dex:COIN" e.g., "xyz:BTC"
+                        # Lookup funding rate using the full coin name (dex:COIN)
+                        funding_rate = hip3_funding_rates.get(coin_name, 0)
                         hip3_positions.append({
                             'coin': coin_name,
                             'size': size,
@@ -428,7 +475,8 @@ class BotManager:
                             'margin_used': float(position.get('marginUsed', 0)),
                             'side': 'long' if size > 0 else 'short',
                             'is_hip3': True,
-                            'dex_name': dex_name
+                            'dex_name': dex_name,
+                            'funding_rate': funding_rate
                         })
 
             logger.info(f"Total HIP-3 positions found: {len(hip3_positions)}")
@@ -1029,6 +1077,77 @@ class BotManager:
         except Exception as e:
             logger.exception(f"Error cancelling orders: {e}")
             return {'success': False, 'error': str(e)}
+
+    def cancel_order(self, user_wallet, user_agent_key, oid, coin):
+        """Cancel a specific order by oid"""
+        try:
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
+            result = exchange.cancel(coin, oid)
+
+            if result and result.get('status') == 'ok':
+                return {'success': True}
+            else:
+                error_msg = result.get('response', {}).get('data', {}).get('statuses', [{}])[0].get('error', 'Unknown error')
+                return {'success': False, 'error': error_msg}
+        except Exception as e:
+            logger.exception(f"Error cancelling order: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def get_spot_balances(self, wallet_address):
+        """
+        Get spot balances for a wallet.
+        Returns list of token balances with USD values.
+        """
+        import requests
+        from hyperliquid.utils import constants
+
+        config = self.get_config()
+        api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+        try:
+            # Fetch spot balances using spotClearinghouseState
+            response = requests.post(
+                f"{api_url}/info",
+                json={
+                    "type": "spotClearinghouseState",
+                    "user": wallet_address
+                },
+                headers={"Content-Type": "application/json"}
+            )
+
+            data = response.json()
+            balances = []
+
+            if data and isinstance(data, dict):
+                # Parse balances from spotClearinghouseState
+                spot_balances = data.get('balances', [])
+
+                for bal in spot_balances:
+                    token = bal.get('coin', bal.get('token', ''))
+                    total = float(bal.get('total', bal.get('hold', 0)) or 0) + float(bal.get('entryNtl', 0) or 0)
+                    hold = float(bal.get('hold', 0) or 0)
+
+                    # Skip zero balances
+                    if total == 0:
+                        continue
+
+                    # Get USD value if available
+                    entry_ntl = float(bal.get('entryNtl', 0) or 0)
+
+                    balances.append({
+                        'token': token,
+                        'total': total,
+                        'available': total - hold,
+                        'in_orders': hold,
+                        'value_usd': entry_ntl if entry_ntl > 0 else total  # USDC value is same as total
+                    })
+
+            logger.info(f"Fetched {len(balances)} spot balances for {wallet_address}")
+            return balances
+
+        except Exception as e:
+            logger.exception(f"Error fetching spot balances: {e}")
+            return []
 
 
 # Global bot manager instance

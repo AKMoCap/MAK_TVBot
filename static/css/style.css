@@ -612,3 +612,32 @@ code {
 .positions-table-compact .btn-sm {
     font-size: 0.7rem;
 }
+
+/* Positions/Spot/Orders Tabs */
+.positions-tabs {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.positions-tab {
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    padding: 0.25rem 0;
+    transition: all 0.2s ease;
+    border-bottom: 2px solid transparent;
+}
+
+.positions-tab:hover {
+    color: var(--text-light);
+}
+
+.positions-tab.active {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    text-shadow: 0 0 10px rgba(58, 180, 239, 0.6), 0 0 20px rgba(58, 180, 239, 0.4);
+    border-bottom: 2px solid var(--accent-primary);
+}
