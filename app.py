@@ -1143,6 +1143,20 @@ def api_wallet_approve_agent():
                 'agent_address': agent_address
             })
 
+            # Auto-enable HIP-3 DEX abstraction for HIP-3 perps support
+            try:
+                dex_result = bot_manager.enable_dex_abstraction(
+                    user_wallet=user.address,
+                    user_agent_key=agent_key
+                )
+                if dex_result.get('success'):
+                    logger.info(f"HIP-3 DEX abstraction auto-enabled for {address[:10]}...")
+                else:
+                    logger.warning(f"Could not auto-enable DEX abstraction: {dex_result.get('error')}")
+            except Exception as dex_err:
+                logger.warning(f"Error auto-enabling DEX abstraction: {dex_err}")
+                # Don't fail the whole approval if DEX abstraction fails
+
             return jsonify({'success': True, 'message': 'Agent approved successfully'})
         else:
             error_msg = result.get('error', result.get('response', 'Unknown error'))
@@ -1150,6 +1164,36 @@ def api_wallet_approve_agent():
 
     except Exception as e:
         logger.exception(f"Approve agent error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/wallet/enable-dex-abstraction', methods=['POST'])
+def api_wallet_enable_dex_abstraction():
+    """
+    Enable HIP-3 DEX abstraction for the current user.
+    This allows seeing and trading HIP-3 perps (builder-deployed perpetuals).
+    """
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
+        if not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please authorize trading first'}), 400
+
+        result = bot_manager.enable_dex_abstraction(
+            user_wallet=user.address,
+            user_agent_key=user.get_agent_key()
+        )
+
+        if result.get('success'):
+            log_activity('info', 'wallet', f"HIP-3 DEX abstraction enabled for {user.address[:10]}...")
+            return jsonify({'success': True, 'message': 'HIP-3 DEX abstraction enabled'})
+        else:
+            return jsonify({'success': False, 'error': result.get('error', 'Unknown error')}), 400
+
+    except Exception as e:
+        logger.exception(f"Enable DEX abstraction error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

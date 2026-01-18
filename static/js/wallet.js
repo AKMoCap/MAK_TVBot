@@ -569,6 +569,9 @@ class WalletManager {
                 ${this.address}
             </div>
             <div class="dropdown-divider" style="border-color: #2d3748;"></div>
+            <button class="dropdown-item text-info d-flex align-items-center" id="enable-hip3-btn" style="background: transparent;">
+                <i class="bi bi-lightning-charge me-2"></i>Enable HIP-3 Perps
+            </button>
             <button class="dropdown-item text-warning d-flex align-items-center" id="reauthorize-wallet-btn" style="background: transparent;">
                 <i class="bi bi-shield-check me-2"></i>Re-authorize Trading
             </button>
@@ -578,6 +581,40 @@ class WalletManager {
         `;
 
         document.body.appendChild(menu);
+
+        // Add click handler for enable HIP-3 button
+        document.getElementById('enable-hip3-btn').onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const btn = document.getElementById('enable-hip3-btn');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enabling...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/wallet/enable-dex-abstraction', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showToast('HIP-3 perps enabled! Your positions should now appear.', 'success');
+                    menu.remove();
+                    // Refresh dashboard to show new positions
+                    if (typeof refreshDashboard === 'function') {
+                        refreshDashboard();
+                    }
+                } else {
+                    this.showToast('Failed to enable HIP-3: ' + (data.error || 'Unknown error'), 'error');
+                    btn.innerHTML = '<i class="bi bi-lightning-charge me-2"></i>Enable HIP-3 Perps';
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                this.showToast('Failed to enable HIP-3: ' + error.message, 'error');
+                btn.innerHTML = '<i class="bi bi-lightning-charge me-2"></i>Enable HIP-3 Perps';
+                btn.disabled = false;
+            }
+        };
 
         // Add click handler for re-authorize button
         document.getElementById('reauthorize-wallet-btn').onclick = (e) => {
