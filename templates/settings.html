@@ -139,32 +139,38 @@
         </div>
     </div>
 
-    <!-- API Configuration -->
+    <!-- Wallet & Connection -->
     <div class="col-md-6">
         <div class="card bg-darker border-secondary">
             <div class="card-header bg-transparent border-secondary">
-                <h5 class="mb-0"><i class="bi bi-key me-2"></i>API Configuration</h5>
+                <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Wallet & Connection</h5>
             </div>
             <div class="card-body">
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>Security Note:</strong> API keys are configured via environment variables for security.
-                    Never expose your private keys in code or URLs.
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Connect your wallet using the button in the navigation bar. Your agent wallet allows trading without exposing your main wallet keys.
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Main Wallet Address</label>
+                    <label class="form-label">Connected Wallet</label>
                     <input type="text" class="form-control bg-dark text-light border-secondary"
-                           id="main-wallet" readonly>
-                    <small class="text-muted">Set via HL_MAIN_WALLET environment variable</small>
+                           id="main-wallet" readonly placeholder="Not connected">
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">API Wallet Status</label>
+                    <label class="form-label">Agent Wallet Status</label>
                     <div id="api-wallet-status">
-                        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+                        <span class="badge bg-secondary"><i class="bi bi-clock me-1"></i>Checking...</span>
                     </div>
-                    <small class="text-muted">Set via HL_API_SECRET environment variable</small>
+                    <small class="text-muted">Agent wallet allows secure trading without exposing your keys</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">HIP-3 DEX Abstraction</label>
+                    <div id="hip3-status">
+                        <span class="badge bg-secondary"><i class="bi bi-clock me-1"></i>Checking...</span>
+                    </div>
+                    <small class="text-muted">Required for trading builder-deployed perpetuals</small>
                 </div>
 
                 <button class="btn btn-outline-info" id="test-connection">

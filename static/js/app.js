@@ -368,10 +368,13 @@ function updatePositionsTable(positions) {
     tbody.innerHTML = positions.map(pos => {
         const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
         const sideClass = pos.side === 'long' ? 'badge-long' : 'badge-short';
+        // HIP-3 badge for builder-deployed perps
+        const hip3Badge = pos.is_hip3 ? '<span class="badge bg-info ms-1" title="HIP-3 Builder Perp">HIP-3</span>' : '';
+        const dexInfo = pos.dex_name ? ` (${pos.dex_name})` : '';
 
         return `
             <tr>
-                <td><strong>${pos.coin}</strong></td>
+                <td><strong>${pos.coin}</strong>${hip3Badge}</td>
                 <td><span class="badge ${sideClass}">${pos.side.toUpperCase()}</span></td>
                 <td>${Math.abs(pos.size).toFixed(4)}</td>
                 <td>${formatPrice(pos.entry_price)}</td>
@@ -756,7 +759,17 @@ async function executeCategoryTrade(category, action, collateral, leverage, stop
     }
 
     // Execute trades sequentially with longer delay to avoid rate limiting
-    for (const coin of coins) {
+    for (let i = 0; i < coins.length; i++) {
+        const coin = coins[i];
+
+        // Add a pre-trade delay (except for first trade)
+        if (i > 0) {
+            // Longer delay between trades to avoid rate limiting (4 seconds)
+            // Hyperliquid has rate limits that require spacing out requests
+            await new Promise(resolve => setTimeout(resolve, 4000));
+        }
+
+        showToast(`Opening ${coin} (${i + 1}/${coins.length})...`, 'info');
         const result = await executeWithRetry(coin);
 
         if (result.success) {
@@ -766,9 +779,6 @@ async function executeCategoryTrade(category, action, collateral, leverage, stop
             failedCoins.push(`${coin}: ${result.error}`);
             showToast(`${coin} failed: ${result.error}`, 'error');
         }
-
-        // Longer delay between trades to avoid rate limiting (2.5 seconds)
-        await new Promise(resolve => setTimeout(resolve, 2500));
     }
 
     // Show final summary
@@ -1431,5 +1441,75 @@ function setupSettingsEvents() {
         exportDataBtn.addEventListener('click', () => {
             window.location.href = '/api/trades/export';
         });
+    }
+
+    // Check HIP-3 DEX abstraction status
+    checkHip3Status();
+}
+
+/**
+ * Check and display HIP-3 DEX abstraction status on Settings page
+ */
+async function checkHip3Status() {
+    const hip3StatusEl = document.getElementById('hip3-status');
+    if (!hip3StatusEl) return;
+
+    try {
+        const result = await apiCall('/wallet/dex-abstraction-status');
+
+        if (result.error && result.error !== 'Not connected' && result.error !== 'Not authorized') {
+            hip3StatusEl.innerHTML = `<span class="badge bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Unknown</span>`;
+            return;
+        }
+
+        if (result.error === 'Not connected') {
+            hip3StatusEl.innerHTML = `<span class="badge bg-secondary"><i class="bi bi-wallet2 me-1"></i>Connect Wallet</span>`;
+            return;
+        }
+
+        if (result.error === 'Not authorized') {
+            hip3StatusEl.innerHTML = `<span class="badge bg-secondary"><i class="bi bi-key me-1"></i>Authorize First</span>`;
+            return;
+        }
+
+        if (result.enabled) {
+            hip3StatusEl.innerHTML = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Enabled</span>`;
+        } else {
+            hip3StatusEl.innerHTML = `
+                <span class="badge bg-warning me-2"><i class="bi bi-x-circle me-1"></i>Disabled</span>
+                <button class="btn btn-sm btn-outline-info" onclick="enableHip3Dex()">
+                    <i class="bi bi-lightning me-1"></i>Enable
+                </button>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to check HIP-3 status:', error);
+        hip3StatusEl.innerHTML = `<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>`;
+    }
+}
+
+/**
+ * Enable HIP-3 DEX abstraction from Settings page
+ */
+async function enableHip3Dex() {
+    const hip3StatusEl = document.getElementById('hip3-status');
+    if (hip3StatusEl) {
+        hip3StatusEl.innerHTML = `<span class="badge bg-info"><i class="bi bi-hourglass-split me-1"></i>Enabling...</span>`;
+    }
+
+    try {
+        const result = await apiCall('/wallet/enable-dex-abstraction', 'POST');
+        if (result.success) {
+            showToast('HIP-3 DEX abstraction enabled successfully!', 'success');
+            if (hip3StatusEl) {
+                hip3StatusEl.innerHTML = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Enabled</span>`;
+            }
+        } else {
+            showToast('Failed to enable HIP-3: ' + (result.error || 'Unknown error'), 'error');
+            checkHip3Status();  // Refresh status
+        }
+    } catch (error) {
+        showToast('Failed to enable HIP-3 DEX abstraction', 'error');
+        checkHip3Status();  // Refresh status
     }
 }

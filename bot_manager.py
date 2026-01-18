@@ -244,7 +244,7 @@ class BotManager:
             logger.info("WebSocket price streaming stopped")
 
     def get_account_info(self, user_wallet=None, user_agent_key=None):
-        """Get account balance and positions from Hyperliquid"""
+        """Get account balance and positions from Hyperliquid (including HIP-3 perps)"""
         try:
             config = self.get_config(user_wallet, user_agent_key)
             if not self.is_configured(user_wallet, user_agent_key):
@@ -256,7 +256,7 @@ class BotManager:
             margin_summary = user_state.get('marginSummary', {})
             positions = user_state.get('assetPositions', [])
 
-            # Format positions
+            # Format native perp positions
             formatted_positions = []
             for pos in positions:
                 position = pos.get('position', {})
@@ -270,8 +270,18 @@ class BotManager:
                         'leverage': int(position.get('leverage', {}).get('value', 1)),
                         'liquidation_price': float(position.get('liquidationPx', 0)) if position.get('liquidationPx') else None,
                         'margin_used': float(position.get('marginUsed', 0)),
-                        'side': 'long' if float(position.get('szi', 0)) > 0 else 'short'
+                        'side': 'long' if float(position.get('szi', 0)) > 0 else 'short',
+                        'is_hip3': False
                     })
+
+            # Also fetch HIP-3 perp positions (builder-deployed perpetuals)
+            try:
+                hip3_positions = self._get_hip3_positions(info, config['main_wallet'])
+                if hip3_positions:
+                    formatted_positions.extend(hip3_positions)
+                    logger.info(f"Loaded {len(hip3_positions)} HIP-3 positions")
+            except Exception as hip3_err:
+                logger.warning(f"Could not fetch HIP-3 positions: {hip3_err}")
 
             return {
                 'account_value': float(margin_summary.get('accountValue', 0)),
@@ -284,6 +294,89 @@ class BotManager:
         except Exception as e:
             logger.exception(f"Error getting account info: {e}")
             return {'error': str(e)}
+
+    def _get_hip3_positions(self, info, wallet_address):
+        """
+        Get HIP-3 (builder-deployed perpetual) positions.
+        These are separate from native perps and require DEX abstraction to be enabled.
+        """
+        import requests
+        from hyperliquid.utils import constants
+
+        config = self.get_config()
+        api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+        # Query perp dex clearinghouse state for HIP-3 positions
+        # Using the info endpoint with perpDexClearinghouseState type
+        try:
+            response = requests.post(
+                f"{api_url}/info",
+                json={
+                    "type": "perpDexClearinghouseState",
+                    "user": wallet_address
+                },
+                headers={"Content-Type": "application/json"}
+            )
+
+            result = response.json()
+            logger.info(f"HIP-3 perpDexClearinghouseState response: {json.dumps(result)[:500]}")
+
+            if not result or isinstance(result, str):
+                return []
+
+            # Parse HIP-3 positions from the response
+            # The structure may vary, so handle different formats
+            hip3_positions = []
+
+            # Check if result is a list of clearinghouse states (one per DEX)
+            if isinstance(result, list):
+                for dex_state in result:
+                    positions = dex_state.get('assetPositions', [])
+                    dex_name = dex_state.get('dexName', 'HIP-3')
+
+                    for pos in positions:
+                        position = pos.get('position', pos)
+                        size = float(position.get('szi', 0))
+                        if size != 0:
+                            coin_name = position.get('coin', '')
+                            hip3_positions.append({
+                                'coin': coin_name,
+                                'size': size,
+                                'entry_price': float(position.get('entryPx', 0)),
+                                'mark_price': float(position.get('positionValue', 0)) / abs(size) if size != 0 else 0,
+                                'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
+                                'leverage': int(position.get('leverage', {}).get('value', 1)) if isinstance(position.get('leverage'), dict) else int(position.get('leverage', 1)),
+                                'liquidation_price': float(position.get('liquidationPx', 0)) if position.get('liquidationPx') else None,
+                                'margin_used': float(position.get('marginUsed', 0)),
+                                'side': 'long' if size > 0 else 'short',
+                                'is_hip3': True,
+                                'dex_name': dex_name
+                            })
+            elif isinstance(result, dict):
+                # Single clearinghouse state
+                positions = result.get('assetPositions', [])
+                for pos in positions:
+                    position = pos.get('position', pos)
+                    size = float(position.get('szi', 0))
+                    if size != 0:
+                        hip3_positions.append({
+                            'coin': position.get('coin', ''),
+                            'size': size,
+                            'entry_price': float(position.get('entryPx', 0)),
+                            'mark_price': float(position.get('positionValue', 0)) / abs(size) if size != 0 else 0,
+                            'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
+                            'leverage': int(position.get('leverage', {}).get('value', 1)) if isinstance(position.get('leverage'), dict) else int(position.get('leverage', 1)),
+                            'liquidation_price': float(position.get('liquidationPx', 0)) if position.get('liquidationPx') else None,
+                            'margin_used': float(position.get('marginUsed', 0)),
+                            'side': 'long' if size > 0 else 'short',
+                            'is_hip3': True
+                        })
+
+            return hip3_positions
+
+        except Exception as e:
+            logger.warning(f"Error fetching HIP-3 positions: {e}")
+            return []
 
     def get_asset_metadata(self, force_refresh=False):
         """

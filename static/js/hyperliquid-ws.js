@@ -209,6 +209,7 @@ class HyperliquidWebSocket {
 
     /**
      * Process webData2 updates - contains positions, account info, orders
+     * Also handles HIP-3 (builder-deployed perp) positions
      */
     processWebData2(data) {
         if (!data) {
@@ -225,21 +226,31 @@ class HyperliquidWebSocket {
             console.log('[HL-WS] spotState:', JSON.stringify(data.spotState, null, 2));
         }
 
+        // Check for HIP-3 perp DEX state
+        if (data.perpDexStates) {
+            console.log('[HL-WS] perpDexStates found:', JSON.stringify(data.perpDexStates, null, 2).slice(0, 500));
+        }
+
         // Extract clearinghouse state (positions, margin, account value)
         const clearinghouse = data.clearinghouseState;
+        let positions = [];
+        let accountValue = 0;
+        let totalMarginUsed = 0;
+        let withdrawable = 0;
+
         if (clearinghouse) {
             // Debug: log the full clearinghouse structure
             console.log('[HL-WS] clearinghouseState keys:', Object.keys(clearinghouse));
 
             // Account summary
             const marginSummary = clearinghouse.marginSummary || {};
-            const accountValue = parseFloat(marginSummary.accountValue || 0);
-            const totalMarginUsed = parseFloat(marginSummary.totalMarginUsed || 0);
-            const withdrawable = parseFloat(marginSummary.withdrawable || 0);
+            accountValue = parseFloat(marginSummary.accountValue || 0);
+            totalMarginUsed = parseFloat(marginSummary.totalMarginUsed || 0);
+            withdrawable = parseFloat(marginSummary.withdrawable || 0);
 
             console.log('[HL-WS] Account value:', accountValue, 'Margin used:', totalMarginUsed);
 
-            // Positions - check both assetPositions and crossMarginSummary
+            // Positions - native perps
             let assetPositions = clearinghouse.assetPositions || [];
             console.log('[HL-WS] Raw assetPositions count:', assetPositions.length);
 
@@ -255,12 +266,12 @@ class HyperliquidWebSocket {
                 }
             }
 
-            const positions = assetPositions
+            // Parse native perp positions
+            positions = assetPositions
                 .map(pos => {
                     const position = pos.position || pos;
                     const size = parseFloat(position.szi || 0);
 
-                    // Debug: log each position parsing
                     console.log('[HL-WS] Parsing position:', position.coin, 'size:', size);
 
                     if (size === 0) return null;
@@ -278,38 +289,78 @@ class HyperliquidWebSocket {
                         leverage: parseInt(position.leverage?.value || position.leverage || 1),
                         liquidation_price: position.liquidationPx ? parseFloat(position.liquidationPx) : null,
                         margin_used: parseFloat(position.marginUsed || 0),
-                        side: size > 0 ? 'long' : 'short'
+                        side: size > 0 ? 'long' : 'short',
+                        is_hip3: false
                     };
                 })
                 .filter(p => p !== null);
 
-            console.log('[HL-WS] Filtered positions count:', positions.length);
-
-            // Buffer the data for late callback setup
-            this._lastPositions = positions;
-            const accountData = {
-                account_value: accountValue,
-                total_margin_used: totalMarginUsed,
-                withdrawable: withdrawable,
-                positions: positions
-            };
-            this._lastAccountData = accountData;
-
-            // Call position update callback
-            if (this._onPositionUpdate) {
-                this._onPositionUpdate(positions);
-            } else {
-                console.log('[HL-WS] No position callback set, data buffered');
-            }
-
-            // Call account update callback
-            if (this._onAccountUpdate) {
-                this._onAccountUpdate(accountData);
-            } else {
-                console.log('[HL-WS] No account callback set, data buffered');
-            }
+            console.log('[HL-WS] Native perp positions count:', positions.length);
         } else {
             console.log('[HL-WS] No clearinghouseState in data');
+        }
+
+        // Process HIP-3 (builder-deployed perp) positions
+        // These may be in perpDexStates or perpDexClearinghouseStates
+        const hip3States = data.perpDexStates || data.perpDexClearinghouseStates || [];
+        if (hip3States.length > 0) {
+            console.log('[HL-WS] Processing HIP-3 states:', hip3States.length);
+
+            for (const dexState of hip3States) {
+                const dexPositions = dexState.assetPositions || dexState.positions || [];
+                const dexName = dexState.dexName || dexState.name || 'HIP-3';
+
+                for (const pos of dexPositions) {
+                    const position = pos.position || pos;
+                    const size = parseFloat(position.szi || 0);
+
+                    if (size === 0) continue;
+
+                    const entryPx = parseFloat(position.entryPx || 0);
+                    const positionValue = parseFloat(position.positionValue || 0);
+                    const markPx = size !== 0 ? Math.abs(positionValue / size) : entryPx;
+
+                    positions.push({
+                        coin: position.coin,
+                        size: size,
+                        entry_price: entryPx,
+                        mark_price: markPx,
+                        unrealized_pnl: parseFloat(position.unrealizedPnl || 0),
+                        leverage: parseInt(position.leverage?.value || position.leverage || 1),
+                        liquidation_price: position.liquidationPx ? parseFloat(position.liquidationPx) : null,
+                        margin_used: parseFloat(position.marginUsed || 0),
+                        side: size > 0 ? 'long' : 'short',
+                        is_hip3: true,
+                        dex_name: dexName
+                    });
+                }
+            }
+
+            console.log('[HL-WS] Total positions after HIP-3:', positions.length);
+        }
+
+        // Buffer the data for late callback setup
+        this._lastPositions = positions;
+        const accountData = {
+            account_value: accountValue,
+            total_margin_used: totalMarginUsed,
+            withdrawable: withdrawable,
+            positions: positions
+        };
+        this._lastAccountData = accountData;
+
+        // Call position update callback
+        if (this._onPositionUpdate) {
+            this._onPositionUpdate(positions);
+        } else {
+            console.log('[HL-WS] No position callback set, data buffered');
+        }
+
+        // Call account update callback
+        if (this._onAccountUpdate) {
+            this._onAccountUpdate(accountData);
+        } else {
+            console.log('[HL-WS] No account callback set, data buffered');
         }
 
         // Extract open orders
