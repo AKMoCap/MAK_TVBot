@@ -360,8 +360,8 @@ function updatePositionsTable(positions) {
     if (!positions || positions.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="text-center text-muted py-4">
-                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                <td colspan="12" class="text-center text-muted py-3">
+                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
                     No open positions
                 </td>
             </tr>
@@ -375,21 +375,33 @@ function updatePositionsTable(positions) {
         const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
         const sideClass = pos.side === 'long' ? 'badge-long' : 'badge-short';
         // HIP-3 badge for builder-deployed perps
-        const hip3Badge = pos.is_hip3 ? '<span class="badge bg-info ms-1" title="HIP-3 Builder Perp">HIP-3</span>' : '';
-        const dexInfo = pos.dex_name ? ` (${pos.dex_name})` : '';
+        const hip3Badge = pos.is_hip3 ? '<span class="badge bg-info ms-1" style="font-size:0.65rem;padding:2px 4px;" title="HIP-3 Builder Perp">HIP-3</span>' : '';
+
+        // Calculate position value (notional): |size| * mark_price
+        const positionValue = Math.abs(pos.size) * (pos.mark_price || pos.entry_price || 0);
+
+        // Margin used
+        const margin = pos.margin_used || 0;
+
+        // Funding (cumulative funding if available, otherwise show rate or --)
+        const funding = pos.cumulative_funding !== undefined ? formatCurrency(pos.cumulative_funding) :
+                       (pos.funding_rate !== undefined ? (pos.funding_rate * 100).toFixed(4) + '%' : '--');
 
         return `
             <tr>
                 <td><strong>${pos.coin}</strong>${hip3Badge}</td>
-                <td><span class="badge ${sideClass}">${pos.side.toUpperCase()}</span></td>
+                <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${pos.side.toUpperCase()}</span></td>
+                <td>${pos.leverage}x</td>
+                <td>${formatCurrency(margin)}</td>
+                <td>${formatCurrency(positionValue)}</td>
                 <td>${Math.abs(pos.size).toFixed(4)}</td>
                 <td>${formatPrice(pos.entry_price)}</td>
                 <td>${formatPrice(pos.mark_price)}</td>
                 <td>${pos.liquidation_price ? formatPrice(pos.liquidation_price) : '--'}</td>
+                <td>${funding}</td>
                 <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)}</td>
-                <td>${pos.leverage}x</td>
                 <td>
-                    <button class="btn btn-outline-danger btn-sm" onclick="closePosition('${pos.coin}')">
+                    <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')">
                         <i class="bi bi-x-circle"></i>
                     </button>
                 </td>
