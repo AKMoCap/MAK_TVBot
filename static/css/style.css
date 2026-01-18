@@ -560,23 +560,55 @@ code {
 }
 
 /* Compact positions table */
-.positions-table-compact th {
-    padding: 0.4rem 0.5rem !important;
-    font-size: 0.7rem;
-    white-space: nowrap;
+.positions-table-compact {
+    table-layout: fixed;
+    width: 100%;
 }
 
+.positions-table-compact th,
 .positions-table-compact td {
-    padding: 0.3rem 0.5rem !important;
-    font-size: 0.8rem;
+    text-align: left;
+    padding: 0.35rem 0.4rem !important;
+    font-size: 0.78rem;
     vertical-align: middle;
-    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
+.positions-table-compact th {
+    font-size: 0.68rem;
+}
+
+/* Column widths for positions table */
+.positions-table-compact th:nth-child(1),
+.positions-table-compact td:nth-child(1) { width: 10%; } /* Coin */
+.positions-table-compact th:nth-child(2),
+.positions-table-compact td:nth-child(2) { width: 6%; }  /* Side */
+.positions-table-compact th:nth-child(3),
+.positions-table-compact td:nth-child(3) { width: 5%; }  /* Lev */
+.positions-table-compact th:nth-child(4),
+.positions-table-compact td:nth-child(4) { width: 8%; }  /* Margin */
+.positions-table-compact th:nth-child(5),
+.positions-table-compact td:nth-child(5) { width: 9%; }  /* Pos Value */
+.positions-table-compact th:nth-child(6),
+.positions-table-compact td:nth-child(6) { width: 8%; }  /* Size */
+.positions-table-compact th:nth-child(7),
+.positions-table-compact td:nth-child(7) { width: 9%; }  /* Entry */
+.positions-table-compact th:nth-child(8),
+.positions-table-compact td:nth-child(8) { width: 9%; }  /* Mark */
+.positions-table-compact th:nth-child(9),
+.positions-table-compact td:nth-child(9) { width: 8%; }  /* Liq */
+.positions-table-compact th:nth-child(10),
+.positions-table-compact td:nth-child(10) { width: 11%; } /* Funding */
+.positions-table-compact th:nth-child(11),
+.positions-table-compact td:nth-child(11) { width: 9%; }  /* P&L */
+.positions-table-compact th:nth-child(12),
+.positions-table-compact td:nth-child(12) { width: 5%; }  /* Actions */
 
 .positions-table-compact strong {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
 }
 
 .positions-table-compact .btn-sm {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
 }

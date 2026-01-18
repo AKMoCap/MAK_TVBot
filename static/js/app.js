@@ -383,15 +383,13 @@ function updatePositionsTable(positions) {
         // Margin used
         const margin = pos.margin_used || 0;
 
-        // Funding - show hourly funding payment (positive = receiving, negative = paying)
+        // Funding - show hourly rate and annualized rate
         let fundingDisplay = '--';
-        if (pos.hourly_funding !== undefined) {
-            const hourlyFunding = pos.hourly_funding;
-            const fundingClass = hourlyFunding >= 0 ? 'text-success' : 'text-danger';
-            const fundingPrefix = hourlyFunding >= 0 ? '+' : '';
-            fundingDisplay = `<span class="${fundingClass}">${fundingPrefix}${formatCurrency(hourlyFunding)}/h</span>`;
-        } else if (pos.funding_rate !== undefined) {
-            fundingDisplay = (pos.funding_rate * 100).toFixed(4) + '%';
+        if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
+            const hourlyPct = (pos.funding_rate * 100).toFixed(1);
+            const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
+            const rateClass = pos.funding_rate >= 0 ? 'text-danger' : 'text-success';
+            fundingDisplay = `<span class="${rateClass}">${hourlyPct}% / ${annualPct}%</span>`;
         }
 
         return `
