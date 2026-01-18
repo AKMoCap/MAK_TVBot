@@ -129,15 +129,32 @@ def api_account():
     try:
         # Try to get user-specific account info if connected
         user = get_current_user()
+        logger.info(f"[ACCOUNT] User: {user.address[:10] if user else 'None'}... has_agent: {user.has_agent_key() if user else False}")
+
         if user and user.has_agent_key():
-            data = bot_manager.get_account_info(
-                user_wallet=user.address,
-                user_agent_key=user.get_agent_key()
-            )
+            try:
+                agent_key = user.get_agent_key()
+                logger.info(f"[ACCOUNT] Agent key retrieved, length: {len(agent_key) if agent_key else 0}")
+                data = bot_manager.get_account_info(
+                    user_wallet=user.address,
+                    user_agent_key=agent_key
+                )
+            except Exception as agent_error:
+                logger.exception(f"[ACCOUNT] Error with agent key: {agent_error}")
+                # Return error but don't crash
+                data = {
+                    'error': f'Agent key error: {str(agent_error)}',
+                    'account_value': 0,
+                    'total_margin_used': 0,
+                    'total_ntl_pos': 0,
+                    'withdrawable': 0,
+                    'positions': [],
+                    'network': 'testnet' if USE_TESTNET else 'mainnet'
+                }
         else:
             # Return empty data if no user connected
             data = {
-                'error': 'Please connect your wallet',
+                'error': 'Please connect your wallet and authorize trading',
                 'account_value': 0,
                 'total_margin_used': 0,
                 'total_ntl_pos': 0,
