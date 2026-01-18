@@ -177,9 +177,9 @@ def api_prices():
 def api_spot_balances():
     """Get spot balances for the connected wallet"""
     try:
-        # Check if wallet is connected
-        wallet_address = session.get('wallet_address')
-        logger.info(f"[spot-balances] wallet_address from session: {wallet_address}")
+        # Get wallet address from query param or session
+        wallet_address = request.args.get('address') or session.get('wallet_address')
+        logger.info(f"[spot-balances] wallet_address: {wallet_address}")
         if not wallet_address:
             return jsonify({'error': 'Wallet not connected', 'balances': []})
 
@@ -196,9 +196,9 @@ def api_spot_balances():
 def api_open_orders():
     """Get open orders for the connected wallet"""
     try:
-        # Check if wallet is connected
-        wallet_address = session.get('wallet_address')
-        logger.info(f"[open-orders] wallet_address from session: {wallet_address}")
+        # Get wallet address from query param or session
+        wallet_address = request.args.get('address') or session.get('wallet_address')
+        logger.info(f"[open-orders] wallet_address: {wallet_address}")
         if not wallet_address:
             return jsonify({'error': 'Wallet not connected', 'orders': []})
 

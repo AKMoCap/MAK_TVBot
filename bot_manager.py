@@ -1188,10 +1188,17 @@ class BotManager:
                     if total == 0:
                         continue
 
+                    # For USD stablecoins (USDC, USDH, etc.), use total as USD value
+                    # For other tokens, use entryNtl (the USD notional value)
+                    if token in ('USDC', 'USDH', 'USDT'):
+                        value_usd = total
+                    else:
+                        value_usd = entry_ntl
+
                     balances.append({
                         'token': token,
                         'total': total,
-                        'value_usd': entry_ntl
+                        'value_usd': value_usd
                     })
 
             logger.info(f"Fetched {len(balances)} spot balances for {wallet_address}")
