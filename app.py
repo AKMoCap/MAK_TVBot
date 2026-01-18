@@ -1203,6 +1203,53 @@ def api_wallet_enable_dex_abstraction():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/wallet/dex-abstraction-status', methods=['GET'])
+def api_wallet_dex_abstraction_status():
+    """
+    Check if HIP-3 DEX abstraction is enabled for the current user.
+    Uses the Hyperliquid info endpoint to query the status.
+    """
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'enabled': False, 'error': 'Not connected'})
+
+        if not user.has_agent_key():
+            return jsonify({'enabled': False, 'error': 'Not authorized'})
+
+        # Query Hyperliquid info endpoint for DEX abstraction status
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+        import requests
+
+        api_url = constants.TESTNET_API_URL if USE_TESTNET else constants.MAINNET_API_URL
+
+        # Query userDexAbstraction status
+        response = requests.post(
+            f"{api_url}/info",
+            json={
+                "type": "userDexAbstraction",
+                "user": user.address
+            },
+            headers={"Content-Type": "application/json"}
+        )
+
+        result = response.json()
+        logger.info(f"DEX abstraction status for {user.address[:10]}...: {result}")
+
+        # The response should be a boolean or object indicating enabled status
+        if isinstance(result, bool):
+            return jsonify({'enabled': result})
+        elif isinstance(result, dict):
+            return jsonify({'enabled': result.get('enabled', False), 'details': result})
+        else:
+            return jsonify({'enabled': bool(result), 'raw': result})
+
+    except Exception as e:
+        logger.exception(f"DEX abstraction status error: {e}")
+        return jsonify({'enabled': False, 'error': str(e)})
+
+
 @app.route('/api/wallet/disconnect', methods=['POST'])
 def api_wallet_disconnect():
     """Disconnect wallet session"""
