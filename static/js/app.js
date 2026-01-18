@@ -384,10 +384,11 @@ function updatePositionsTable(positions) {
         const margin = pos.margin_used || 0;
 
         // Funding - show annualized rate only
+        // Green if funding >= 0, red if below 0
         let fundingDisplay = '--';
         if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
             const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
-            const rateClass = pos.funding_rate >= 0 ? 'text-danger' : 'text-success';
+            const rateClass = pos.funding_rate >= 0 ? 'text-success' : 'text-danger';
             fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
         }
 
@@ -677,7 +678,7 @@ async function loadSpotBalances() {
         if (data.error) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-3">
+                    <td colspan="3" class="text-center text-muted py-3">
                         <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
                         ${data.error}
                     </td>
@@ -690,7 +691,7 @@ async function loadSpotBalances() {
         if (balances.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-3">
+                    <td colspan="3" class="text-center text-muted py-3">
                         <i class="bi bi-inbox fs-4 d-block mb-1"></i>
                         No spot balances
                     </td>
@@ -703,8 +704,6 @@ async function loadSpotBalances() {
             <tr>
                 <td><strong>${bal.token}</strong></td>
                 <td>${parseFloat(bal.total).toFixed(4)}</td>
-                <td>${parseFloat(bal.available || bal.total).toFixed(4)}</td>
-                <td>${parseFloat(bal.in_orders || 0).toFixed(4)}</td>
                 <td>${formatCurrency(bal.value_usd)}</td>
             </tr>
         `).join('');
@@ -712,7 +711,7 @@ async function loadSpotBalances() {
         console.error('Failed to load spot balances:', error);
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center text-muted py-3">
+                <td colspan="3" class="text-center text-muted py-3">
                     <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
                     Failed to load balances
                 </td>

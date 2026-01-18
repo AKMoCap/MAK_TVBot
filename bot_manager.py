@@ -1120,26 +1120,22 @@ class BotManager:
 
             if data and isinstance(data, dict):
                 # Parse balances from spotClearinghouseState
+                # API returns: coin, total (token amount), hold (in orders), entryNtl (USD value)
                 spot_balances = data.get('balances', [])
 
                 for bal in spot_balances:
-                    token = bal.get('coin', bal.get('token', ''))
-                    total = float(bal.get('total', bal.get('hold', 0)) or 0) + float(bal.get('entryNtl', 0) or 0)
-                    hold = float(bal.get('hold', 0) or 0)
+                    token = bal.get('coin', '')
+                    total = float(bal.get('total', 0) or 0)
+                    entry_ntl = float(bal.get('entryNtl', 0) or 0)
 
                     # Skip zero balances
                     if total == 0:
                         continue
 
-                    # Get USD value if available
-                    entry_ntl = float(bal.get('entryNtl', 0) or 0)
-
                     balances.append({
                         'token': token,
                         'total': total,
-                        'available': total - hold,
-                        'in_orders': hold,
-                        'value_usd': entry_ntl if entry_ntl > 0 else total  # USDC value is same as total
+                        'value_usd': entry_ntl
                     })
 
             logger.info(f"Fetched {len(balances)} spot balances for {wallet_address}")
