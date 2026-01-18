@@ -145,6 +145,12 @@ class WalletManager {
                         console.log('Could not reconnect Web3 provider:', e);
                     }
                 }
+
+                // Connect Hyperliquid WebSocket for real-time updates
+                if (typeof hlWebSocket !== 'undefined' && this.address) {
+                    console.log('[Wallet] Connecting Hyperliquid WebSocket on session restore:', this.address);
+                    hlWebSocket.connect(this.address);
+                }
             }
         } catch (error) {
             console.log('No existing session:', error);
@@ -238,6 +244,12 @@ class WalletManager {
                 }
 
                 this.updateUI();
+
+                // Connect Hyperliquid WebSocket for real-time updates
+                if (typeof hlWebSocket !== 'undefined') {
+                    console.log('[Wallet] Connecting Hyperliquid WebSocket for:', this.address);
+                    hlWebSocket.connect(this.address);
+                }
 
                 // Refresh dashboard data
                 if (typeof refreshDashboard === 'function') {
@@ -440,6 +452,11 @@ class WalletManager {
         this.agentKey = null;
 
         console.log('Wallet disconnected');
+
+        // Disconnect Hyperliquid WebSocket
+        if (typeof hlWebSocket !== 'undefined') {
+            hlWebSocket.disconnect();
+        }
 
         // Close any open wallet menu
         const menu = document.getElementById('wallet-menu');
