@@ -673,8 +673,22 @@ async function loadSpotBalances() {
     const tbody = document.getElementById('spot-table');
     if (!tbody) return;
 
+    // Get wallet address from walletManager
+    const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
+    if (!walletAddress) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" class="text-center text-muted py-3">
+                    <i class="bi bi-wallet2 fs-4 d-block mb-1"></i>
+                    Connect wallet to view spot balances
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
     try {
-        const data = await apiCall('/spot-balances');
+        const data = await apiCall(`/spot-balances?address=${walletAddress}`);
         if (data.error) {
             tbody.innerHTML = `
                 <tr>
@@ -727,8 +741,22 @@ async function loadOpenOrders() {
     const tbody = document.getElementById('orders-table');
     if (!tbody) return;
 
+    // Get wallet address from walletManager
+    const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
+    if (!walletAddress) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-muted py-3">
+                    <i class="bi bi-wallet2 fs-4 d-block mb-1"></i>
+                    Connect wallet to view open orders
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
     try {
-        const data = await apiCall('/open-orders');
+        const data = await apiCall(`/open-orders?address=${walletAddress}`);
         if (data.error) {
             tbody.innerHTML = `
                 <tr>
