@@ -148,38 +148,60 @@ async function fetchBotStatus() {
 }
 
 async function refreshDashboard() {
+    let connected = false;
+
     try {
-        // Fetch account info
+        // Fetch account info - handle errors gracefully
         const accountData = await apiCall('/account');
-        if (!accountData.error) {
+        if (accountData.error) {
+            // Show error but still consider connected if we got a response
+            console.log('[Dashboard] Account error:', accountData.error);
+            document.getElementById('account-value').textContent = '$0.00';
+            connected = true;  // We reached the server
+        } else {
             updateAccountCards(accountData);
             updatePositionsTable(accountData.positions || []);
+            connected = true;
         }
+    } catch (error) {
+        console.error('[Dashboard] Account fetch failed:', error);
+    }
 
+    try {
         // Fetch daily stats
         const statsData = await apiCall('/stats/daily');
         if (!statsData.error) {
             updateDailyStats(statsData);
         }
+        connected = true;
+    } catch (error) {
+        console.error('[Dashboard] Stats fetch failed:', error);
+    }
 
+    try {
         // Fetch market prices
         const pricesData = await apiCall('/prices');
         if (!pricesData.error) {
             updatePrices(pricesData);
         }
+        connected = true;
+    } catch (error) {
+        console.error('[Dashboard] Prices fetch failed:', error);
+    }
 
+    try {
         // Fetch recent activity
         const activityData = await apiCall('/activity?limit=10');
         if (!activityData.error) {
             updateActivityList(activityData.logs || []);
         }
-
-        // Update connection status
-        updateConnectionStatus(true);
-
+        connected = true;
     } catch (error) {
-        updateConnectionStatus(false);
+        console.error('[Dashboard] Activity fetch failed:', error);
     }
+
+    // Update connection status based on whether any call succeeded
+    updateConnectionStatus(connected);
 }
 
 function updateAccountCards(data) {
