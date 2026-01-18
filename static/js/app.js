@@ -383,9 +383,16 @@ function updatePositionsTable(positions) {
         // Margin used
         const margin = pos.margin_used || 0;
 
-        // Funding (cumulative funding if available, otherwise show rate or --)
-        const funding = pos.cumulative_funding !== undefined ? formatCurrency(pos.cumulative_funding) :
-                       (pos.funding_rate !== undefined ? (pos.funding_rate * 100).toFixed(4) + '%' : '--');
+        // Funding - show hourly funding payment (positive = receiving, negative = paying)
+        let fundingDisplay = '--';
+        if (pos.hourly_funding !== undefined) {
+            const hourlyFunding = pos.hourly_funding;
+            const fundingClass = hourlyFunding >= 0 ? 'text-success' : 'text-danger';
+            const fundingPrefix = hourlyFunding >= 0 ? '+' : '';
+            fundingDisplay = `<span class="${fundingClass}">${fundingPrefix}${formatCurrency(hourlyFunding)}/h</span>`;
+        } else if (pos.funding_rate !== undefined) {
+            fundingDisplay = (pos.funding_rate * 100).toFixed(4) + '%';
+        }
 
         return `
             <tr>
@@ -398,7 +405,7 @@ function updatePositionsTable(positions) {
                 <td>${formatPrice(pos.entry_price)}</td>
                 <td>${formatPrice(pos.mark_price)}</td>
                 <td>${pos.liquidation_price ? formatPrice(pos.liquidation_price) : '--'}</td>
-                <td>${funding}</td>
+                <td>${fundingDisplay}</td>
                 <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)}</td>
                 <td>
                     <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')">

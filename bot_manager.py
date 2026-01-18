@@ -256,22 +256,46 @@ class BotManager:
             margin_summary = user_state.get('marginSummary', {})
             positions = user_state.get('assetPositions', [])
 
+            # Fetch funding rates for all assets
+            funding_rates = self._get_funding_rates(info)
+
             # Format native perp positions
             formatted_positions = []
             for pos in positions:
                 position = pos.get('position', {})
                 if float(position.get('szi', 0)) != 0:
+                    coin = position.get('coin')
+                    size = float(position.get('szi', 0))
+
+                    # Get mark price for funding calculation
+                    mark_price = float(position.get('positionValue', 0)) / abs(size) if size != 0 else 0
+
+                    # Calculate hourly funding payment
+                    # Positive rate = longs pay shorts, Negative rate = shorts pay longs
+                    funding_rate = funding_rates.get(coin, 0)
+                    # Funding payment = size * mark_price * funding_rate
+                    # If long (size > 0) and rate > 0: paying (negative for user)
+                    # If long (size > 0) and rate < 0: receiving (positive for user)
+                    # If short (size < 0) and rate > 0: receiving (positive for user)
+                    # If short (size < 0) and rate < 0: paying (negative for user)
+                    hourly_funding = abs(size) * mark_price * funding_rate
+                    if size > 0:  # Long position
+                        hourly_funding = -hourly_funding  # Longs pay when rate positive
+                    # For shorts, hourly_funding stays positive when rate positive (shorts receive)
+
                     formatted_positions.append({
-                        'coin': position.get('coin'),
-                        'size': float(position.get('szi', 0)),
+                        'coin': coin,
+                        'size': size,
                         'entry_price': float(position.get('entryPx', 0)),
-                        'mark_price': float(position.get('positionValue', 0)) / abs(float(position.get('szi', 1))) if float(position.get('szi', 0)) != 0 else 0,
+                        'mark_price': mark_price,
                         'unrealized_pnl': float(position.get('unrealizedPnl', 0)),
                         'leverage': int(position.get('leverage', {}).get('value', 1)),
                         'liquidation_price': float(position.get('liquidationPx', 0)) if position.get('liquidationPx') else None,
                         'margin_used': float(position.get('marginUsed', 0)),
-                        'side': 'long' if float(position.get('szi', 0)) > 0 else 'short',
-                        'is_hip3': False
+                        'side': 'long' if size > 0 else 'short',
+                        'is_hip3': False,
+                        'funding_rate': funding_rate,
+                        'hourly_funding': hourly_funding
                     })
 
             # Also fetch HIP-3 perp positions (builder-deployed perpetuals)
@@ -294,6 +318,34 @@ class BotManager:
         except Exception as e:
             logger.exception(f"Error getting account info: {e}")
             return {'error': str(e)}
+
+    def _get_funding_rates(self, info):
+        """
+        Get current funding rates for all assets.
+        Returns dict mapping coin -> funding_rate (hourly)
+        """
+        try:
+            # Get meta and asset contexts which includes funding rates
+            meta_and_ctxs = info.meta_and_asset_ctxs()
+
+            funding_rates = {}
+            if meta_and_ctxs and len(meta_and_ctxs) >= 2:
+                meta = meta_and_ctxs[0]
+                asset_ctxs = meta_and_ctxs[1]
+                universe = meta.get('universe', [])
+
+                for i, asset in enumerate(universe):
+                    coin = asset.get('name', '')
+                    if i < len(asset_ctxs):
+                        ctx = asset_ctxs[i]
+                        # funding is the current hourly funding rate
+                        funding_rate = float(ctx.get('funding', 0))
+                        funding_rates[coin] = funding_rate
+
+            return funding_rates
+        except Exception as e:
+            logger.warning(f"Error fetching funding rates: {e}")
+            return {}
 
     def _get_hip3_positions(self, info, wallet_address):
         """
