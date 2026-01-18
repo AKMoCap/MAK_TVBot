@@ -1244,6 +1244,38 @@ def api_wallet_dex_abstraction_status():
         return jsonify({'enabled': False, 'error': str(e)})
 
 
+@app.route('/api/hip3/dexs', methods=['GET'])
+def api_hip3_dexs():
+    """
+    Get list of available HIP-3 DEXs.
+    This is useful for debugging and understanding which DEXs are available.
+    """
+    try:
+        from hyperliquid.utils import constants
+        import requests
+
+        api_url = constants.TESTNET_API_URL if USE_TESTNET else constants.MAINNET_API_URL
+
+        response = requests.post(
+            f"{api_url}/info",
+            json={"type": "perpDexs"},
+            headers={"Content-Type": "application/json"}
+        )
+
+        result = response.json()
+        logger.info(f"HIP-3 DEXs: {result}")
+
+        return jsonify({
+            'success': True,
+            'dexs': result,
+            'network': 'testnet' if USE_TESTNET else 'mainnet'
+        })
+
+    except Exception as e:
+        logger.exception(f"Error fetching HIP-3 DEXs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/wallet/disconnect', methods=['POST'])
 def api_wallet_disconnect():
     """Disconnect wallet session"""
