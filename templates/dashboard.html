@@ -250,28 +250,35 @@
                     <span class="positions-tab" data-tab="spot">Spot</span>
                     <span class="positions-tab" data-tab="orders">Open Orders</span>
                 </div>
-                <button class="btn btn-outline-danger btn-sm" id="close-all-btn">
-                    <i class="bi bi-x-circle me-1"></i>Close All
-                </button>
+                <div id="perps-controls">
+                    <select id="side-filter" class="form-select form-select-sm d-inline-block me-2" style="width: auto; background-color: var(--bg-darker); color: var(--text-light); border-color: var(--border-color);">
+                        <option value="">All Sides</option>
+                        <option value="long">Long Only</option>
+                        <option value="short">Short Only</option>
+                    </select>
+                    <button class="btn btn-outline-danger btn-sm" id="close-all-btn">
+                        <i class="bi bi-x-circle me-1"></i>Close All
+                    </button>
+                </div>
             </div>
 
             <!-- Perps Tab Content -->
             <div class="card-body p-0 tab-content" id="tab-perps">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
+                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact" id="perps-table-sortable">
                         <thead>
                             <tr>
-                                <th>Coin</th>
-                                <th>Side</th>
-                                <th>Lev</th>
-                                <th>Posted</th>
-                                <th>Pos. Value</th>
-                                <th>Size</th>
-                                <th>Entry</th>
-                                <th>Mark</th>
-                                <th>Liq.</th>
-                                <th>Funding</th>
-                                <th>P&L</th>
+                                <th class="sortable" data-sort="coin" data-type="text">Coin <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="side" data-type="text">Side <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="leverage" data-type="number">Lev <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="margin" data-type="number">Posted <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable active desc" data-sort="posValue" data-type="number">Pos. Value <i class="bi bi-arrow-down sort-icon"></i></th>
+                                <th class="sortable" data-sort="size" data-type="number">Size <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="entry" data-type="number">Entry <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="mark" data-type="number">Mark <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="liq" data-type="number">Liq. <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="funding" data-type="number">Funding <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="pnl" data-type="number">P&L <i class="bi bi-arrow-down-up sort-icon"></i></th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -290,11 +297,11 @@
             <!-- Spot Tab Content -->
             <div class="card-body p-0 tab-content" id="tab-spot" style="display: none;">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
+                    <table class="table table-dark table-hover mb-0 table-sm spot-table-compact">
                         <thead>
                             <tr>
                                 <th>Coin</th>
-                                <th>Total Balance</th>
+                                <th>Units</th>
                                 <th>$ Value</th>
                             </tr>
                         </thead>

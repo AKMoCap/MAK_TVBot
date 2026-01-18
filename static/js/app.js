@@ -348,8 +348,18 @@ function updateRiskBars(data) {
     }
 }
 
+// Global positions cache for sorting/filtering
+let positionsCache = [];
+let currentSortColumn = 'posValue';
+let currentSortDirection = 'desc';
+
 function updatePositionsTable(positions) {
     console.log('[updatePositionsTable] Called with', positions?.length || 0, 'positions');
+
+    // Cache positions for sorting/filtering
+    if (positions && positions.length > 0) {
+        positionsCache = positions;
+    }
 
     const tbody = document.getElementById('positions-table');
     if (!tbody) {
@@ -357,7 +367,14 @@ function updatePositionsTable(positions) {
         return;
     }
 
-    if (!positions || positions.length === 0) {
+    // Apply filter
+    const sideFilter = document.getElementById('side-filter');
+    let filteredPositions = positionsCache;
+    if (sideFilter && sideFilter.value) {
+        filteredPositions = positionsCache.filter(pos => pos.side === sideFilter.value);
+    }
+
+    if (!filteredPositions || filteredPositions.length === 0) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="12" class="text-center text-muted py-3">
@@ -369,9 +386,12 @@ function updatePositionsTable(positions) {
         return;
     }
 
-    console.log('[updatePositionsTable] Rendering positions:', positions);
+    // Apply sorting
+    const sortedPositions = sortPositions(filteredPositions, currentSortColumn, currentSortDirection);
 
-    tbody.innerHTML = positions.map(pos => {
+    console.log('[updatePositionsTable] Rendering positions:', sortedPositions.length);
+
+    tbody.innerHTML = sortedPositions.map(pos => {
         const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
         const sideClass = pos.side === 'long' ? 'badge-long' : 'badge-short';
         // HIP-3 badge for builder-deployed perps
@@ -393,7 +413,7 @@ function updatePositionsTable(positions) {
         }
 
         return `
-            <tr>
+            <tr data-coin="${pos.coin}" data-side="${pos.side}" data-pos-value="${positionValue}">
                 <td><strong>${pos.coin}</strong>${hip3Badge}</td>
                 <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${pos.side.toUpperCase()}</span></td>
                 <td>${pos.leverage}x</td>
@@ -413,6 +433,120 @@ function updatePositionsTable(positions) {
             </tr>
         `;
     }).join('');
+}
+
+/**
+ * Sort positions by column
+ */
+function sortPositions(positions, column, direction) {
+    return [...positions].sort((a, b) => {
+        let valA, valB;
+
+        switch (column) {
+            case 'coin':
+                valA = a.coin || '';
+                valB = b.coin || '';
+                break;
+            case 'side':
+                valA = a.side || '';
+                valB = b.side || '';
+                break;
+            case 'leverage':
+                valA = a.leverage || 0;
+                valB = b.leverage || 0;
+                break;
+            case 'margin':
+                valA = a.margin_used || 0;
+                valB = b.margin_used || 0;
+                break;
+            case 'posValue':
+                valA = Math.abs(a.size) * (a.mark_price || a.entry_price || 0);
+                valB = Math.abs(b.size) * (b.mark_price || b.entry_price || 0);
+                break;
+            case 'size':
+                valA = Math.abs(a.size) || 0;
+                valB = Math.abs(b.size) || 0;
+                break;
+            case 'entry':
+                valA = a.entry_price || 0;
+                valB = b.entry_price || 0;
+                break;
+            case 'mark':
+                valA = a.mark_price || 0;
+                valB = b.mark_price || 0;
+                break;
+            case 'liq':
+                valA = a.liquidation_price || 0;
+                valB = b.liquidation_price || 0;
+                break;
+            case 'funding':
+                valA = a.funding_rate || 0;
+                valB = b.funding_rate || 0;
+                break;
+            case 'pnl':
+                valA = a.unrealized_pnl || 0;
+                valB = b.unrealized_pnl || 0;
+                break;
+            default:
+                return 0;
+        }
+
+        // Handle string vs number comparison
+        if (typeof valA === 'string' && typeof valB === 'string') {
+            const cmp = valA.localeCompare(valB);
+            return direction === 'asc' ? cmp : -cmp;
+        } else {
+            const cmp = valA - valB;
+            return direction === 'asc' ? cmp : -cmp;
+        }
+    });
+}
+
+/**
+ * Setup sortable table headers for Perps table
+ */
+function setupPerpsTableSorting() {
+    const headers = document.querySelectorAll('#perps-table-sortable th.sortable');
+
+    headers.forEach(header => {
+        header.addEventListener('click', function() {
+            const column = this.dataset.sort;
+            const type = this.dataset.type;
+
+            // Toggle direction if same column, otherwise default based on type
+            if (currentSortColumn === column) {
+                currentSortDirection = currentSortDirection === 'desc' ? 'asc' : 'desc';
+            } else {
+                // Numbers default to desc, text defaults to asc
+                currentSortDirection = type === 'number' ? 'desc' : 'asc';
+            }
+            currentSortColumn = column;
+
+            // Update header classes
+            headers.forEach(h => {
+                h.classList.remove('active', 'asc', 'desc');
+                const icon = h.querySelector('.sort-icon');
+                if (icon) icon.className = 'bi bi-arrow-down-up sort-icon';
+            });
+
+            this.classList.add('active', currentSortDirection);
+            const icon = this.querySelector('.sort-icon');
+            if (icon) {
+                icon.className = `bi bi-arrow-${currentSortDirection === 'desc' ? 'down' : 'up'} sort-icon`;
+            }
+
+            // Re-render table with new sort
+            updatePositionsTable(null);  // Use cached positions
+        });
+    });
+
+    // Setup side filter
+    const sideFilter = document.getElementById('side-filter');
+    if (sideFilter) {
+        sideFilter.addEventListener('change', function() {
+            updatePositionsTable(null);  // Use cached positions with filter
+        });
+    }
 }
 
 function updatePrices(prices) {
@@ -632,11 +766,17 @@ function clearQuickTradeForm() {
     if (tp2SizeInput) tp2SizeInput.value = '';
 }
 
+// Cache for spot balances and open orders
+let spotBalancesCache = [];
+let openOrdersCache = [];
+
 /**
  * Setup tab switching for Perps/Spot/Open Orders
  */
 function setupPositionTabs() {
     const tabs = document.querySelectorAll('.positions-tab');
+    const perpsControls = document.getElementById('perps-controls');
+
     tabs.forEach(tab => {
         tab.addEventListener('click', function() {
             // Remove active class from all tabs
@@ -656,8 +796,16 @@ function setupPositionTabs() {
                 tabContent.style.display = 'block';
             }
 
-            // Load data for the selected tab
-            if (tabName === 'spot') {
+            // Show/hide perps controls (filter and Close All button)
+            if (perpsControls) {
+                perpsControls.style.display = tabName === 'perps' ? 'block' : 'none';
+            }
+
+            // Load/refresh data for the selected tab
+            if (tabName === 'perps') {
+                // Re-render positions from cache
+                updatePositionsTable(null);
+            } else if (tabName === 'spot') {
                 loadSpotBalances();
             } else if (tabName === 'orders') {
                 loadOpenOrders();
@@ -845,6 +993,9 @@ async function cancelOrder(oid, coin) {
 function setupDashboardEvents() {
     // Setup positions/spot/orders tab switching
     setupPositionTabs();
+
+    // Setup sortable table headers for Perps
+    setupPerpsTableSorting();
 
     // Leverage slider
     const leverageRange = document.getElementById('trade-leverage-range');
