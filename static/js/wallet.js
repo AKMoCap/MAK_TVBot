@@ -121,6 +121,24 @@ class WalletManager {
                             this.checksumAddress = accounts[0];
                             this.provider = new ethers.BrowserProvider(window.ethereum);
                             this.signer = await this.provider.getSigner();
+
+                            // Get current chain and switch to correct network if needed
+                            const network = await this.provider.getNetwork();
+                            this.chainId = Number(network.chainId);
+
+                            const requiredChainId = await this.getRequiredChainId();
+                            console.log('Session reconnect - Current chain:', this.chainId, 'Required:', requiredChainId);
+
+                            if (this.chainId !== requiredChainId) {
+                                try {
+                                    await this.switchToRequiredNetwork(requiredChainId);
+                                    this.chainId = requiredChainId;
+                                    console.log('Switched to required network:', requiredChainId);
+                                } catch (switchError) {
+                                    console.warn('Could not auto-switch network on reconnect:', switchError.message);
+                                }
+                            }
+
                             console.log('Reconnected Web3 provider for:', this.checksumAddress);
                         }
                     } catch (e) {
@@ -130,6 +148,21 @@ class WalletManager {
             }
         } catch (error) {
             console.log('No existing session:', error);
+        }
+    }
+
+    /**
+     * Get required chain ID from app settings
+     */
+    async getRequiredChainId() {
+        try {
+            const response = await fetch('/api/settings');
+            const settings = await response.json();
+            const isTestnet = settings.use_testnet === 'true' || settings.use_testnet === true;
+            return isTestnet ? this.ARBITRUM_SEPOLIA_CHAIN_ID : this.ARBITRUM_ONE_CHAIN_ID;
+        } catch (error) {
+            console.error('Failed to get settings, defaulting to mainnet:', error);
+            return this.ARBITRUM_ONE_CHAIN_ID;
         }
     }
 
@@ -160,6 +193,21 @@ class WalletManager {
             this.chainId = Number(network.chainId);
 
             console.log('Wallet connected:', this.checksumAddress, 'Chain:', this.chainId);
+
+            // Get the required chain ID from app settings and switch if needed
+            const requiredChainId = await this.getRequiredChainId();
+            console.log('Required chain ID from settings:', requiredChainId);
+
+            if (this.chainId !== requiredChainId) {
+                this.updateButton('Switching Network...', 'status-badge-primary');
+                try {
+                    await this.switchToRequiredNetwork(requiredChainId);
+                    this.chainId = requiredChainId;
+                } catch (switchError) {
+                    console.warn('Could not auto-switch network:', switchError.message);
+                    // Continue anyway - the network switch will happen during agent approval
+                }
+            }
 
             // Register wallet with backend
             const response = await fetch('/api/wallet/connect', {
@@ -504,12 +552,23 @@ class WalletManager {
                 ${this.address}
             </div>
             <div class="dropdown-divider" style="border-color: #2d3748;"></div>
+            <button class="dropdown-item text-warning d-flex align-items-center" id="reauthorize-wallet-btn" style="background: transparent;">
+                <i class="bi bi-shield-check me-2"></i>Re-authorize Trading
+            </button>
             <button class="dropdown-item text-danger d-flex align-items-center" id="disconnect-wallet-btn" style="background: transparent;">
                 <i class="bi bi-box-arrow-right me-2"></i>Disconnect Wallet
             </button>
         `;
 
         document.body.appendChild(menu);
+
+        // Add click handler for re-authorize button
+        document.getElementById('reauthorize-wallet-btn').onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            menu.remove();
+            this.promptAgentApproval();
+        };
 
         // Add click handler for disconnect button
         document.getElementById('disconnect-wallet-btn').onclick = (e) => {
