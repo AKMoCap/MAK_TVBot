@@ -641,3 +641,60 @@ code {
     text-shadow: 0 0 10px rgba(58, 180, 239, 0.6), 0 0 20px rgba(58, 180, 239, 0.4);
     border-bottom: 2px solid var(--accent-primary);
 }
+
+/* Sortable table headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.sortable:hover {
+    color: var(--accent-primary);
+}
+
+.sortable .sort-icon {
+    font-size: 0.7rem;
+    opacity: 0.4;
+    margin-left: 3px;
+}
+
+.sortable:hover .sort-icon {
+    opacity: 0.8;
+}
+
+.sortable.active .sort-icon {
+    opacity: 1;
+    color: var(--accent-primary);
+}
+
+.sortable.asc .sort-icon::before {
+    content: "\F128";  /* bi-arrow-up */
+}
+
+.sortable.desc .sort-icon::before {
+    content: "\F120";  /* bi-arrow-down */
+}
+
+/* Spot table compact styling */
+.spot-table-compact th,
+.spot-table-compact td {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
+    text-align: left;
+}
+
+.spot-table-compact th:first-child,
+.spot-table-compact td:first-child {
+    width: 30%;
+}
+
+.spot-table-compact th:nth-child(2),
+.spot-table-compact td:nth-child(2) {
+    width: 35%;
+}
+
+.spot-table-compact th:nth-child(3),
+.spot-table-compact td:nth-child(3) {
+    width: 35%;
+}
