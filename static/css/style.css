@@ -558,3 +558,25 @@ code {
 .modal-body p {
     color: var(--text-light);
 }
+
+/* Compact positions table */
+.positions-table-compact th {
+    padding: 0.4rem 0.5rem !important;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.positions-table-compact td {
+    padding: 0.3rem 0.5rem !important;
+    font-size: 0.8rem;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.positions-table-compact strong {
+    font-size: 0.85rem;
+}
+
+.positions-table-compact .btn-sm {
+    font-size: 0.75rem;
+}
