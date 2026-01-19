@@ -396,10 +396,10 @@
         <div class="card bg-darker border-secondary">
             <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
                 <div class="positions-tabs">
-                    <span class="positions-tab active" data-tab="perps">Perps</span>
+                    <span class="positions-tab active" data-tab="perps">Perps<span id="tab-count-perps" class="tab-count"></span></span>
                     <span class="positions-tab" data-tab="spot">Spot</span>
-                    <span class="positions-tab" data-tab="orders">Open Orders</span>
-                    <span class="positions-tab" data-tab="twaps">TWAPs</span>
+                    <span class="positions-tab" data-tab="orders">Open Orders<span id="tab-count-orders" class="tab-count"></span></span>
+                    <span class="positions-tab" data-tab="twaps">TWAPs<span id="tab-count-twaps" class="tab-count"></span></span>
                 </div>
                 <div id="perps-controls">
                     <select id="side-filter" class="form-select form-select-sm d-inline-block me-2" style="width: auto; background-color: var(--bg-darker); color: var(--text-light); border-color: var(--border-color);">

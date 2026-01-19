@@ -642,6 +642,18 @@ code {
     border-bottom: 2px solid var(--accent-primary);
 }
 
+/* Tab count badge */
+.tab-count {
+    font-size: 0.75em;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-left: 0.25rem;
+}
+
+.tab-count:empty {
+    display: none;
+}
+
 /* Sortable table headers */
 .sortable {
     cursor: pointer;
