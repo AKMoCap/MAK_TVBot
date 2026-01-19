@@ -156,10 +156,21 @@
             </div>
             <div class="card-body">
                 <form id="quick-trade-form">
-                    <div class="mb-2">
-                        <label class="form-label mb-1">Filter by Category</label>
-                        <div id="coin-category-filters" class="d-flex flex-wrap">
-                            <!-- Populated immediately from cache below -->
+                    <div class="row mb-2">
+                        <div class="col-7">
+                            <label class="form-label mb-1">Filter by Category</label>
+                            <div id="coin-category-filters" class="d-flex flex-wrap">
+                                <!-- Populated immediately from cache below -->
+                            </div>
+                        </div>
+                        <div class="col-5 text-end">
+                            <label class="form-label mb-1">Order Type</label>
+                            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="order-type">
+                                <option value="market" selected>Market</option>
+                                <option value="limit">Limit</option>
+                                <option value="twap">TWAP</option>
+                                <option value="scale">Scale</option>
+                            </select>
                         </div>
                     </div>
                     <div class="mb-3">
@@ -224,6 +235,7 @@
                     })();
                     </script>
 
+                    <!-- Collateral and Leverage - always visible for all order types -->
                     <div class="row mb-3">
                         <div class="col-6">
                             <label class="form-label">Collateral (USD)</label>
@@ -240,35 +252,96 @@
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Stop Loss %</label>
-                        <input type="number" class="form-control bg-dark text-light border-secondary"
-                               id="trade-sl" value="15" step="0.1">
+                    <!-- Market Order Fields -->
+                    <div id="market-order-fields">
+                        <div class="mb-3">
+                            <label class="form-label">Stop Loss %</label>
+                            <input type="number" class="form-control bg-dark text-light border-secondary"
+                                   id="trade-sl" value="15" step="0.1">
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">TP1 Target %</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-tp1" value="50" step="0.1">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">TP1 Size %</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-tp1-size" value="25" step="1">
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">TP2 Target %</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-tp2" value="100" step="0.1">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">TP2 Size %</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-tp2-size" value="50" step="1">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <label class="form-label">TP1 Target %</label>
+                    <!-- Limit Order Fields (placeholder) -->
+                    <div id="limit-order-fields" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Limit Price</label>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-tp1" value="50" step="0.1">
+                                   id="trade-limit-price" placeholder="Enter limit price" step="0.01">
                         </div>
-                        <div class="col-6">
-                            <label class="form-label">TP1 Size %</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-tp1-size" value="25" step="1">
+                        <div class="alert alert-info py-2 small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Limit order functionality coming soon
                         </div>
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <label class="form-label">TP2 Target %</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-tp2" value="100" step="0.1">
+                    <!-- TWAP Order Fields (placeholder) -->
+                    <div id="twap-order-fields" style="display: none;">
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Duration (min)</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-twap-duration" value="30" min="5" step="5">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Intervals</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-twap-intervals" value="6" min="2" max="20">
+                            </div>
                         </div>
-                        <div class="col-6">
-                            <label class="form-label">TP2 Size %</label>
+                        <div class="alert alert-info py-2 small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            TWAP order functionality coming soon
+                        </div>
+                    </div>
+
+                    <!-- Scale Order Fields (placeholder) -->
+                    <div id="scale-order-fields" style="display: none;">
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Price From</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-scale-from" placeholder="Start price" step="0.01">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Price To</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-scale-to" placeholder="End price" step="0.01">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Number of Orders</label>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-tp2-size" value="50" step="1">
+                                   id="trade-scale-count" value="5" min="2" max="20">
+                        </div>
+                        <div class="alert alert-info py-2 small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Scale order functionality coming soon
                         </div>
                     </div>
 
