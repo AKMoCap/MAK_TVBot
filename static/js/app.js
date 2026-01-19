@@ -183,24 +183,34 @@ function updatePricesFromWebSocket(prices) {
 }
 
 /**
- * Update Quick Trade dropdown options with live prices
+ * Update Quick Trade custom dropdown with live prices
  */
 function updateDropdownPrices() {
-    const coinSelect = document.getElementById('trade-coin');
-    if (!coinSelect) return;
+    const dropdownMenu = document.getElementById('coin-dropdown-menu');
+    if (!dropdownMenu) return;
 
-    // Update each option with its live price
-    const options = coinSelect.querySelectorAll('option');
-    options.forEach(option => {
-        const coin = option.value;
+    // Update each dropdown item with its live price
+    const items = dropdownMenu.querySelectorAll('.coin-dropdown-item');
+    items.forEach(item => {
+        const coin = item.dataset.coin;
         if (coin && livePrices[coin]) {
             const price = livePrices[coin];
             const formattedPrice = formatPrice(price);
-            // Format: "BTC - $42,500.00"
-            const baseName = coin.includes(' - ') ? coin.split(' - ')[0] : coin;
-            option.textContent = `${baseName} - ${formattedPrice}`;
+            const priceSpan = item.querySelector('.item-price');
+            if (priceSpan) {
+                priceSpan.textContent = formattedPrice;
+            }
         }
     });
+
+    // Also update the selected coin's price in the trigger
+    const selectedCoin = document.getElementById('trade-coin')?.value;
+    if (selectedCoin && livePrices[selectedCoin]) {
+        const selectedPriceEl = document.getElementById('selected-coin-price');
+        if (selectedPriceEl) {
+            selectedPriceEl.textContent = formatPrice(livePrices[selectedCoin]);
+        }
+    }
 }
 
 // Setup WebSocket callbacks immediately when script loads
@@ -1113,13 +1123,14 @@ function setupCategoryFilterHandlers() {
 }
 
 /**
- * Dynamically populate the Quick Trade dropdown from coin configs
+ * Dynamically populate the Quick Trade custom dropdown from coin configs
  * @param {Array} coins - Array of coin objects to display
  * @param {string} filterCategory - Optional category to filter by (null = show all)
  */
 function populateQuickTradeDropdown(coins, filterCategory = null) {
-    const coinSelect = document.getElementById('trade-coin');
-    if (!coinSelect) return;
+    const dropdownMenu = document.getElementById('coin-dropdown-menu');
+    const hiddenInput = document.getElementById('trade-coin');
+    if (!dropdownMenu) return;
 
     // Category order for display
     const categoryOrder = ['L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
@@ -1140,26 +1151,39 @@ function populateQuickTradeDropdown(coins, filterCategory = null) {
         }
     });
 
-    // Build dropdown HTML
+    // Build custom dropdown HTML with two columns
     let html = '';
+    let firstCoin = null;
 
     // Add coin groups in order
     for (const category of categoryOrder) {
         const coinList = groups[category];
         if (coinList && coinList.length > 0) {
-            html += `<optgroup label="${categoryDisplayNames[category] || category}">`;
+            html += `<div class="coin-dropdown-category" data-category="${category}">${categoryDisplayNames[category] || category}</div>`;
             coinList.forEach(coinName => {
-                html += `<option value="${coinName}">${coinName}</option>`;
+                if (!firstCoin) firstCoin = coinName;
+                const price = livePrices[coinName] ? formatPrice(livePrices[coinName]) : '--';
+                const selectedClass = (hiddenInput && hiddenInput.value === coinName) ? ' selected' : '';
+                html += `<div class="coin-dropdown-item${selectedClass}" data-coin="${coinName}" data-category="${category}">`;
+                html += `<span class="item-coin">${coinName}</span>`;
+                html += `<span class="item-price">${price}</span>`;
+                html += '</div>';
             });
-            html += '</optgroup>';
         }
     }
 
-    coinSelect.innerHTML = html;
+    dropdownMenu.innerHTML = html;
 
-    // Trigger change to update form with first selected coin
-    if (coinSelect.options.length > 0) {
-        coinSelect.dispatchEvent(new Event('change'));
+    // If no coin is selected yet, select the first one
+    if (hiddenInput && !hiddenInput.value && firstCoin) {
+        hiddenInput.value = firstCoin;
+        document.getElementById('selected-coin-name').textContent = firstCoin;
+        if (livePrices[firstCoin]) {
+            document.getElementById('selected-coin-price').textContent = formatPrice(livePrices[firstCoin]);
+        }
+        const firstItem = dropdownMenu.querySelector('.coin-dropdown-item');
+        if (firstItem) firstItem.classList.add('selected');
+        populateQuickTradeForm(firstCoin);
     }
 }
 
@@ -1555,6 +1579,94 @@ async function cancelOrder(oid, coin) {
     }
 }
 
+/**
+ * Setup custom coin dropdown with two columns (Coin | Price)
+ */
+function setupCustomCoinDropdown() {
+    const trigger = document.getElementById('coin-dropdown-trigger');
+    const menu = document.getElementById('coin-dropdown-menu');
+    const hiddenInput = document.getElementById('trade-coin');
+
+    if (!trigger || !menu) return;
+
+    // Toggle dropdown on trigger click
+    trigger.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const isOpen = menu.classList.contains('show');
+        if (isOpen) {
+            closeDropdown();
+        } else {
+            openDropdown();
+        }
+    });
+
+    // Handle keyboard navigation
+    trigger.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            trigger.click();
+        } else if (e.key === 'Escape') {
+            closeDropdown();
+        }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!trigger.contains(e.target) && !menu.contains(e.target)) {
+            closeDropdown();
+        }
+    });
+
+    // Setup item click handlers (using event delegation)
+    menu.addEventListener('click', function(e) {
+        const item = e.target.closest('.coin-dropdown-item');
+        if (item) {
+            selectCoin(item.dataset.coin);
+            closeDropdown();
+        }
+    });
+
+    function openDropdown() {
+        menu.classList.add('show');
+        trigger.classList.add('open');
+    }
+
+    function closeDropdown() {
+        menu.classList.remove('show');
+        trigger.classList.remove('open');
+    }
+
+    function selectCoin(coin) {
+        if (!coin) return;
+
+        // Update hidden input
+        if (hiddenInput) {
+            hiddenInput.value = coin;
+        }
+
+        // Update trigger display
+        const nameEl = document.getElementById('selected-coin-name');
+        const priceEl = document.getElementById('selected-coin-price');
+        if (nameEl) nameEl.textContent = coin;
+        if (priceEl && livePrices[coin]) {
+            priceEl.textContent = formatPrice(livePrices[coin]);
+        } else if (priceEl) {
+            priceEl.textContent = '';
+        }
+
+        // Update selected state in menu
+        menu.querySelectorAll('.coin-dropdown-item').forEach(item => {
+            item.classList.remove('selected');
+            if (item.dataset.coin === coin) {
+                item.classList.add('selected');
+            }
+        });
+
+        // Populate form with coin defaults
+        populateQuickTradeForm(coin);
+    }
+}
+
 function setupDashboardEvents() {
     // Setup positions/spot/orders tab switching
     setupPositionTabs();
@@ -1574,13 +1686,8 @@ function setupDashboardEvents() {
         });
     }
 
-    // Coin dropdown - auto-populate form with coin defaults
-    const coinSelect = document.getElementById('trade-coin');
-    if (coinSelect) {
-        coinSelect.addEventListener('change', function() {
-            populateQuickTradeForm(this.value);
-        });
-    }
+    // Custom coin dropdown - setup open/close and selection
+    setupCustomCoinDropdown();
 
     // Order type dropdown - show/hide appropriate fields
     const orderTypeSelect = document.getElementById('order-type');

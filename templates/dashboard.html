@@ -175,9 +175,21 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Coin</label>
-                        <select class="form-select bg-dark text-light border-secondary" id="trade-coin">
-                            <!-- Populated immediately from cache below -->
-                        </select>
+                        <!-- Hidden input to store actual selected value -->
+                        <input type="hidden" id="trade-coin" value="">
+                        <!-- Custom two-column dropdown -->
+                        <div class="coin-dropdown-wrapper" id="coin-dropdown-wrapper">
+                            <div class="coin-dropdown-trigger" id="coin-dropdown-trigger" tabindex="0">
+                                <div class="selected-coin">
+                                    <span class="coin-name" id="selected-coin-name">Select coin...</span>
+                                    <span class="coin-price" id="selected-coin-price"></span>
+                                </div>
+                                <i class="bi bi-chevron-down dropdown-arrow"></i>
+                            </div>
+                            <div class="coin-dropdown-menu" id="coin-dropdown-menu">
+                                <!-- Populated immediately from cache below -->
+                            </div>
+                        </div>
                     </div>
                     <script>
                     // IMMEDIATE cache load - runs synchronously before page finishes rendering
@@ -190,7 +202,7 @@
                             const cached = localStorage.getItem(CACHE_KEY);
                             if (cached) {
                                 const coins = JSON.parse(cached);
-                                const select = document.getElementById('trade-coin');
+                                const dropdownMenu = document.getElementById('coin-dropdown-menu');
                                 const filterDiv = document.getElementById('coin-category-filters');
 
                                 // Build category filter buttons
@@ -205,8 +217,8 @@
                                     filterDiv.innerHTML = filterHtml;
                                 }
 
-                                // Build dropdown
-                                if (select && coins.length > 0) {
+                                // Build custom dropdown with two columns
+                                if (dropdownMenu && coins.length > 0) {
                                     const groups = {};
                                     categoryOrder.forEach(cat => groups[cat] = []);
                                     coins.forEach(coin => {
@@ -216,17 +228,29 @@
                                     });
 
                                     let html = '';
+                                    let firstCoin = null;
                                     categoryOrder.forEach(category => {
                                         const coinList = groups[category];
                                         if (coinList && coinList.length > 0) {
-                                            html += '<optgroup label="' + (categoryNames[category] || category) + '">';
+                                            html += '<div class="coin-dropdown-category" data-category="' + category + '">' + (categoryNames[category] || category) + '</div>';
                                             coinList.forEach(coinName => {
-                                                html += '<option value="' + coinName + '">' + coinName + '</option>';
+                                                if (!firstCoin) firstCoin = coinName;
+                                                html += '<div class="coin-dropdown-item" data-coin="' + coinName + '" data-category="' + category + '">';
+                                                html += '<span class="item-coin">' + coinName + '</span>';
+                                                html += '<span class="item-price" id="dropdown-price-' + coinName.replace(/[^a-zA-Z0-9]/g, '-') + '">--</span>';
+                                                html += '</div>';
                                             });
-                                            html += '</optgroup>';
                                         }
                                     });
-                                    select.innerHTML = html;
+                                    dropdownMenu.innerHTML = html;
+
+                                    // Set first coin as selected
+                                    if (firstCoin) {
+                                        document.getElementById('trade-coin').value = firstCoin;
+                                        document.getElementById('selected-coin-name').textContent = firstCoin;
+                                        const firstItem = dropdownMenu.querySelector('.coin-dropdown-item');
+                                        if (firstItem) firstItem.classList.add('selected');
+                                    }
                                 }
                             }
                         } catch (e) {
