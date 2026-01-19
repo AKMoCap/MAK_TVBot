@@ -871,52 +871,56 @@ const categoryDisplayNames = {
     'HIP-3 Perps': 'HIP-3 Perps'
 };
 
-// localStorage cache key for coins
-const COIN_CACHE_KEY = 'mak_coin_configs';
-const COIN_CACHE_VERSION_KEY = 'mak_coin_configs_version';
+// localStorage cache key for Quick Trade coins (STATIC - only updates on explicit refresh)
+const QUICK_TRADE_CACHE_KEY = 'mak_quick_trade_coins';
 
 /**
- * Save coins to localStorage cache
+ * Save coins to Quick Trade cache (ONLY called from Refresh Leverage Tables)
  */
-function saveCoinCache(coins) {
+function saveQuickTradeCache(coins) {
     try {
-        localStorage.setItem(COIN_CACHE_KEY, JSON.stringify(coins));
-        localStorage.setItem(COIN_CACHE_VERSION_KEY, Date.now().toString());
-        console.log('Saved', coins.length, 'coins to cache');
+        localStorage.setItem(QUICK_TRADE_CACHE_KEY, JSON.stringify(coins));
+        console.log('[QuickTrade] Saved', coins.length, 'coins to static cache');
     } catch (e) {
-        console.warn('Failed to save coin cache:', e);
+        console.warn('[QuickTrade] Failed to save cache:', e);
     }
 }
 
 /**
- * Load coins from localStorage cache
+ * Load coins from Quick Trade cache
  * Returns null if no cache exists
  */
-function loadCoinCache() {
+function loadQuickTradeCache() {
     try {
-        const cached = localStorage.getItem(COIN_CACHE_KEY);
+        const cached = localStorage.getItem(QUICK_TRADE_CACHE_KEY);
         if (cached) {
             const coins = JSON.parse(cached);
-            console.log('Loaded', coins.length, 'coins from cache');
+            console.log('[QuickTrade] Loaded', coins.length, 'coins from static cache');
             return coins;
         }
     } catch (e) {
-        console.warn('Failed to load coin cache:', e);
+        console.warn('[QuickTrade] Failed to load cache:', e);
     }
     return null;
 }
 
 /**
- * Invalidate the coin cache (call when coins are added/modified)
+ * Force refresh Quick Trade cache from database
+ * ONLY called when user clicks "Refresh Leverage Tables"
  */
-function invalidateCoinCache() {
+async function refreshQuickTradeCache() {
     try {
-        localStorage.removeItem(COIN_CACHE_KEY);
-        localStorage.removeItem(COIN_CACHE_VERSION_KEY);
-        console.log('Coin cache invalidated');
-    } catch (e) {
-        console.warn('Failed to invalidate coin cache:', e);
+        const data = await apiCall('/coins');
+        if (data.coins && data.coins.length > 0) {
+            saveQuickTradeCache(data.coins);
+            processCoinData(data.coins);
+            console.log('[QuickTrade] Cache refreshed with', data.coins.length, 'coins');
+            return true;
+        }
+    } catch (error) {
+        console.error('[QuickTrade] Failed to refresh cache:', error);
     }
+    return false;
 }
 
 function isCategory(value) {
@@ -976,27 +980,29 @@ function processCoinData(coins) {
 
 /**
  * Load coin configs for Quick Trade dropdown
- * Uses localStorage cache first, only fetches from API if cache miss
+ * Uses STATIC localStorage cache - ONLY updates when user clicks "Refresh Leverage Tables"
+ * This ensures instant loading and no unexpected refreshes
  */
 async function loadCoinConfigsForQuickTrade() {
-    // Try to load from cache first (instant)
-    const cachedCoins = loadCoinCache();
+    // Try to load from static cache first (instant, no API call)
+    const cachedCoins = loadQuickTradeCache();
     if (cachedCoins && cachedCoins.length > 0) {
         processCoinData(cachedCoins);
-        return;  // Don't fetch from API - use cache
+        return;  // Use static cache - no API call needed
     }
 
-    // No cache - fetch from database API
+    // No cache exists yet - fetch once and cache permanently
+    // This only happens on first visit or after clearing browser data
+    console.log('[QuickTrade] No cache found, fetching initial coin list...');
     try {
         const data = await apiCall('/coins');
         if (data.coins && data.coins.length > 0) {
-            // Save to cache for next time
-            saveCoinCache(data.coins);
-            // Process the data
+            // Save to static cache (won't be invalidated until explicit refresh)
+            saveQuickTradeCache(data.coins);
             processCoinData(data.coins);
         }
     } catch (error) {
-        console.error('Failed to load coin configs for quick trade:', error);
+        console.error('[QuickTrade] Failed to load initial coin configs:', error);
     }
 }
 
@@ -2190,7 +2196,7 @@ async function saveCoinConfig() {
         const result = await apiCall(`/coins/${coin}`, 'PUT', data);
         if (result.success) {
             showToast('Coin configuration saved', 'success');
-            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
+            // Note: Quick Trade cache is NOT updated here - only on "Refresh Leverage Tables"
             bootstrap.Modal.getInstance(document.getElementById('editCoinModal')).hide();
             loadCoinConfigs();
         }
@@ -2222,7 +2228,7 @@ async function saveAllCoinDefaults() {
         const result = await apiCall('/coins/bulk-update', 'PUT', data);
         if (result.success) {
             showToast(`Updated ${result.updated} coin configurations`, 'success');
-            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
+            // Note: Quick Trade cache is NOT updated here - only on "Refresh Leverage Tables"
             bootstrap.Modal.getInstance(document.getElementById('setDefaultsAllModal')).hide();
             loadCoinConfigs();
         } else {
@@ -2238,6 +2244,7 @@ async function saveAllCoinDefaults() {
 
 /**
  * Refresh leverage and margin mode data from Hyperliquid API
+ * This is the ONLY action that updates the Quick Trade dropdown cache
  */
 async function refreshLeverageTables() {
     const btn = document.getElementById('refresh-leverage-btn');
@@ -2252,8 +2259,11 @@ async function refreshLeverageTables() {
                 message += `. Not found on Hyperliquid: ${result.not_found.join(', ')}`;
             }
             showToast(message, 'success');
-            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
-            loadCoinConfigs();  // Refresh the table
+
+            // Refresh the Quick Trade static cache (this is the ONLY place it gets updated)
+            await refreshQuickTradeCache();
+
+            loadCoinConfigs();  // Refresh the Settings table
         } else {
             showToast('Failed to refresh: ' + (result.error || 'Unknown error'), 'error');
         }
@@ -2277,7 +2287,8 @@ async function cleanupDuplicates() {
         const result = await apiCall('/coins/cleanup-duplicates', 'POST');
         if (result.success) {
             showToast(result.message, 'success');
-            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
+            // Also refresh Quick Trade cache after cleanup
+            await refreshQuickTradeCache();
             loadCoinConfigs();  // Refresh the table
         } else {
             showToast('Failed to cleanup: ' + (result.error || 'Unknown error'), 'error');
@@ -2339,8 +2350,8 @@ async function addNewPerp() {
             document.getElementById('hip3-dex-container').style.display = 'none';
             document.getElementById('new-perp-category').value = 'HIP-3 Perps';
 
-            // Invalidate cache so Quick Trade reloads
-            invalidateCoinCache();
+            // Refresh Quick Trade cache so new coin appears in dropdown
+            await refreshQuickTradeCache();
 
             // Refresh the coin config table
             loadCoinConfigs();
