@@ -1002,17 +1002,20 @@ def api_refresh_leverage():
                 if dex_response.status_code == 200:
                     dex_data = dex_response.json()
                     dex_universe = dex_data.get('universe', [])
+                    # collateralToken is at the TOP LEVEL of the response for HIP-3 DEXes
+                    # All perps in this DEX share the same collateral token
+                    dex_collateral_token = dex_data.get('collateralToken', 0)
+                    dex_quote_asset = token_map.get(dex_collateral_token, 'USDC')
 
                     for asset in dex_universe:
                         name = asset.get('name')
                         if name:
-                            collateral_token = asset.get('collateralToken', 0)
                             meta = {
                                 'maxLeverage': asset.get('maxLeverage', 50),
                                 'szDecimals': asset.get('szDecimals', 2),
                                 'onlyIsolated': asset.get('onlyIsolated', False),
                                 'marginMode': asset.get('marginMode'),
-                                'quoteAsset': token_map.get(collateral_token, 'USDC')
+                                'quoteAsset': dex_quote_asset  # Use DEX-level collateral token
                             }
                             hl_metadata[name] = meta
                             hl_metadata_lower[name.lower()] = meta
@@ -1157,7 +1160,12 @@ def api_add_coin():
             return jsonify({'success': False, 'error': error_msg}), 404
 
         # Get quote asset from collateralToken
-        collateral_token = coin_meta.get('collateralToken', 0)
+        # For HIP-3 perps, collateralToken is at the TOP LEVEL of the response (DEX-wide)
+        # For regular perps, it's 0 (USDC) by default
+        if is_hip3:
+            collateral_token = api_data.get('collateralToken', 0)
+        else:
+            collateral_token = 0  # Regular perps use USDC
         quote_asset = token_map.get(collateral_token, 'USDC')
 
         # Create new coin config with metadata from API
