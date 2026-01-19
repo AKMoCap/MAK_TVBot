@@ -897,6 +897,30 @@ def api_update_coin(coin):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/coins/bulk-update', methods=['PUT'])
+def api_bulk_update_coins():
+    """Update all coin configurations with the same settings"""
+    try:
+        data = request.get_json()
+        coins = CoinConfig.query.all()
+        updated = 0
+
+        for config in coins:
+            for key in ['default_leverage', 'default_collateral', 'max_position_size',
+                        'default_stop_loss_pct', 'tp1_pct', 'tp1_size_pct',
+                        'tp2_pct', 'tp2_size_pct']:
+                if key in data and data[key] is not None:
+                    setattr(config, key, data[key])
+            updated += 1
+
+        db.session.commit()
+
+        return jsonify({'success': True, 'updated': updated})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/test-connection', methods=['GET'])
 def api_test_connection():
     """Test Hyperliquid connection"""

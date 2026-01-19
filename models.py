@@ -161,6 +161,7 @@ class CoinConfig(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     coin = db.Column(db.String(20), unique=True, nullable=False)
+    category = db.Column(db.String(20), default='L1s')  # L1s, APPS, MEMES
     enabled = db.Column(db.Boolean, default=True)
     default_leverage = db.Column(db.Integer, default=3)
     default_collateral = db.Column(db.Float, default=100.0)
@@ -199,6 +200,7 @@ class CoinConfig(db.Model):
         return {
             'id': self.id,
             'coin': self.coin,
+            'category': self.category,
             'enabled': self.enabled,
             'default_leverage': self.default_leverage,
             'default_collateral': self.default_collateral,
@@ -378,24 +380,34 @@ def init_db(app, run_migrations=True):
             db.session.add(default_risk)
 
         # Create default coin configs for popular coins
-        # Grouped as: MAJORS, DEFI, HIGH BETA/MEMES
-        default_coins = ['BTC', 'ETH', 'SOL', 'HYPE',  # MAJORS
-                         'AAVE', 'ENA', 'PENDLE', 'AERO',  # DEFI
-                         'DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'VIRTUAL']  # HIGH BETA/MEMES
-        for coin in default_coins:
-            if not CoinConfig.query.filter_by(coin=coin).first():
-                # Default: max_position = 10x collateral, SL=15%, TP1=50%@25%, TP2=100%@50%
-                coin_config = CoinConfig(
-                    coin=coin,
-                    default_collateral=100.0,
-                    max_position_size=1000.0,  # 10x default collateral
-                    default_stop_loss_pct=15.0,
-                    tp1_pct=50.0,
-                    tp1_size_pct=25.0,
-                    tp2_pct=100.0,
-                    tp2_size_pct=50.0
-                )
-                db.session.add(coin_config)
+        # Grouped as: L1s (Layer 1s), APPS (Applications/DeFi), MEMES
+        default_coins = {
+            'L1s': ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'MON', 'BNB', 'LTC', 'CC', 'TAO', 'TON', 'WLD'],
+            'APPS': ['AAVE', 'ENA', 'PENDLE', 'AERO', 'VIRTUAL', 'PUMP', 'LIT', 'CRV', 'LINK', 'ETHFI', 'MORPHO', 'SYRUP', 'JUP'],
+            'MEMES': ['DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'SPX']
+        }
+
+        for category, coins in default_coins.items():
+            for coin in coins:
+                existing = CoinConfig.query.filter_by(coin=coin).first()
+                if existing:
+                    # Update category for existing coins if needed
+                    if existing.category != category:
+                        existing.category = category
+                else:
+                    # Default: max_position = 10x collateral, SL=15%, TP1=50%@25%, TP2=100%@50%
+                    coin_config = CoinConfig(
+                        coin=coin,
+                        category=category,
+                        default_collateral=100.0,
+                        max_position_size=1000.0,  # 10x default collateral
+                        default_stop_loss_pct=15.0,
+                        tp1_pct=50.0,
+                        tp1_size_pct=25.0,
+                        tp2_pct=100.0,
+                        tp2_size_pct=50.0
+                    )
+                    db.session.add(coin_config)
 
         # Set default bot config
         defaults = {

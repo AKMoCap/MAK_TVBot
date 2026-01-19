@@ -107,12 +107,15 @@
     <!-- Coin Configuration -->
     <div class="col-12">
         <div class="card bg-darker border-secondary">
-            <div class="card-header bg-transparent border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-currency-exchange me-2"></i>Coin Configuration</h5>
+                <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#setDefaultsAllModal">
+                    <i class="bi bi-gear me-1"></i>Set Defaults for All
+                </button>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0" id="coin-config-table-container">
+                    <table class="table table-dark table-hover mb-0 table-sm coin-config-compact" id="coin-config-table-container">
                         <thead>
                             <tr>
                                 <th>Coin</th>
@@ -128,7 +131,7 @@
                         </thead>
                         <tbody id="coin-config-table">
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-4">
+                                <td colspan="9" class="text-center text-muted py-2">
                                     Loading coin configurations...
                                 </td>
                             </tr>
@@ -332,6 +335,117 @@
         </div>
     </div>
 </div>
+
+<!-- Set Defaults for All Modal -->
+<div class="modal fade" id="setDefaultsAllModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-gear me-2"></i>Set Defaults for All Coins</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2" style="font-size: 0.85rem;">
+                    <i class="bi bi-info-circle me-1"></i>
+                    These values will be applied to ALL coins. Individual coin settings can still be modified afterward.
+                </div>
+                <form id="set-defaults-all-form">
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <label class="form-label">Default Leverage</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-leverage" min="1" max="20" value="3">
+                                <span class="input-group-text bg-dark text-light border-secondary">x</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Default Collateral</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-collateral" min="1" value="100">
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Max Position Size</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light border-secondary">$</span>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-max-size" min="100" value="1000">
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Stop Loss</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <label class="form-label">Stop Loss %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-sl" min="1" max="50" step="0.5" value="15">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary">
+                    <h6 class="text-muted mb-3">Take Profit Levels</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">TP1 Target %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-tp1" min="1" max="500" step="1" value="50">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">Target gain to trigger TP1</small>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">TP1 Size %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-tp1-size" min="1" max="100" step="1" value="25">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">% of position to close at TP1</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">TP2 Target %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-tp2" min="1" max="500" step="1" value="100">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">Target gain to trigger TP2</small>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">TP2 Size %</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="all-coin-tp2-size" min="1" max="100" step="1" value="50">
+                                <span class="input-group-text bg-dark text-light border-secondary">%</span>
+                            </div>
+                            <small class="text-muted">% of position to close at TP2</small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="save-all-coin-defaults">
+                    <i class="bi bi-check-circle me-1"></i>Apply to All Coins
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -345,6 +459,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('risk-settings-form').addEventListener('submit', saveRiskSettings);
     document.getElementById('test-connection').addEventListener('click', testConnection);
     document.getElementById('save-coin-config').addEventListener('click', saveCoinConfig);
+    document.getElementById('save-all-coin-defaults').addEventListener('click', saveAllCoinDefaults);
 });
 </script>
 {% endblock %}
