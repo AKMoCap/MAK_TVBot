@@ -252,7 +252,7 @@ def api_limit_order():
             return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
 
         wallet_address = user.address
-        agent_key = user.get_agent_private_key()
+        agent_key = user.get_agent_key()
 
         data = request.json
         coin = data.get('coin')
@@ -320,7 +320,7 @@ def api_modify_order():
             return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
 
         wallet_address = user.address
-        agent_key = user.get_agent_private_key()
+        agent_key = user.get_agent_key()
 
         data = request.json
         coin = data.get('coin')
