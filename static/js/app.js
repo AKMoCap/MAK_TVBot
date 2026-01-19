@@ -9,6 +9,9 @@ let botState = {
     connected: false
 };
 
+// Global price cache for live prices from WebSocket
+let livePrices = {};
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -165,12 +168,39 @@ function setupHyperliquidWebSocket() {
 function updatePricesFromWebSocket(prices) {
     if (!prices) return;
 
+    // Store prices in global cache
+    Object.assign(livePrices, prices);
+
     for (const [coin, price] of Object.entries(prices)) {
         const el = document.getElementById('price-' + coin);
         if (el) {
             el.textContent = formatPrice(price);
         }
     }
+
+    // Update Quick Trade dropdown with live prices
+    updateDropdownPrices();
+}
+
+/**
+ * Update Quick Trade dropdown options with live prices
+ */
+function updateDropdownPrices() {
+    const coinSelect = document.getElementById('trade-coin');
+    if (!coinSelect) return;
+
+    // Update each option with its live price
+    const options = coinSelect.querySelectorAll('option');
+    options.forEach(option => {
+        const coin = option.value;
+        if (coin && livePrices[coin]) {
+            const price = livePrices[coin];
+            const formattedPrice = formatPrice(price);
+            // Format: "BTC - $42,500.00"
+            const baseName = coin.includes(' - ') ? coin.split(' - ')[0] : coin;
+            option.textContent = `${baseName} - ${formattedPrice}`;
+        }
+    });
 }
 
 // Setup WebSocket callbacks immediately when script loads
@@ -793,10 +823,16 @@ function setupPerpsTableSorting() {
 }
 
 function updatePrices(prices) {
+    // Store prices in global cache
+    Object.assign(livePrices, prices);
+
     for (const [coin, price] of Object.entries(prices)) {
         const el = document.getElementById('price-' + coin);
         if (el) el.textContent = formatPrice(price);
     }
+
+    // Update Quick Trade dropdown with prices
+    updateDropdownPrices();
 }
 
 function updateActivityList(logs) {
@@ -1163,6 +1199,48 @@ function filterCoinsByCategory(category) {
     }
 }
 
+/**
+ * Handle order type change - show/hide appropriate fields
+ */
+function handleOrderTypeChange(orderType) {
+    // Hide all order type specific fields
+    const fieldContainers = ['market-order-fields', 'limit-order-fields', 'twap-order-fields', 'scale-order-fields'];
+    fieldContainers.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // Show the selected order type fields
+    const selectedFields = document.getElementById(orderType + '-order-fields');
+    if (selectedFields) {
+        selectedFields.style.display = 'block';
+    }
+
+    // Update button text based on order type
+    const buyBtn = document.getElementById('buy-btn');
+    const sellBtn = document.getElementById('sell-btn');
+
+    if (buyBtn && sellBtn) {
+        switch (orderType) {
+            case 'limit':
+                buyBtn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>Limit Long';
+                sellBtn.innerHTML = '<i class="bi bi-arrow-down-circle me-1"></i>Limit Short';
+                break;
+            case 'twap':
+                buyBtn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>TWAP Long';
+                sellBtn.innerHTML = '<i class="bi bi-arrow-down-circle me-1"></i>TWAP Short';
+                break;
+            case 'scale':
+                buyBtn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>Scale Long';
+                sellBtn.innerHTML = '<i class="bi bi-arrow-down-circle me-1"></i>Scale Short';
+                break;
+            default: // market
+                buyBtn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>Long / Buy';
+                sellBtn.innerHTML = '<i class="bi bi-arrow-down-circle me-1"></i>Short / Sell';
+        }
+    }
+}
+
 function populateQuickTradeForm(selection) {
     // If a category is selected, clear the form for manual entry
     if (isCategory(selection)) {
@@ -1501,6 +1579,14 @@ function setupDashboardEvents() {
     if (coinSelect) {
         coinSelect.addEventListener('change', function() {
             populateQuickTradeForm(this.value);
+        });
+    }
+
+    // Order type dropdown - show/hide appropriate fields
+    const orderTypeSelect = document.getElementById('order-type');
+    if (orderTypeSelect) {
+        orderTypeSelect.addEventListener('change', function() {
+            handleOrderTypeChange(this.value);
         });
     }
 
@@ -2254,7 +2340,8 @@ async function saveCoinConfig() {
         const result = await apiCall(`/coins/${coin}`, 'PUT', data);
         if (result.success) {
             showToast('Coin configuration saved', 'success');
-            // Note: Quick Trade cache is NOT updated here - only on "Refresh Leverage Tables"
+            // Refresh Quick Trade cache so changes flow through
+            await refreshQuickTradeCache();
             bootstrap.Modal.getInstance(document.getElementById('editCoinModal')).hide();
             loadCoinConfigs();
         }
@@ -2286,7 +2373,8 @@ async function saveAllCoinDefaults() {
         const result = await apiCall('/coins/bulk-update', 'PUT', data);
         if (result.success) {
             showToast(`Updated ${result.updated} coin configurations`, 'success');
-            // Note: Quick Trade cache is NOT updated here - only on "Refresh Leverage Tables"
+            // Refresh Quick Trade cache so changes flow through
+            await refreshQuickTradeCache();
             bootstrap.Modal.getInstance(document.getElementById('setDefaultsAllModal')).hide();
             loadCoinConfigs();
         } else {
