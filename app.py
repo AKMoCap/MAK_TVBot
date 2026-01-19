@@ -444,13 +444,18 @@ def api_scale_order():
         # Round sizes
         sizes = [round(s, sz_decimals) for s in sizes]
 
-        # Place limit orders
+        # Place limit orders with small delay to avoid rate limiting
+        import time
         orders_placed = 0
         errors = []
 
         for i, (price, size) in enumerate(zip(prices, sizes)):
             if size <= 0:
                 continue
+
+            # Add delay between orders to avoid rate limiting (except first)
+            if i > 0:
+                time.sleep(0.15)  # 150ms delay between orders
 
             result = bot_manager.place_limit_order(
                 coin, is_buy, size, price,

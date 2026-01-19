@@ -1312,12 +1312,19 @@ class BotManager:
                 }
             }
 
-            config = self.get_config()
+            config = self.get_config(user_wallet, user_agent_key)
             api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
 
             # Sign and send
             nonce = get_timestamp_ms()
-            signature = sign_l1_action(exchange.wallet, twap_action, None, nonce, config['use_testnet'])
+            signature = sign_l1_action(
+                exchange.wallet,
+                twap_action,
+                None,  # vault_address
+                nonce,
+                None,  # expires_after
+                not config['use_testnet']  # is_mainnet
+            )
 
             payload = {
                 "action": twap_action,
@@ -1396,12 +1403,19 @@ class BotManager:
                 "t": twap_id
             }
 
-            config = self.get_config()
+            config = self.get_config(user_wallet, user_agent_key)
             api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
 
             # Sign and send
             nonce = get_timestamp_ms()
-            signature = sign_l1_action(exchange.wallet, twap_cancel_action, None, nonce, config['use_testnet'])
+            signature = sign_l1_action(
+                exchange.wallet,
+                twap_cancel_action,
+                None,  # vault_address
+                nonce,
+                None,  # expires_after
+                not config['use_testnet']  # is_mainnet
+            )
 
             payload = {
                 "action": twap_cancel_action,
