@@ -1873,7 +1873,6 @@ async function loadSettings() {
         if (data.risk) {
             document.getElementById('max-position-value').value = data.risk.max_position_value_usd || 1000;
             document.getElementById('max-exposure-pct').value = data.risk.max_total_exposure_pct || 75;
-            document.getElementById('max-leverage').value = data.risk.max_leverage || 10;
         }
 
         // Wallet info
@@ -1997,8 +1996,7 @@ async function saveRiskSettings(e) {
 
     const data = {
         max_position_value_usd: parseFloat(document.getElementById('max-position-value').value),
-        max_total_exposure_pct: parseFloat(document.getElementById('max-exposure-pct').value),
-        max_leverage: parseInt(document.getElementById('max-leverage').value)
+        max_total_exposure_pct: parseFloat(document.getElementById('max-exposure-pct').value)
     };
 
     try {
