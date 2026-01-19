@@ -857,6 +857,73 @@ def api_get_coins():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/coins/cleanup-duplicates', methods=['POST'])
+def api_cleanup_duplicates():
+    """Remove duplicate coin entries (case variations like KBONK vs kBONK)"""
+    try:
+        coins = CoinConfig.query.all()
+
+        # Find duplicates by lowercase name
+        seen = {}
+        duplicates = []
+
+        for coin in coins:
+            lower_name = coin.coin.lower()
+            if lower_name in seen:
+                # This is a duplicate - decide which to keep
+                existing = seen[lower_name]
+                # Prefer the one with metadata (hl_max_leverage set) or the one that matches Hyperliquid casing
+                # Hyperliquid uses kBONK, kPEPE (lowercase k prefix)
+                if coin.coin.startswith('k') and not existing.coin.startswith('k'):
+                    # New one has correct casing, remove old one
+                    duplicates.append(existing)
+                    seen[lower_name] = coin
+                elif existing.coin.startswith('k') and not coin.coin.startswith('k'):
+                    # Old one has correct casing, remove new one
+                    duplicates.append(coin)
+                elif coin.hl_max_leverage and not existing.hl_max_leverage:
+                    # New one has metadata, remove old one
+                    duplicates.append(existing)
+                    seen[lower_name] = coin
+                else:
+                    # Default: keep existing, remove new
+                    duplicates.append(coin)
+            else:
+                seen[lower_name] = coin
+
+        # Remove duplicates
+        removed = []
+        for dup in duplicates:
+            removed.append(dup.coin)
+            db.session.delete(dup)
+
+        # Also ensure kBONK and kPEPE are in MEMES category (not L1s)
+        fixed_categories = []
+        for coin_name, coin in seen.items():
+            if coin_name in ['kbonk', 'kpepe'] and coin.category != 'MEMES':
+                coin.category = 'MEMES'
+                fixed_categories.append(coin.coin)
+
+        db.session.commit()
+
+        message = f'Removed {len(removed)} duplicate coins'
+        if removed:
+            message += f': {", ".join(removed)}'
+        if fixed_categories:
+            message += f'. Fixed category for: {", ".join(fixed_categories)}'
+
+        return jsonify({
+            'success': True,
+            'removed': removed,
+            'fixed_categories': fixed_categories,
+            'message': message
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/coins/<coin>', methods=['GET'])
 def api_get_coin(coin):
     """Get single coin configuration"""
