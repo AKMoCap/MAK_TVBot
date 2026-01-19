@@ -976,16 +976,6 @@ function populateQuickTradeDropdown(coins) {
         }
     }
 
-    // Add category batch trading options
-    html += '<optgroup label="── TRADE ALL IN CATEGORY ──">';
-    for (const [category, coinList] of Object.entries(groups)) {
-        if (coinList.length > 0) {
-            const catKey = 'CAT:' + category;
-            html += `<option value="${catKey}">📊 All ${categoryDisplayNames[category] || category} (${coinList.length} coins)</option>`;
-        }
-    }
-    html += '</optgroup>';
-
     coinSelect.innerHTML = html;
 }
 
@@ -1932,7 +1922,7 @@ function updateCoinConfigTable(coins) {
             // Add group header
             html += `
                 <tr class="table-active">
-                    <td colspan="9" class="py-1" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
+                    <td colspan="11" class="py-1" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
                         <i class="bi bi-collection me-2"></i>${categoryDisplayNames[categoryName] || categoryName}
                     </td>
                 </tr>
@@ -1945,6 +1935,9 @@ function updateCoinConfigTable(coins) {
                 const tp2Display = coin.tp2_pct ? `${coin.tp2_size_pct}% @ ${coin.tp2_pct}%` : '--';
                 const maxSizeDisplay = coin.max_position_size ? formatCurrency(coin.max_position_size) : formatCurrency(coin.default_collateral * 10);
                 const slDisplay = coin.default_stop_loss_pct ? `-${coin.default_stop_loss_pct}%` : '-15%';
+                // Max leverage and margin mode from Hyperliquid metadata
+                const maxLevDisplay = coin.hl_max_leverage ? `${coin.hl_max_leverage}x` : '--';
+                const marginMode = (coin.hl_margin_mode === 'strictIsolated' || coin.hl_margin_mode === 'noCross' || coin.hl_only_isolated) ? 'Isolated' : 'Cross';
                 html += `
                     <tr>
                         <td><strong>${coin.coin}</strong></td>
@@ -1954,6 +1947,8 @@ function updateCoinConfigTable(coins) {
                                        onchange="toggleCoin('${coin.coin}', this.checked)">
                             </div>
                         </td>
+                        <td>${maxLevDisplay}</td>
+                        <td>${marginMode}</td>
                         <td>${coin.default_leverage}x</td>
                         <td>${formatCurrency(coin.default_collateral)}</td>
                         <td>${maxSizeDisplay}</td>
@@ -2116,6 +2111,34 @@ async function saveAllCoinDefaults() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Apply to All Coins';
+    }
+}
+
+/**
+ * Refresh leverage and margin mode data from Hyperliquid API
+ */
+async function refreshLeverageTables() {
+    const btn = document.getElementById('refresh-leverage-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing...';
+
+    try {
+        const result = await apiCall('/coins/refresh-leverage', 'POST');
+        if (result.success) {
+            let message = `Updated ${result.updated} coins with Hyperliquid metadata`;
+            if (result.not_found && result.not_found.length > 0) {
+                message += `. Not found on Hyperliquid: ${result.not_found.join(', ')}`;
+            }
+            showToast(message, 'success');
+            loadCoinConfigs();  // Refresh the table
+        } else {
+            showToast('Failed to refresh: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Failed to refresh leverage tables', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Leverage Tables';
     }
 }
 
