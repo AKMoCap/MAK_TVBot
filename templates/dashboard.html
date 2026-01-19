@@ -324,23 +324,25 @@
                         </div>
                     </div>
 
-                    <!-- TWAP Order Fields (placeholder) -->
+                    <!-- TWAP Order Fields -->
                     <div id="twap-order-fields" style="display: none;">
                         <div class="row mb-3">
                             <div class="col-6">
-                                <label class="form-label">Duration (min)</label>
+                                <label class="form-label">Hours</label>
                                 <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="trade-twap-duration" value="30" min="5" step="5">
+                                       id="trade-twap-hours" value="0" min="0" max="24">
                             </div>
                             <div class="col-6">
-                                <label class="form-label">Intervals</label>
+                                <label class="form-label">Minutes (min. 5)</label>
                                 <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="trade-twap-intervals" value="6" min="2" max="20">
+                                       id="trade-twap-minutes" value="30" min="5" max="59" step="1">
                             </div>
                         </div>
-                        <div class="alert alert-info py-2 small">
-                            <i class="bi bi-info-circle me-1"></i>
-                            TWAP order functionality coming soon
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="trade-twap-randomize">
+                            <label class="form-check-label" for="trade-twap-randomize">
+                                Randomize timing <small class="text-muted">(prevents front-running)</small>
+                            </label>
                         </div>
                     </div>
 
@@ -390,6 +392,7 @@
                     <span class="positions-tab active" data-tab="perps">Perps</span>
                     <span class="positions-tab" data-tab="spot">Spot</span>
                     <span class="positions-tab" data-tab="orders">Open Orders</span>
+                    <span class="positions-tab" data-tab="twaps">TWAPs</span>
                 </div>
                 <div id="perps-controls">
                     <select id="side-filter" class="form-select form-select-sm d-inline-block me-2" style="width: auto; background-color: var(--bg-darker); color: var(--text-light); border-color: var(--border-color);">
@@ -479,6 +482,33 @@
                                 <td colspan="8" class="text-center text-muted py-3">
                                     <i class="bi bi-inbox fs-4 d-block mb-1"></i>
                                     No open orders
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TWAPs Tab Content -->
+            <div class="card-body p-0 tab-content" id="tab-twaps" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Side</th>
+                                <th>Size</th>
+                                <th>Executed</th>
+                                <th>Avg. Price</th>
+                                <th>Running / Total</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="twaps-table">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-3">
+                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                                    No active TWAP orders
                                 </td>
                             </tr>
                         </tbody>
