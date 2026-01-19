@@ -311,7 +311,7 @@ class BotManager:
                 'account_value': float(margin_summary.get('accountValue', 0)),
                 'total_margin_used': float(margin_summary.get('totalMarginUsed', 0)),
                 'total_ntl_pos': float(margin_summary.get('totalNtlPos', 0)),
-                'withdrawable': float(margin_summary.get('withdrawable', 0)),
+                'withdrawable': float(user_state.get('withdrawable', 0)),
                 'positions': formatted_positions,
                 'network': 'testnet' if config['use_testnet'] else 'mainnet'
             }
