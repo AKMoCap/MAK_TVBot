@@ -1837,9 +1837,13 @@ async function loadTwapOrders() {
         const twaps = data.twaps || [];
 
         // Filter to only show active/running TWAPs
+        // Note: Hyperliquid API uses Rust-style enum encoding where status is an object
+        // e.g., { status: { running: { twapId: 123 } } } not { status: "running" }
         const activeTwaps = twaps.filter(twap => {
             const state = twap.state || {};
-            return state.status === 'running' || state.status === 'activated';
+            const status = state.status || {};
+            // Check if status object has 'running' or 'activated' key (Rust enum style)
+            return typeof status === 'object' && ('running' in status || 'activated' in status);
         });
 
         if (activeTwaps.length === 0) {
@@ -1856,6 +1860,10 @@ async function loadTwapOrders() {
 
         tbody.innerHTML = activeTwaps.map(twap => {
             const state = twap.state || {};
+            const status = state.status || {};
+            // Get the active status data (running or activated)
+            const statusData = status.running || status.activated || {};
+
             const coin = twap.coin || state.coin || 'Unknown';
             const isBuy = twap.is_buy !== undefined ? twap.is_buy : state.isBuy;
             const sideClass = isBuy ? 'badge-long' : 'badge-short';
@@ -1881,7 +1889,8 @@ async function loadTwapOrders() {
                 runningTime = `${elapsedMinutes}m`;
             }
 
-            const twapId = twap.twap_id || state.twapId || twap.oid;
+            // twapId can be at multiple locations depending on API response
+            const twapId = twap.twap_id || state.twapId || statusData.twapId || twap.oid;
 
             return `
                 <tr>
