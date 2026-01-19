@@ -1254,6 +1254,220 @@ class BotManager:
             logger.exception(f"Error modifying order: {e}")
             return {'success': False, 'error': str(e)}
 
+    def place_twap_order(self, coin, is_buy, size, duration_minutes, randomize=False,
+                         reduce_only=False, user_wallet=None, user_agent_key=None):
+        """
+        Place a TWAP (Time-Weighted Average Price) order.
+
+        Args:
+            coin: Trading pair (e.g., 'BTC', 'ETH')
+            is_buy: True for buy/long, False for sell/short
+            size: Total position size
+            duration_minutes: Duration of TWAP execution in minutes (min 5)
+            randomize: If True, randomize timing to prevent front-running
+            reduce_only: If True, only reduces existing position
+            user_wallet: Optional wallet address
+            user_agent_key: Optional agent private key
+
+        Returns:
+            dict with success status, twap_id if successful, or error
+        """
+        import requests
+        from hyperliquid.utils import constants
+        from hyperliquid.utils.signing import sign_l1_action, get_timestamp_ms
+
+        try:
+            info, exchange = self.get_exchange(user_wallet, user_agent_key)
+
+            # Validate duration
+            if duration_minutes < 5:
+                return {'success': False, 'error': 'TWAP duration must be at least 5 minutes'}
+
+            # Get asset index for the coin
+            meta = info.meta()
+            universe = meta.get('universe', [])
+            asset_index = None
+            for idx, asset in enumerate(universe):
+                if asset.get('name') == coin:
+                    asset_index = idx
+                    break
+
+            if asset_index is None:
+                return {'success': False, 'error': f'Asset {coin} not found'}
+
+            # Get size decimals for proper formatting
+            sz_decimals = self.get_size_decimals(coin)
+            size = round(size, sz_decimals)
+
+            # Build TWAP order action
+            twap_action = {
+                "type": "twapOrder",
+                "twap": {
+                    "a": asset_index,
+                    "b": is_buy,
+                    "s": str(size),
+                    "r": reduce_only,
+                    "m": duration_minutes,
+                    "t": randomize
+                }
+            }
+
+            config = self.get_config()
+            api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+            # Sign and send
+            nonce = get_timestamp_ms()
+            signature = sign_l1_action(exchange.wallet, twap_action, None, nonce, config['use_testnet'])
+
+            payload = {
+                "action": twap_action,
+                "nonce": nonce,
+                "signature": signature
+            }
+
+            response = requests.post(
+                f"{api_url}/exchange",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            result = response.json()
+
+            logger.info(f"TWAP order result for {coin}: {result}")
+
+            # Check result
+            if result.get("status") == "ok":
+                response_data = result.get("response", {}).get("data", {})
+                status = response_data.get("status", {})
+
+                if "running" in status:
+                    twap_id = status["running"].get("twapId")
+                    logger.info(f"TWAP order placed for {coin}, twapId={twap_id}")
+                    return {'success': True, 'twap_id': twap_id, 'result': result}
+                elif "error" in status:
+                    return {'success': False, 'error': status['error']}
+
+                return {'success': True, 'result': result}
+
+            elif result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                return {'success': False, 'error': str(error_msg)}
+
+            return {'success': False, 'error': 'Unknown response format'}
+        except Exception as e:
+            logger.exception(f"Error placing TWAP order: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def cancel_twap_order(self, coin, twap_id, user_wallet=None, user_agent_key=None):
+        """
+        Cancel an active TWAP order.
+
+        Args:
+            coin: Trading pair
+            twap_id: The TWAP order ID to cancel
+            user_wallet: Optional wallet address
+            user_agent_key: Optional agent private key
+
+        Returns:
+            dict with success status or error
+        """
+        import requests
+        from hyperliquid.utils import constants
+        from hyperliquid.utils.signing import sign_l1_action, get_timestamp_ms
+
+        try:
+            info, exchange = self.get_exchange(user_wallet, user_agent_key)
+
+            # Get asset index for the coin
+            meta = info.meta()
+            universe = meta.get('universe', [])
+            asset_index = None
+            for idx, asset in enumerate(universe):
+                if asset.get('name') == coin:
+                    asset_index = idx
+                    break
+
+            if asset_index is None:
+                return {'success': False, 'error': f'Asset {coin} not found'}
+
+            # Build TWAP cancel action
+            twap_cancel_action = {
+                "type": "twapCancel",
+                "a": asset_index,
+                "t": twap_id
+            }
+
+            config = self.get_config()
+            api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+            # Sign and send
+            nonce = get_timestamp_ms()
+            signature = sign_l1_action(exchange.wallet, twap_cancel_action, None, nonce, config['use_testnet'])
+
+            payload = {
+                "action": twap_cancel_action,
+                "nonce": nonce,
+                "signature": signature
+            }
+
+            response = requests.post(
+                f"{api_url}/exchange",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            result = response.json()
+
+            logger.info(f"TWAP cancel result for {coin} twapId={twap_id}: {result}")
+
+            if result.get("status") == "ok":
+                return {'success': True, 'result': result}
+            elif result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                return {'success': False, 'error': str(error_msg)}
+
+            return {'success': True, 'result': result}
+        except Exception as e:
+            logger.exception(f"Error canceling TWAP order: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def get_twap_history(self, wallet_address):
+        """
+        Get TWAP order history/status for a wallet.
+
+        Args:
+            wallet_address: The wallet address
+
+        Returns:
+            dict with twap_orders list or error
+        """
+        import requests
+        from hyperliquid.utils import constants
+
+        config = self.get_config()
+        api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+        try:
+            response = requests.post(
+                f"{api_url}/info",
+                json={
+                    "type": "twapHistory",
+                    "user": wallet_address
+                },
+                headers={"Content-Type": "application/json"}
+            )
+            result = response.json()
+
+            logger.info(f"TWAP history for {wallet_address}: {len(result) if isinstance(result, list) else 'N/A'} orders")
+
+            if isinstance(result, list):
+                return {'success': True, 'twaps': result}
+            elif isinstance(result, dict) and 'error' in result:
+                return {'success': False, 'error': result['error']}
+
+            return {'success': True, 'twaps': result if result else []}
+        except Exception as e:
+            logger.exception(f"Error getting TWAP history: {e}")
+            return {'success': False, 'error': str(e)}
+
     def get_open_orders(self, wallet_address):
         """
         Get all open orders for a wallet address.

@@ -1431,6 +1431,8 @@ function setupPositionTabs() {
                 loadSpotBalances();
             } else if (tabName === 'orders') {
                 loadOpenOrders();
+            } else if (tabName === 'twaps') {
+                loadTwapOrders();
             }
         });
     });
@@ -1677,6 +1679,138 @@ async function submitModifyOrder() {
 }
 
 /**
+ * Load TWAP orders for the TWAPs tab
+ */
+async function loadTwapOrders() {
+    const tbody = document.getElementById('twaps-table');
+    if (!tbody) return;
+
+    // Get wallet address from walletManager
+    const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
+    if (!walletAddress) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center text-muted py-3">
+                    <i class="bi bi-wallet2 fs-4 d-block mb-1"></i>
+                    Connect wallet to view TWAP orders
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    try {
+        const data = await apiCall(`/twap-history?address=${walletAddress}`);
+        if (!data.success) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-3">
+                        <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
+                        ${data.error || 'Failed to load TWAP orders'}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        const twaps = data.twaps || [];
+
+        // Filter to only show active/running TWAPs
+        const activeTwaps = twaps.filter(twap => {
+            const state = twap.state || {};
+            return state.status === 'running' || state.status === 'activated';
+        });
+
+        if (activeTwaps.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-3">
+                        <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                        No active TWAP orders
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = activeTwaps.map(twap => {
+            const state = twap.state || {};
+            const coin = twap.coin || state.coin || 'Unknown';
+            const isBuy = twap.is_buy !== undefined ? twap.is_buy : state.isBuy;
+            const sideClass = isBuy ? 'badge-long' : 'badge-short';
+            const sideText = isBuy ? 'BUY' : 'SELL';
+
+            // Size and executed size
+            const totalSize = parseFloat(twap.sz || state.sz || 0);
+            const executedSize = parseFloat(twap.executed_sz || state.executedSz || 0);
+
+            // Average price
+            const avgPrice = parseFloat(twap.avg_px || state.avgPx || 0);
+
+            // Running time - calculate from timestamps if available
+            const durationMinutes = parseInt(twap.minutes || state.minutes || 0);
+            let runningTime = '--';
+            let totalTime = `${durationMinutes}m`;
+
+            if (twap.start_time || state.startTime) {
+                const startTime = new Date(twap.start_time || state.startTime);
+                const now = new Date();
+                const elapsedMs = now - startTime;
+                const elapsedMinutes = Math.floor(elapsedMs / 60000);
+                runningTime = `${elapsedMinutes}m`;
+            }
+
+            const twapId = twap.twap_id || state.twapId || twap.oid;
+
+            return `
+                <tr>
+                    <td><strong>${coin}</strong></td>
+                    <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${sideText}</span></td>
+                    <td>${totalSize.toFixed(4)}</td>
+                    <td>${executedSize.toFixed(4)}</td>
+                    <td>${avgPrice > 0 ? formatPrice(avgPrice) : '--'}</td>
+                    <td>${runningTime} / ${totalTime}</td>
+                    <td>
+                        <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="cancelTwapOrder(${twapId}, '${coin}')" title="Cancel TWAP">
+                            <i class="bi bi-x"></i> Cancel
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load TWAP orders:', error);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center text-muted py-3">
+                    <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
+                    Failed to load TWAP orders
+                </td>
+            </tr>
+        `;
+    }
+}
+
+/**
+ * Cancel a TWAP order
+ */
+async function cancelTwapOrder(twapId, coin) {
+    if (!confirm(`Cancel TWAP order for ${coin}?`)) return;
+
+    try {
+        const result = await apiCall('/twap-cancel', 'POST', { twap_id: twapId, coin });
+        if (result.success) {
+            showToast(`TWAP order cancelled for ${coin}`, 'success');
+            loadTwapOrders();
+        } else {
+            showToast('Failed to cancel TWAP: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Failed to cancel TWAP order', 'error');
+    }
+}
+
+/**
  * Setup custom coin dropdown with two columns (Coin | Price)
  */
 function setupCustomCoinDropdown() {
@@ -1851,6 +1985,8 @@ async function executeTrade(action) {
     // Handle based on order type
     if (orderType === 'limit') {
         await executeLimitOrder(selection, action, collateral, leverage);
+    } else if (orderType === 'twap') {
+        await executeTwapOrder(selection, action, collateral, leverage);
     } else {
         // Market order
         await executeMarketOrder(selection, action, collateral, leverage);
@@ -1946,6 +2082,45 @@ async function executeLimitOrder(coin, action, collateral, leverage) {
         }
     } catch (error) {
         showToast('Limit order execution failed', 'error');
+    }
+}
+
+/**
+ * Execute a TWAP order
+ */
+async function executeTwapOrder(coin, action, collateral, leverage) {
+    const hours = parseInt(document.getElementById('trade-twap-hours')?.value) || 0;
+    const minutes = parseInt(document.getElementById('trade-twap-minutes')?.value) || 30;
+    const randomize = document.getElementById('trade-twap-randomize')?.checked || false;
+
+    // Calculate total duration
+    const totalMinutes = (hours * 60) + minutes;
+    if (totalMinutes < 5) {
+        showToast('TWAP duration must be at least 5 minutes', 'warning');
+        return;
+    }
+
+    try {
+        const result = await apiCall('/twap-order', 'POST', {
+            coin,
+            action,
+            leverage,
+            collateral_usd: collateral,
+            hours,
+            minutes,
+            randomize
+        });
+
+        if (result.success) {
+            const durationStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+            showToast(`TWAP order started for ${coin} over ${durationStr}`, 'success');
+            refreshDashboard();
+            loadTwapOrders();
+        } else {
+            showToast('TWAP order failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('TWAP order execution failed', 'error');
     }
 }
 

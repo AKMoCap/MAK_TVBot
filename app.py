@@ -347,6 +347,135 @@ def api_modify_order():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/twap-order', methods=['POST'])
+def api_twap_order():
+    """Place a TWAP order"""
+    try:
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        wallet_address = user.address
+        agent_key = user.get_agent_key()
+
+        data = request.json
+        coin = data.get('coin')
+        action = data.get('action')  # 'buy' or 'sell'
+        collateral_usd = data.get('collateral_usd')
+        leverage = data.get('leverage')
+        hours = data.get('hours', 0)
+        minutes = data.get('minutes', 30)
+        randomize = data.get('randomize', False)
+
+        if not all([coin, action, collateral_usd, leverage]):
+            return jsonify({'success': False, 'error': 'Missing required fields'})
+
+        collateral_usd = float(collateral_usd)
+        leverage = int(leverage)
+        hours = int(hours)
+        minutes = int(minutes)
+
+        # Calculate total duration in minutes
+        duration_minutes = (hours * 60) + minutes
+        if duration_minutes < 5:
+            return jsonify({'success': False, 'error': 'TWAP duration must be at least 5 minutes'})
+
+        is_buy = action.lower() == 'buy'
+
+        # Get asset metadata
+        asset_meta = bot_manager.get_asset_metadata()
+        coin_meta = asset_meta.get(coin, {})
+
+        if not coin_meta:
+            return jsonify({'success': False, 'error': f"Coin '{coin}' not found in Hyperliquid"})
+
+        # Check and set leverage
+        max_leverage = coin_meta.get('maxLeverage', 10)
+        if leverage > max_leverage:
+            return jsonify({'success': False, 'error': f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"})
+
+        # Set leverage
+        _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
+        try:
+            exchange.update_leverage(leverage, coin, is_cross=False)
+        except Exception as lev_error:
+            return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
+
+        # Get current price to calculate size
+        prices = bot_manager.get_market_prices([coin])
+        current_price = prices.get(coin, 0)
+        if not current_price:
+            return jsonify({'success': False, 'error': f"Could not get price for {coin}"})
+
+        # Calculate position size
+        notional_value = collateral_usd * leverage
+        size = notional_value / current_price
+
+        # Round size
+        sz_decimals = coin_meta.get('szDecimals', 2)
+        size = round(size, sz_decimals)
+
+        # Place TWAP order
+        result = bot_manager.place_twap_order(
+            coin, is_buy, size, duration_minutes, randomize,
+            reduce_only=False,
+            user_wallet=wallet_address,
+            user_agent_key=agent_key
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error placing TWAP order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/twap-cancel', methods=['POST'])
+def api_twap_cancel():
+    """Cancel a TWAP order"""
+    try:
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        wallet_address = user.address
+        agent_key = user.get_agent_key()
+
+        data = request.json
+        coin = data.get('coin')
+        twap_id = data.get('twap_id')
+
+        if not coin or not twap_id:
+            return jsonify({'success': False, 'error': 'Missing coin or twap_id'})
+
+        result = bot_manager.cancel_twap_order(
+            coin, int(twap_id),
+            user_wallet=wallet_address,
+            user_agent_key=agent_key
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error canceling TWAP order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/twap-history', methods=['GET'])
+def api_twap_history():
+    """Get TWAP order history"""
+    try:
+        wallet_address = request.args.get('address')
+        if not wallet_address:
+            return jsonify({'success': False, 'error': 'Missing address parameter'})
+
+        result = bot_manager.get_twap_history(wallet_address)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error getting TWAP history: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/transfer-usdc', methods=['POST'])
 def api_transfer_usdc():
     """Transfer USDC between Spot and Perps accounts"""
