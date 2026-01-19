@@ -173,6 +173,12 @@
                             </select>
                         </div>
                     </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="trade-reduce-only">
+                        <label class="form-check-label small" for="trade-reduce-only">
+                            Reduce Only <small class="text-muted">(only reduce existing position)</small>
+                        </label>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Coin</label>
                         <!-- Hidden input to store actual selected value -->
@@ -346,28 +352,32 @@
                         </div>
                     </div>
 
-                    <!-- Scale Order Fields (placeholder) -->
+                    <!-- Scale Order Fields -->
                     <div id="scale-order-fields" style="display: none;">
                         <div class="row mb-3">
                             <div class="col-6">
                                 <label class="form-label">Price From</label>
                                 <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="trade-scale-from" placeholder="Start price" step="0.01">
+                                       id="trade-scale-from" placeholder="Start price" step="any">
                             </div>
                             <div class="col-6">
                                 <label class="form-label">Price To</label>
                                 <input type="number" class="form-control bg-dark text-light border-secondary"
-                                       id="trade-scale-to" placeholder="End price" step="0.01">
+                                       id="trade-scale-to" placeholder="End price" step="any">
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Number of Orders</label>
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-scale-count" value="5" min="2" max="20">
-                        </div>
-                        <div class="alert alert-info py-2 small">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Scale order functionality coming soon
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Number of Orders</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-scale-count" value="5" min="2" max="50">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Skew</label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary"
+                                       id="trade-scale-skew" value="1.0" min="0.1" max="10" step="0.1">
+                                <small class="text-muted">1.0 = equal sizes, &gt;1 = larger at Price To</small>
+                            </div>
                         </div>
                     </div>
 
