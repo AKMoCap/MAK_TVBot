@@ -328,16 +328,20 @@ def init_db(app, run_migrations=True):
     migrate.init_app(app, db)
 
     with app.app_context():
-        # Create all tables - this will create any missing tables
-        # For PostgreSQL, we need to ensure tables are created
-        import logging
-        logger = logging.getLogger(__name__)
-
-        try:
-            db.create_all()
-            logger.info("Database tables created/verified")
-        except Exception as e:
-            logger.warning(f"db.create_all warning: {e}")
+        # Run Alembic migrations FIRST to ensure schema is up to date
+        if run_migrations:
+            try:
+                from flask_migrate import upgrade
+                upgrade()
+                logger.info("Database migrations applied successfully")
+            except Exception as e:
+                logger.warning(f"Migration warning (may be OK on first run): {e}")
+                # Fallback: create tables if migrations fail
+                try:
+                    db.create_all()
+                    logger.info("Database tables created via create_all fallback")
+                except Exception as e2:
+                    logger.error(f"Failed to create tables: {e2}")
 
         # Verify user_wallets table exists - create if missing
         try:
