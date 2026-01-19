@@ -32,6 +32,9 @@ class HyperliquidWebSocket {
 
         // Cache for funding rates (from REST API, not available via WebSocket)
         this._fundingRatesCache = {};
+
+        // Lookup map for HIP-3 coins: unprefixed name -> full "dex:COIN" name
+        this._hip3CoinLookup = {};
     }
 
     /**
@@ -271,6 +274,7 @@ class HyperliquidWebSocket {
     /**
      * Extract HIP-3 dex names from coin configs in localStorage
      * Coin names are stored as "dex:COIN" format (e.g., "xyz:BTC")
+     * Also builds a lookup map for matching websocket responses
      */
     getHip3DexesFromCache() {
         try {
@@ -280,13 +284,20 @@ class HyperliquidWebSocket {
             const coins = JSON.parse(cached);
             const dexes = new Set();
 
+            // Clear and rebuild lookup map
+            this._hip3CoinLookup = {};
+
             for (const coin of coins) {
                 if (coin.coin && coin.coin.includes(':')) {
-                    const dexName = coin.coin.split(':')[0];
+                    const [dexName, coinName] = coin.coin.split(':');
                     dexes.add(dexName);
+                    // Build lookup: unprefixed name -> full "dex:COIN" name
+                    // e.g., "XYZ100" -> "xyz:XYZ100"
+                    this._hip3CoinLookup[coinName] = coin.coin;
                 }
             }
 
+            console.log('[HL-WS] Built HIP-3 coin lookup:', this._hip3CoinLookup);
             return Array.from(dexes);
         } catch (e) {
             console.warn('[HL-WS] Failed to parse coin cache for HIP-3 dexes:', e);
@@ -315,11 +326,8 @@ class HyperliquidWebSocket {
             }
 
             // Handle allMids updates (real-time prices)
-            // For HIP-3 dexes, the subscription includes a dex field
             if (msg.channel === 'allMids') {
-                // Check if this is a HIP-3 dex subscription (has dex in subscription data)
-                const dexName = msg.data?.dex || null;
-                this.processAllMids(msg.data, dexName);
+                this.processAllMids(msg.data);
                 return;
             }
 
@@ -342,24 +350,31 @@ class HyperliquidWebSocket {
     /**
      * Process allMids updates - real-time price data for all assets
      * Data format: { mids: { "BTC": "12345.67", "ETH": "2345.67", ... } }
-     * For HIP-3 dexes, coin names are prefixed with "dex:" to match stored format
+     * Uses lookup map to match HIP-3 coins (websocket returns unprefixed names)
      * @param {Object} data - The allMids data containing mids object
-     * @param {string|null} dexName - The HIP-3 dex name if this is a dex-specific subscription
      */
-    processAllMids(data, dexName = null) {
+    processAllMids(data) {
         if (!data || !data.mids) return;
 
         const mids = data.mids;
+        let hip3Count = 0;
 
         // Update our price cache
         for (const [coin, price] of Object.entries(mids)) {
-            // For HIP-3 dexes, prefix coin name with dex name to match "dex:COIN" format
-            const coinKey = dexName ? `${dexName}:${coin}` : coin;
-            this._lastPrices[coinKey] = parseFloat(price);
+            // Check if this coin matches a known HIP-3 coin via lookup
+            // Websocket returns "XYZ100" but we store as "xyz:XYZ100"
+            if (this._hip3CoinLookup[coin]) {
+                const fullCoinName = this._hip3CoinLookup[coin];
+                this._lastPrices[fullCoinName] = parseFloat(price);
+                hip3Count++;
+            } else {
+                // Regular perp or spot coin
+                this._lastPrices[coin] = parseFloat(price);
+            }
         }
 
-        if (dexName) {
-            console.log(`[HL-WS] Updated ${Object.keys(mids).length} prices for HIP-3 dex: ${dexName}`);
+        if (hip3Count > 0) {
+            console.log(`[HL-WS] Updated ${hip3Count} HIP-3 prices`);
         }
 
         // Call the price update callback if set
