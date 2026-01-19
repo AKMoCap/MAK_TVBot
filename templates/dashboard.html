@@ -423,8 +423,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize dashboard
     initDashboard();
 
-    // Refresh data every 5 seconds
-    setInterval(refreshDashboard, 5000);
+    // Refresh data every 30 seconds (backup for WebSocket)
+    // WebSocket provides real-time updates, REST API is fallback for HIP-3/funding rates
+    setInterval(refreshDashboard, 30000);
 
     // Sync TradingView chart height with Quick Trade panel
     function syncChartHeight() {
