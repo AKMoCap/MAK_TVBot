@@ -1987,6 +1987,8 @@ async function executeTrade(action) {
         await executeLimitOrder(selection, action, collateral, leverage);
     } else if (orderType === 'twap') {
         await executeTwapOrder(selection, action, collateral, leverage);
+    } else if (orderType === 'scale') {
+        await executeScaleOrder(selection, action, collateral, leverage);
     } else {
         // Market order
         await executeMarketOrder(selection, action, collateral, leverage);
@@ -2121,6 +2123,68 @@ async function executeTwapOrder(coin, action, collateral, leverage) {
         }
     } catch (error) {
         showToast('TWAP order execution failed', 'error');
+    }
+}
+
+/**
+ * Execute a Scale order (multiple limit orders with optional skew)
+ */
+async function executeScaleOrder(coin, action, collateral, leverage) {
+    const priceFrom = parseFloat(document.getElementById('trade-scale-from')?.value);
+    const priceTo = parseFloat(document.getElementById('trade-scale-to')?.value);
+    const numOrders = parseInt(document.getElementById('trade-scale-count')?.value) || 5;
+    const skew = parseFloat(document.getElementById('trade-scale-skew')?.value) || 1.0;
+    const reduceOnly = document.getElementById('trade-reduce-only')?.checked || false;
+
+    // Validation
+    if (!priceFrom || priceFrom <= 0) {
+        showToast('Please enter a valid "Price From"', 'warning');
+        return;
+    }
+    if (!priceTo || priceTo <= 0) {
+        showToast('Please enter a valid "Price To"', 'warning');
+        return;
+    }
+    if (priceFrom === priceTo) {
+        showToast('Price From and Price To must be different', 'warning');
+        return;
+    }
+    if (numOrders < 2 || numOrders > 50) {
+        showToast('Number of orders must be between 2 and 50', 'warning');
+        return;
+    }
+    if (skew < 0.1 || skew > 10) {
+        showToast('Skew must be between 0.1 and 10', 'warning');
+        return;
+    }
+
+    // For Long orders: Price From should be higher than Price To (buying at lower prices)
+    // For Short orders: Price From should be lower than Price To (selling at higher prices)
+    const isLong = action === 'buy';
+
+    try {
+        const result = await apiCall('/scale-order', 'POST', {
+            coin,
+            action,
+            leverage,
+            collateral_usd: collateral,
+            price_from: priceFrom,
+            price_to: priceTo,
+            num_orders: numOrders,
+            skew,
+            reduce_only: reduceOnly
+        });
+
+        if (result.success) {
+            const ordersPlaced = result.orders_placed || numOrders;
+            showToast(`Scale order: ${ordersPlaced} limit orders placed for ${coin}`, 'success');
+            refreshDashboard();
+            loadOpenOrders();
+        } else {
+            showToast('Scale order failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Scale order execution failed', 'error');
     }
 }
 

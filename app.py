@@ -261,6 +261,7 @@ def api_limit_order():
         limit_price = data.get('limit_price')
         collateral_usd = data.get('collateral_usd')
         leverage = data.get('leverage')
+        reduce_only = data.get('reduce_only', False)
 
         if not all([coin, action, limit_price, collateral_usd, leverage]):
             return jsonify({'success': False, 'error': 'Missing required fields'})
@@ -300,7 +301,7 @@ def api_limit_order():
         # Place limit order
         result = bot_manager.place_limit_order(
             coin, is_buy, size, limit_price,
-            reduce_only=False,
+            reduce_only=reduce_only,
             user_wallet=wallet_address,
             user_agent_key=agent_key
         )
@@ -344,6 +345,136 @@ def api_modify_order():
         return jsonify(result)
     except Exception as e:
         logger.exception(f"Error modifying order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/scale-order', methods=['POST'])
+def api_scale_order():
+    """Place a scale order (multiple limit orders with optional skew)"""
+    try:
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        wallet_address = user.address
+        agent_key = user.get_agent_key()
+
+        data = request.json
+        coin = data.get('coin')
+        action = data.get('action')  # 'buy' or 'sell'
+        collateral_usd = data.get('collateral_usd')
+        leverage = data.get('leverage')
+        price_from = data.get('price_from')
+        price_to = data.get('price_to')
+        num_orders = data.get('num_orders', 5)
+        skew = data.get('skew', 1.0)
+        reduce_only = data.get('reduce_only', False)
+
+        if not all([coin, action, collateral_usd, leverage, price_from, price_to]):
+            return jsonify({'success': False, 'error': 'Missing required fields'})
+
+        collateral_usd = float(collateral_usd)
+        leverage = int(leverage)
+        price_from = float(price_from)
+        price_to = float(price_to)
+        num_orders = int(num_orders)
+        skew = float(skew)
+        is_buy = action.lower() == 'buy'
+
+        # Validation
+        if num_orders < 2 or num_orders > 50:
+            return jsonify({'success': False, 'error': 'Number of orders must be between 2 and 50'})
+        if skew < 0.1 or skew > 10:
+            return jsonify({'success': False, 'error': 'Skew must be between 0.1 and 10'})
+
+        # Get asset metadata
+        asset_meta = bot_manager.get_asset_metadata()
+        coin_meta = asset_meta.get(coin, {})
+
+        if not coin_meta:
+            return jsonify({'success': False, 'error': f"Coin '{coin}' not found in Hyperliquid"})
+
+        # Check and set leverage
+        max_leverage = coin_meta.get('maxLeverage', 10)
+        if leverage > max_leverage:
+            return jsonify({'success': False, 'error': f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"})
+
+        # Set leverage
+        _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
+        try:
+            exchange.update_leverage(leverage, coin, is_cross=False)
+        except Exception as lev_error:
+            return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
+
+        # Calculate total size based on average price
+        avg_price = (price_from + price_to) / 2
+        notional_value = collateral_usd * leverage
+        total_size = notional_value / avg_price
+
+        # Get size decimals
+        sz_decimals = coin_meta.get('szDecimals', 2)
+
+        # Calculate price levels (evenly spaced, inclusive)
+        prices = []
+        for i in range(num_orders):
+            price = price_from + (price_to - price_from) * i / (num_orders - 1)
+            prices.append(float(f"{price:.5g}"))
+
+        # Calculate size distribution with skew
+        # If skew = 1.0, all orders have equal size
+        # If skew > 1.0, later orders (towards price_to) are larger
+        # If skew < 1.0, later orders are smaller
+        # Formula: size_i = base_size * (1 + (skew - 1) * i / (n - 1))
+        # We need to solve for base_size such that sum of all sizes = total_size
+
+        if abs(skew - 1.0) < 0.001:
+            # Equal distribution
+            sizes = [total_size / num_orders] * num_orders
+        else:
+            # Calculate the sum of multipliers
+            multipliers = []
+            for i in range(num_orders):
+                mult = 1 + (skew - 1) * i / (num_orders - 1)
+                multipliers.append(mult)
+            mult_sum = sum(multipliers)
+            base_size = total_size / mult_sum
+            sizes = [base_size * m for m in multipliers]
+
+        # Round sizes
+        sizes = [round(s, sz_decimals) for s in sizes]
+
+        # Place limit orders
+        orders_placed = 0
+        errors = []
+
+        for i, (price, size) in enumerate(zip(prices, sizes)):
+            if size <= 0:
+                continue
+
+            result = bot_manager.place_limit_order(
+                coin, is_buy, size, price,
+                reduce_only=reduce_only,
+                user_wallet=wallet_address,
+                user_agent_key=agent_key
+            )
+
+            if result.get('success'):
+                orders_placed += 1
+            else:
+                errors.append(f"Order {i+1}: {result.get('error', 'Unknown error')}")
+
+        if orders_placed == 0:
+            return jsonify({'success': False, 'error': f"No orders placed. Errors: {'; '.join(errors)}"})
+
+        return jsonify({
+            'success': True,
+            'orders_placed': orders_placed,
+            'total_orders': num_orders,
+            'errors': errors if errors else None
+        })
+    except Exception as e:
+        logger.exception(f"Error placing scale order: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
