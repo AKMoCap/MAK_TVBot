@@ -1019,22 +1019,24 @@ def api_add_coin():
         else:
             coin_name = ticker
 
-        # Check if coin already exists
-        existing = CoinConfig.query.filter_by(coin=coin_name).first()
+        # Check if coin already exists (case-insensitive check)
+        existing = CoinConfig.query.filter(
+            db.func.lower(CoinConfig.coin) == coin_name.lower()
+        ).first()
         if existing:
-            return jsonify({'success': False, 'error': f'Coin {coin_name} already exists'}), 400
+            return jsonify({'success': False, 'error': f'Coin {existing.coin} already exists'}), 400
 
         # Fetch metadata from Hyperliquid to verify the coin exists
         if is_hip3:
-            # For HIP-3 perps, fetch from perpsAllDex endpoint
+            # For HIP-3 perps, use meta endpoint with dex parameter
             response = requests.post(
                 'https://api.hyperliquid.xyz/info',
-                json={'type': 'perpsAtDeployerAddress', 'user': dex_name},
+                json={'type': 'meta', 'dex': dex_name},
                 headers={'Content-Type': 'application/json'},
                 timeout=10
             )
         else:
-            # For regular perps, fetch from meta endpoint
+            # For regular perps, fetch from meta endpoint (empty dex = first perp dex)
             response = requests.post(
                 'https://api.hyperliquid.xyz/info',
                 json={'type': 'meta'},
@@ -1047,31 +1049,32 @@ def api_add_coin():
 
         api_data = response.json()
 
-        # Find the coin in the API response
+        # Find the coin in the API response (universe array)
         coin_meta = None
-        if is_hip3:
-            # HIP-3 response is different - search in returned perps
-            perps = api_data if isinstance(api_data, list) else api_data.get('perps', [])
-            for perp in perps:
-                name = perp.get('name', '')
-                if name.lower() == coin_name.lower() or name.upper() == ticker:
-                    coin_meta = perp
+        universe = api_data.get('universe', [])
+
+        for asset in universe:
+            name = asset.get('name', '')
+            if is_hip3:
+                # For HIP-3, match {dex}:{TICKER} format or just TICKER within the dex
+                if name.lower() == coin_name.lower() or name.lower() == ticker.lower():
+                    coin_meta = asset
+                    coin_name = name  # Use exact casing from API
                     break
-        else:
-            # Regular perps - search in universe
-            universe = api_data.get('universe', [])
-            for asset in universe:
-                name = asset.get('name', '')
+            else:
+                # Regular perps - match ticker
                 if name.lower() == ticker.lower():
                     coin_meta = asset
                     coin_name = name  # Use exact casing from API
                     break
 
         if not coin_meta:
-            return jsonify({
-                'success': False,
-                'error': f'Coin {coin_name} not found on Hyperliquid. Check the ticker or DEX name.'
-            }), 404
+            error_msg = f'Coin {ticker} not found'
+            if is_hip3:
+                error_msg += f' in DEX "{dex_name}". Make sure the DEX name is correct (e.g., "xyz" not "xyz:").'
+            else:
+                error_msg += ' on Hyperliquid. Check the ticker spelling.'
+            return jsonify({'success': False, 'error': error_msg}), 404
 
         # Create new coin config with metadata from API
         new_coin = CoinConfig(
