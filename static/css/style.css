@@ -698,3 +698,40 @@ code {
 .spot-table-compact td:nth-child(3) {
     width: 35%;
 }
+
+/* Compact Coin Configuration Table */
+.coin-config-compact th,
+.coin-config-compact td {
+    padding: 0.25rem 0.4rem !important;
+    font-size: 0.75rem;
+    vertical-align: middle;
+}
+
+.coin-config-compact th {
+    font-size: 0.68rem;
+}
+
+.coin-config-compact strong {
+    font-size: 0.78rem;
+}
+
+.coin-config-compact .form-check-input {
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0;
+}
+
+.coin-config-compact .btn-sm {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.68rem;
+}
+
+.coin-config-compact small {
+    font-size: 0.68rem;
+}
+
+/* Category header row styling in coin config table */
+.coin-config-compact .table-active td {
+    padding: 0.35rem 0.5rem !important;
+    font-size: 0.72rem;
+}

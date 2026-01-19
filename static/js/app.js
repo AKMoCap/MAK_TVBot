@@ -859,11 +859,18 @@ let coinConfigsCache = {};
 // Store asset metadata (szDecimals, maxLeverage) from Hyperliquid API
 let assetMetaCache = {};
 
-// Category definitions for batch trading
-const categoryCoins = {
-    'CAT:MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
-    'CAT:DEFI': ['AAVE', 'ENA', 'PENDLE', 'AERO'],
-    'CAT:MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'VIRTUAL']
+// Category definitions for batch trading (dynamically populated from coin configs)
+let categoryCoins = {
+    'CAT:L1s': [],
+    'CAT:APPS': [],
+    'CAT:MEMES': []
+};
+
+// Category display names
+const categoryDisplayNames = {
+    'L1s': 'L1s',
+    'APPS': 'APPS',
+    'MEMES': 'MEMES'
 };
 
 function isCategory(value) {
@@ -901,9 +908,28 @@ async function loadCoinConfigsForQuickTrade() {
 
         const data = await apiCall('/coins');
         if (data.coins) {
+            // Clear and rebuild caches
+            coinConfigsCache = {};
+            categoryCoins = {
+                'CAT:L1s': [],
+                'CAT:APPS': [],
+                'CAT:MEMES': []
+            };
+
+            // Populate caches
             data.coins.forEach(coin => {
                 coinConfigsCache[coin.coin] = coin;
+                // Build category lists for batch trading
+                const category = coin.category || 'L1s';
+                const catKey = 'CAT:' + category;
+                if (categoryCoins[catKey]) {
+                    categoryCoins[catKey].push(coin.coin);
+                }
             });
+
+            // Dynamically populate the Quick Trade dropdown
+            populateQuickTradeDropdown(data.coins);
+
             // Populate form with default coin (first one selected)
             const coinSelect = document.getElementById('trade-coin');
             if (coinSelect && coinSelect.value && !isCategory(coinSelect.value)) {
@@ -913,6 +939,54 @@ async function loadCoinConfigsForQuickTrade() {
     } catch (error) {
         console.error('Failed to load coin configs for quick trade:', error);
     }
+}
+
+/**
+ * Dynamically populate the Quick Trade dropdown from coin configs
+ */
+function populateQuickTradeDropdown(coins) {
+    const coinSelect = document.getElementById('trade-coin');
+    if (!coinSelect) return;
+
+    // Group coins by category
+    const groups = {
+        'L1s': [],
+        'APPS': [],
+        'MEMES': []
+    };
+
+    coins.forEach(coin => {
+        const category = coin.category || 'L1s';
+        if (groups[category]) {
+            groups[category].push(coin.coin);
+        }
+    });
+
+    // Build dropdown HTML
+    let html = '';
+
+    // Add coin groups
+    for (const [category, coinList] of Object.entries(groups)) {
+        if (coinList.length > 0) {
+            html += `<optgroup label="${categoryDisplayNames[category] || category}">`;
+            coinList.forEach(coinName => {
+                html += `<option value="${coinName}">${coinName}</option>`;
+            });
+            html += '</optgroup>';
+        }
+    }
+
+    // Add category batch trading options
+    html += '<optgroup label="── TRADE ALL IN CATEGORY ──">';
+    for (const [category, coinList] of Object.entries(groups)) {
+        if (coinList.length > 0) {
+            const catKey = 'CAT:' + category;
+            html += `<option value="${catKey}">📊 All ${categoryDisplayNames[category] || category} (${coinList.length} coins)</option>`;
+        }
+    }
+    html += '</optgroup>';
+
+    coinSelect.innerHTML = html;
 }
 
 function populateQuickTradeForm(selection) {
@@ -1837,33 +1911,35 @@ async function loadCoinConfigs() {
 function updateCoinConfigTable(coins) {
     const tbody = document.getElementById('coin-config-table');
 
-    // Define coin groups
-    const groups = {
-        'MAJORS': ['BTC', 'ETH', 'SOL', 'HYPE'],
-        'DEFI': ['AAVE', 'ENA', 'PENDLE', 'AERO'],
-        'HIGH BETA / MEMES': ['DOGE', 'PUMP', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'VIRTUAL']
-    };
+    // Group coins by their category from the API
+    const groups = {};
+    const categoryOrder = ['L1s', 'APPS', 'MEMES'];
 
-    // Create a map for quick coin lookup
-    const coinMap = {};
-    coins.forEach(c => { coinMap[c.coin] = c; });
+    coins.forEach(coin => {
+        const category = coin.category || 'L1s';
+        if (!groups[category]) {
+            groups[category] = [];
+        }
+        groups[category].push(coin);
+    });
 
     let html = '';
 
-    for (const [groupName, groupCoins] of Object.entries(groups)) {
-        // Add group header
-        html += `
-            <tr class="table-active">
-                <td colspan="9" class="py-2" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
-                    <i class="bi bi-collection me-2"></i>${groupName}
-                </td>
-            </tr>
-        `;
+    // Render categories in order
+    for (const categoryName of categoryOrder) {
+        const groupCoins = groups[categoryName];
+        if (groupCoins && groupCoins.length > 0) {
+            // Add group header
+            html += `
+                <tr class="table-active">
+                    <td colspan="9" class="py-1" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
+                        <i class="bi bi-collection me-2"></i>${categoryDisplayNames[categoryName] || categoryName}
+                    </td>
+                </tr>
+            `;
 
-        // Add coins in this group
-        for (const coinName of groupCoins) {
-            const coin = coinMap[coinName];
-            if (coin) {
+            // Add coins in this group
+            for (const coin of groupCoins) {
                 // TP display: "size% @ target%" (e.g., "25% @ 50%" = close 25% at 50% gain)
                 const tp1Display = coin.tp1_pct ? `${coin.tp1_size_pct}% @ ${coin.tp1_pct}%` : '--';
                 const tp2Display = coin.tp2_pct ? `${coin.tp2_size_pct}% @ ${coin.tp2_pct}%` : '--';
@@ -2004,6 +2080,42 @@ async function saveCoinConfig() {
         }
     } catch (error) {
         showToast('Failed to save coin configuration', 'error');
+    }
+}
+
+/**
+ * Save default settings for ALL coins at once
+ */
+async function saveAllCoinDefaults() {
+    const data = {
+        default_leverage: parseInt(document.getElementById('all-coin-leverage').value),
+        default_collateral: parseFloat(document.getElementById('all-coin-collateral').value),
+        max_position_size: parseFloat(document.getElementById('all-coin-max-size').value) || null,
+        default_stop_loss_pct: parseFloat(document.getElementById('all-coin-sl').value) || null,
+        tp1_pct: parseFloat(document.getElementById('all-coin-tp1').value) || null,
+        tp1_size_pct: parseFloat(document.getElementById('all-coin-tp1-size').value) || null,
+        tp2_pct: parseFloat(document.getElementById('all-coin-tp2').value) || null,
+        tp2_size_pct: parseFloat(document.getElementById('all-coin-tp2-size').value) || null
+    };
+
+    const btn = document.getElementById('save-all-coin-defaults');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Applying...';
+
+    try {
+        const result = await apiCall('/coins/bulk-update', 'PUT', data);
+        if (result.success) {
+            showToast(`Updated ${result.updated} coin configurations`, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('setDefaultsAllModal')).hide();
+            loadCoinConfigs();
+        } else {
+            showToast('Failed to update coins: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Failed to update coin configurations', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Apply to All Coins';
     }
 }
 
