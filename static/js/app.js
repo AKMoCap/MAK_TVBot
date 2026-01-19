@@ -870,6 +870,54 @@ const categoryDisplayNames = {
     'MEMES': 'MEMES'
 };
 
+// localStorage cache key for coins
+const COIN_CACHE_KEY = 'mak_coin_configs';
+const COIN_CACHE_VERSION_KEY = 'mak_coin_configs_version';
+
+/**
+ * Save coins to localStorage cache
+ */
+function saveCoinCache(coins) {
+    try {
+        localStorage.setItem(COIN_CACHE_KEY, JSON.stringify(coins));
+        localStorage.setItem(COIN_CACHE_VERSION_KEY, Date.now().toString());
+        console.log('Saved', coins.length, 'coins to cache');
+    } catch (e) {
+        console.warn('Failed to save coin cache:', e);
+    }
+}
+
+/**
+ * Load coins from localStorage cache
+ * Returns null if no cache exists
+ */
+function loadCoinCache() {
+    try {
+        const cached = localStorage.getItem(COIN_CACHE_KEY);
+        if (cached) {
+            const coins = JSON.parse(cached);
+            console.log('Loaded', coins.length, 'coins from cache');
+            return coins;
+        }
+    } catch (e) {
+        console.warn('Failed to load coin cache:', e);
+    }
+    return null;
+}
+
+/**
+ * Invalidate the coin cache (call when coins are added/modified)
+ */
+function invalidateCoinCache() {
+    try {
+        localStorage.removeItem(COIN_CACHE_KEY);
+        localStorage.removeItem(COIN_CACHE_VERSION_KEY);
+        console.log('Coin cache invalidated');
+    } catch (e) {
+        console.warn('Failed to invalidate coin cache:', e);
+    }
+}
+
 function isCategory(value) {
     return value && value.startsWith('CAT:');
 }
@@ -882,37 +930,59 @@ function getMaxLeverage(coin) {
     return 50;  // Default max leverage
 }
 
+/**
+ * Process coins data and populate caches/dropdown
+ */
+function processCoinData(coins) {
+    // Clear and rebuild caches
+    coinConfigsCache = {};
+    categoryCoins = {
+        'CAT:L1s': [],
+        'CAT:APPS': [],
+        'CAT:MEMES': []
+    };
+
+    // Populate caches
+    coins.forEach(coin => {
+        coinConfigsCache[coin.coin] = coin;
+        // Build category lists for batch trading
+        const category = coin.category || 'L1s';
+        const catKey = 'CAT:' + category;
+        if (categoryCoins[catKey]) {
+            categoryCoins[catKey].push(coin.coin);
+        }
+    });
+
+    // Dynamically populate the Quick Trade dropdown
+    populateQuickTradeDropdown(coins);
+
+    // Populate form with default coin (first one selected)
+    const coinSelect = document.getElementById('trade-coin');
+    if (coinSelect && coinSelect.value && !isCategory(coinSelect.value)) {
+        populateQuickTradeForm(coinSelect.value);
+    }
+}
+
+/**
+ * Load coin configs for Quick Trade dropdown
+ * Uses localStorage cache first, only fetches from API if cache miss
+ */
 async function loadCoinConfigsForQuickTrade() {
+    // Try to load from cache first (instant)
+    const cachedCoins = loadCoinCache();
+    if (cachedCoins && cachedCoins.length > 0) {
+        processCoinData(cachedCoins);
+        return;  // Don't fetch from API - use cache
+    }
+
+    // No cache - fetch from database API
     try {
         const data = await apiCall('/coins');
-        if (data.coins) {
-            // Clear and rebuild caches
-            coinConfigsCache = {};
-            categoryCoins = {
-                'CAT:L1s': [],
-                'CAT:APPS': [],
-                'CAT:MEMES': []
-            };
-
-            // Populate caches
-            data.coins.forEach(coin => {
-                coinConfigsCache[coin.coin] = coin;
-                // Build category lists for batch trading
-                const category = coin.category || 'L1s';
-                const catKey = 'CAT:' + category;
-                if (categoryCoins[catKey]) {
-                    categoryCoins[catKey].push(coin.coin);
-                }
-            });
-
-            // Dynamically populate the Quick Trade dropdown
-            populateQuickTradeDropdown(data.coins);
-
-            // Populate form with default coin (first one selected)
-            const coinSelect = document.getElementById('trade-coin');
-            if (coinSelect && coinSelect.value && !isCategory(coinSelect.value)) {
-                populateQuickTradeForm(coinSelect.value);
-            }
+        if (data.coins && data.coins.length > 0) {
+            // Save to cache for next time
+            saveCoinCache(data.coins);
+            // Process the data
+            processCoinData(data.coins);
         }
     } catch (error) {
         console.error('Failed to load coin configs for quick trade:', error);
@@ -2046,6 +2116,7 @@ async function saveCoinConfig() {
         const result = await apiCall(`/coins/${coin}`, 'PUT', data);
         if (result.success) {
             showToast('Coin configuration saved', 'success');
+            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
             bootstrap.Modal.getInstance(document.getElementById('editCoinModal')).hide();
             loadCoinConfigs();
         }
@@ -2077,6 +2148,7 @@ async function saveAllCoinDefaults() {
         const result = await apiCall('/coins/bulk-update', 'PUT', data);
         if (result.success) {
             showToast(`Updated ${result.updated} coin configurations`, 'success');
+            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
             bootstrap.Modal.getInstance(document.getElementById('setDefaultsAllModal')).hide();
             loadCoinConfigs();
         } else {
@@ -2106,6 +2178,7 @@ async function refreshLeverageTables() {
                 message += `. Not found on Hyperliquid: ${result.not_found.join(', ')}`;
             }
             showToast(message, 'success');
+            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
             loadCoinConfigs();  // Refresh the table
         } else {
             showToast('Failed to refresh: ' + (result.error || 'Unknown error'), 'error');
@@ -2117,6 +2190,96 @@ async function refreshLeverageTables() {
         btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Leverage Tables';
     }
 }
+
+/**
+ * Add a new perpetual coin to the configuration
+ */
+async function addNewPerp() {
+    const ticker = document.getElementById('new-perp-ticker').value.trim();
+    const isHip3 = document.getElementById('new-perp-hip3').checked;
+    const dexName = document.getElementById('new-perp-dex').value.trim();
+    const resultDiv = document.getElementById('add-perp-result');
+
+    if (!ticker) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-2">Please enter a ticker symbol</div>';
+        resultDiv.style.display = 'block';
+        return;
+    }
+
+    if (isHip3 && !dexName) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-2">Please enter the DEX name for HIP-3 perpetuals</div>';
+        resultDiv.style.display = 'block';
+        return;
+    }
+
+    const btn = document.getElementById('add-perp-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Adding...';
+    resultDiv.style.display = 'none';
+
+    try {
+        const result = await apiCall('/coins/add', 'POST', {
+            ticker: ticker,
+            is_hip3: isHip3,
+            dex_name: dexName,
+            category: 'L1s'  // Default category
+        });
+
+        if (result.success) {
+            resultDiv.innerHTML = `<div class="alert alert-success py-2">
+                <i class="bi bi-check-circle me-1"></i>${result.message}
+                <br><small>Max Leverage: ${result.coin.hl_max_leverage}x</small>
+            </div>`;
+            resultDiv.style.display = 'block';
+
+            // Clear form
+            document.getElementById('new-perp-ticker').value = '';
+            document.getElementById('new-perp-hip3').checked = false;
+            document.getElementById('new-perp-dex').value = '';
+            document.getElementById('hip3-dex-container').style.display = 'none';
+
+            // Invalidate cache so Quick Trade reloads
+            invalidateCoinCache();
+
+            // Refresh the coin config table
+            loadCoinConfigs();
+
+            // Close modal after 1.5 seconds
+            setTimeout(() => {
+                bootstrap.Modal.getInstance(document.getElementById('addNewPerpModal')).hide();
+                resultDiv.style.display = 'none';
+            }, 1500);
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-2">
+                <i class="bi bi-x-circle me-1"></i>${result.error}
+            </div>`;
+            resultDiv.style.display = 'block';
+        }
+    } catch (error) {
+        resultDiv.innerHTML = '<div class="alert alert-danger py-2">Failed to add perpetual</div>';
+        resultDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Add Perp';
+    }
+}
+
+/**
+ * Setup HIP-3 checkbox toggle
+ */
+function setupHip3Toggle() {
+    const checkbox = document.getElementById('new-perp-hip3');
+    const dexContainer = document.getElementById('hip3-dex-container');
+
+    if (checkbox && dexContainer) {
+        checkbox.addEventListener('change', function() {
+            dexContainer.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+}
+
+// Initialize HIP-3 toggle when DOM is ready
+document.addEventListener('DOMContentLoaded', setupHip3Toggle);
 
 async function clearTradeHistory() {
     if (!confirm('Are you sure you want to clear ALL trade history? This action cannot be undone.')) {

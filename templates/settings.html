@@ -101,6 +101,9 @@
             <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-currency-exchange me-2"></i>Coin Configuration</h5>
                 <div>
+                    <button class="btn btn-outline-success btn-sm me-2" data-bs-toggle="modal" data-bs-target="#addNewPerpModal">
+                        <i class="bi bi-plus-circle me-1"></i>Add New Perp
+                    </button>
                     <button class="btn btn-outline-warning btn-sm me-2" id="refresh-leverage-btn" onclick="refreshLeverageTables()">
                         <i class="bi bi-arrow-clockwise me-1"></i>Refresh Leverage Tables
                     </button>
@@ -329,6 +332,52 @@
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="save-coin-config">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add New Perp Modal -->
+<div class="modal fade" id="addNewPerpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add New Perpetual</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="add-new-perp-form">
+                    <div class="mb-3">
+                        <label class="form-label">Ticker</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary"
+                               id="new-perp-ticker" placeholder="e.g., BTC, ETH, SOL" required>
+                        <small class="text-muted">Enter the coin ticker symbol</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="new-perp-hip3">
+                            <label class="form-check-label" for="new-perp-hip3">
+                                HIP-3 Perpetual
+                            </label>
+                        </div>
+                        <small class="text-muted">Check if this is a HIP-3 deployed perpetual</small>
+                    </div>
+
+                    <div class="mb-3" id="hip3-dex-container" style="display: none;">
+                        <label class="form-label">HIP-3 DEX Name</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary"
+                               id="new-perp-dex" placeholder="e.g., hypurrfun">
+                        <small class="text-muted">The DEX name (format: {dex}:{coin})</small>
+                    </div>
+                </form>
+                <div id="add-perp-result" class="mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="add-perp-btn" onclick="addNewPerp()">
+                    <i class="bi bi-plus-circle me-1"></i>Add Perp
+                </button>
             </div>
         </div>
     </div>

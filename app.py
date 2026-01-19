@@ -995,6 +995,122 @@ def api_refresh_leverage():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/coins/add', methods=['POST'])
+def api_add_coin():
+    """Add a new perpetual coin by fetching its metadata from Hyperliquid"""
+    import requests
+    from datetime import datetime
+
+    try:
+        data = request.get_json()
+        ticker = data.get('ticker', '').strip().upper()
+        is_hip3 = data.get('is_hip3', False)
+        dex_name = data.get('dex_name', '').strip().lower()
+        category = data.get('category', 'L1s')
+
+        if not ticker:
+            return jsonify({'success': False, 'error': 'Ticker is required'}), 400
+
+        # Build the coin name based on HIP-3 status
+        if is_hip3:
+            if not dex_name:
+                return jsonify({'success': False, 'error': 'DEX name is required for HIP-3 perpetuals'}), 400
+            coin_name = f"{dex_name}:{ticker}"
+        else:
+            coin_name = ticker
+
+        # Check if coin already exists
+        existing = CoinConfig.query.filter_by(coin=coin_name).first()
+        if existing:
+            return jsonify({'success': False, 'error': f'Coin {coin_name} already exists'}), 400
+
+        # Fetch metadata from Hyperliquid to verify the coin exists
+        if is_hip3:
+            # For HIP-3 perps, fetch from perpsAllDex endpoint
+            response = requests.post(
+                'https://api.hyperliquid.xyz/info',
+                json={'type': 'perpsAtDeployerAddress', 'user': dex_name},
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+        else:
+            # For regular perps, fetch from meta endpoint
+            response = requests.post(
+                'https://api.hyperliquid.xyz/info',
+                json={'type': 'meta'},
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': f'Hyperliquid API error: {response.status_code}'}), 500
+
+        api_data = response.json()
+
+        # Find the coin in the API response
+        coin_meta = None
+        if is_hip3:
+            # HIP-3 response is different - search in returned perps
+            perps = api_data if isinstance(api_data, list) else api_data.get('perps', [])
+            for perp in perps:
+                name = perp.get('name', '')
+                if name.lower() == coin_name.lower() or name.upper() == ticker:
+                    coin_meta = perp
+                    break
+        else:
+            # Regular perps - search in universe
+            universe = api_data.get('universe', [])
+            for asset in universe:
+                name = asset.get('name', '')
+                if name.lower() == ticker.lower():
+                    coin_meta = asset
+                    coin_name = name  # Use exact casing from API
+                    break
+
+        if not coin_meta:
+            return jsonify({
+                'success': False,
+                'error': f'Coin {coin_name} not found on Hyperliquid. Check the ticker or DEX name.'
+            }), 404
+
+        # Create new coin config with metadata from API
+        new_coin = CoinConfig(
+            coin=coin_name,
+            category=category,
+            enabled=True,
+            default_leverage=3,
+            default_collateral=100.0,
+            max_position_size=1000.0,
+            default_stop_loss_pct=15.0,
+            tp1_pct=50.0,
+            tp1_size_pct=25.0,
+            tp2_pct=100.0,
+            tp2_size_pct=50.0,
+            hl_max_leverage=coin_meta.get('maxLeverage', 50),
+            hl_sz_decimals=coin_meta.get('szDecimals', 2),
+            hl_only_isolated=coin_meta.get('onlyIsolated', False),
+            hl_margin_mode=coin_meta.get('marginMode'),
+            hl_metadata_updated=datetime.utcnow()
+        )
+
+        db.session.add(new_coin)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'coin': new_coin.to_dict(),
+            'message': f'Successfully added {coin_name}'
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({'success': False, 'error': 'Hyperliquid API timeout'}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({'success': False, 'error': f'Network error: {str(e)}'}), 500
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/test-connection', methods=['GET'])
 def api_test_connection():
     """Test Hyperliquid connection"""
