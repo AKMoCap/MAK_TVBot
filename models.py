@@ -87,6 +87,12 @@ class Trade(db.Model):
     """Record of all executed trades"""
     __tablename__ = 'trades'
 
+    # Composite indexes for commonly used query patterns
+    __table_args__ = (
+        db.Index('idx_trade_status_timestamp', 'status', 'timestamp'),  # For stats queries
+        db.Index('idx_trade_status_pnl', 'status', 'pnl'),  # For win/loss aggregates
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     coin = db.Column(db.String(20), nullable=False, index=True)
@@ -99,7 +105,7 @@ class Trade(db.Model):
     collateral_usd = db.Column(db.Float, nullable=False)
     pnl = db.Column(db.Float, nullable=True)  # Profit/Loss in USD
     pnl_percent = db.Column(db.Float, nullable=True)
-    status = db.Column(db.String(20), default='open')  # open, closed, liquidated
+    status = db.Column(db.String(20), default='open', index=True)  # open, closed, liquidated
     order_id = db.Column(db.String(100), nullable=True)
     stop_loss = db.Column(db.Float, nullable=True)
     take_profit = db.Column(db.Float, nullable=True)
@@ -305,10 +311,15 @@ class ActivityLog(db.Model):
     """Activity and event logging"""
     __tablename__ = 'activity_logs'
 
+    # Composite index for efficient log queries by category
+    __table_args__ = (
+        db.Index('idx_activitylog_category_timestamp', 'category', 'timestamp'),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    level = db.Column(db.String(20), default='info')  # info, warning, error, trade
-    category = db.Column(db.String(50), nullable=False)  # trade, risk, system, webhook
+    level = db.Column(db.String(20), default='info', index=True)  # info, warning, error, trade
+    category = db.Column(db.String(50), nullable=False, index=True)  # trade, risk, system, webhook
     message = db.Column(db.Text, nullable=False)
     details = db.Column(db.Text, nullable=True)  # JSON details
 
