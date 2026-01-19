@@ -91,6 +91,18 @@ function formatDate(dateStr) {
 }
 
 /**
+ * Update tab count badge
+ * @param {string} tabName - Tab name: 'perps', 'orders', or 'twaps'
+ * @param {number} count - Number of items
+ */
+function updateTabCount(tabName, count) {
+    const countEl = document.getElementById(`tab-count-${tabName}`);
+    if (countEl) {
+        countEl.textContent = count > 0 ? `(${count})` : '';
+    }
+}
+
+/**
  * Make an API call with optional loading state management
  * @param {string} endpoint - API endpoint (without /api prefix)
  * @param {string} method - HTTP method
@@ -784,6 +796,8 @@ function updatePositionsTable(positions) {
     // positions === [] (empty array) means clear the cache (positions were closed)
     if (positions !== null) {
         positionsCache = positions || [];
+        // Update tab count with total positions (not filtered)
+        updateTabCount('perps', positionsCache.length);
     }
 
     const tbody = document.getElementById('positions-table');
@@ -1633,6 +1647,7 @@ async function loadOpenOrders() {
     // Get wallet address from walletManager
     const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
     if (!walletAddress) {
+        updateTabCount('orders', 0);
         tbody.innerHTML = `
             <tr>
                 <td colspan="8" class="text-center text-muted py-3">
@@ -1647,6 +1662,7 @@ async function loadOpenOrders() {
     try {
         const data = await apiCall(`/open-orders?address=${walletAddress}`);
         if (data.error) {
+            updateTabCount('orders', 0);
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8" class="text-center text-muted py-3">
@@ -1659,6 +1675,8 @@ async function loadOpenOrders() {
         }
 
         const orders = data.orders || [];
+        updateTabCount('orders', orders.length);
+
         if (orders.length === 0) {
             tbody.innerHTML = `
                 <tr>
@@ -1704,6 +1722,7 @@ async function loadOpenOrders() {
         }).join('');
     } catch (error) {
         console.error('Failed to load open orders:', error);
+        updateTabCount('orders', 0);
         tbody.innerHTML = `
             <tr>
                 <td colspan="8" class="text-center text-muted py-3">
@@ -1809,6 +1828,7 @@ async function loadTwapOrders() {
     // Get wallet address from walletManager
     const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
     if (!walletAddress) {
+        updateTabCount('twaps', 0);
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="text-center text-muted py-3">
@@ -1823,6 +1843,7 @@ async function loadTwapOrders() {
     try {
         const data = await apiCall(`/twap-history?address=${walletAddress}`);
         if (!data.success) {
+            updateTabCount('twaps', 0);
             tbody.innerHTML = `
                 <tr>
                     <td colspan="7" class="text-center text-muted py-3">
@@ -1845,6 +1866,8 @@ async function loadTwapOrders() {
             // Check if status object has 'running' or 'activated' key (Rust enum style)
             return typeof status === 'object' && ('running' in status || 'activated' in status);
         });
+
+        updateTabCount('twaps', activeTwaps.length);
 
         if (activeTwaps.length === 0) {
             tbody.innerHTML = `
@@ -1910,6 +1933,7 @@ async function loadTwapOrders() {
         }).join('');
     } catch (error) {
         console.error('Failed to load TWAP orders:', error);
+        updateTabCount('twaps', 0);
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="text-center text-muted py-3">
