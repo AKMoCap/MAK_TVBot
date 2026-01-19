@@ -323,12 +323,13 @@ class ActivityLog(db.Model):
         }
 
 
-def init_db(app, run_migrations=None):
+def init_db(app, run_migrations=None, seed_data=None):
     """Initialize database with Flask-Migrate and seed default values
     
     run_migrations: True = always run, False = never run, None = auto-detect
-    In development (python app.py), migrations run automatically.
-    In production (gunicorn), migrations should run via build step.
+    seed_data: True = always seed, False = never seed, None = auto-detect
+    In development (python app.py), migrations and seeding run automatically.
+    In production (gunicorn), migrations run via build step, workers skip seeding.
     """
     import logging
     import os
@@ -337,10 +338,13 @@ def init_db(app, run_migrations=None):
     db.init_app(app)
     migrate.init_app(app, db)
     
-    # Auto-detect: run migrations in dev but not under gunicorn workers
+    # Auto-detect: run migrations/seeding in dev but not under gunicorn workers
+    is_production = 'gunicorn' in os.environ.get('SERVER_SOFTWARE', '')
+    
     if run_migrations is None:
-        # Check if we're running under gunicorn (production)
-        run_migrations = 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', '')
+        run_migrations = not is_production
+    if seed_data is None:
+        seed_data = not is_production
 
     with app.app_context():
         # Run migrations to ensure schema is up to date
@@ -351,70 +355,47 @@ def init_db(app, run_migrations=None):
                 logger.info("Database migrations applied successfully")
             except Exception as e:
                 logger.warning(f"Migration warning: {e}")
+        
+        # Skip seeding in production - workers shouldn't modify data
+        if not seed_data:
+            logger.info("Skipping database seeding (production mode)")
+            return
+        
+        # Run seeding
+        seed_defaults()
 
-        # Verify user_wallets table exists - create if missing
-        try:
-            UserWallet.query.first()
-            logger.info("UserWallet table verified")
-        except Exception as e:
-            logger.warning(f"UserWallet table missing, creating: {e}")
-            # Try to create tables again
-            try:
-                db.create_all()
-            except Exception as e2:
-                logger.error(f"Failed to create tables: {e2}")
-                # As last resort, try raw SQL for PostgreSQL
-                try:
-                    from sqlalchemy import text
-                    db.session.execute(text('''
-                        CREATE TABLE IF NOT EXISTS user_wallets (
-                            id SERIAL PRIMARY KEY,
-                            address VARCHAR(42) UNIQUE NOT NULL,
-                            agent_address VARCHAR(42),
-                            agent_key_encrypted TEXT,
-                            agent_name VARCHAR(100),
-                            use_testnet BOOLEAN DEFAULT TRUE,
-                            last_connected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            session_token VARCHAR(64),
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    '''))
-                    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_user_wallets_address ON user_wallets(address)'))
-                    db.session.execute(text('CREATE INDEX IF NOT EXISTS ix_user_wallets_session_token ON user_wallets(session_token)'))
-                    db.session.commit()
-                    logger.info("UserWallet table created via raw SQL")
-                except Exception as e3:
-                    logger.error(f"Raw SQL table creation failed: {e3}")
 
+def seed_defaults():
+    """Seed default values into database. Call after migrations are complete."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
         # Create default risk settings if not exist
         if not RiskSettings.query.first():
             default_risk = RiskSettings()
             db.session.add(default_risk)
 
         # Create default coin configs for popular coins
-        # Grouped as: L1s (Layer 1s), APPS (Applications/DeFi), MEMES, HIP-3 Perps
         default_coins = {
             'L1s': ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'MON', 'BNB', 'LTC', 'CC', 'TAO', 'TON', 'WLD'],
             'APPS': ['AAVE', 'ENA', 'PENDLE', 'AERO', 'VIRTUAL', 'PUMP', 'LIT', 'CRV', 'LINK', 'ETHFI', 'MORPHO', 'SYRUP', 'JUP'],
             'MEMES': ['DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'SPX'],
-            'HIP-3 Perps': []  # HIP-3 perps are added manually via Add New Perp
+            'HIP-3 Perps': []
         }
 
         for category, coins in default_coins.items():
             for coin in coins:
                 existing = CoinConfig.query.filter_by(coin=coin).first()
                 if existing:
-                    # Update category for existing coins if needed
                     if existing.category != category:
                         existing.category = category
                 else:
-                    # Default: max_position = 10x collateral, SL=15%, TP1=50%@25%, TP2=100%@50%
                     coin_config = CoinConfig(
                         coin=coin,
                         category=category,
                         default_collateral=100.0,
-                        max_position_size=1000.0,  # 10x default collateral
+                        max_position_size=1000.0,
                         default_stop_loss_pct=15.0,
                         tp1_pct=50.0,
                         tp1_size_pct=25.0,
@@ -427,7 +408,7 @@ def init_db(app, run_migrations=None):
         defaults = {
             'bot_enabled': 'true',
             'use_testnet': 'true',
-            'slippage_tolerance': '0.003',  # 0.3%
+            'slippage_tolerance': '0.003',
             'default_leverage': '3',
             'default_collateral': '100'
         }
@@ -436,3 +417,7 @@ def init_db(app, run_migrations=None):
                 BotConfig.set(key, value)
 
         db.session.commit()
+        logger.info("Database seeding completed")
+    except Exception as e:
+        logger.error(f"Seeding error: {e}")
+        db.session.rollback()
