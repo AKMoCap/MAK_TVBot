@@ -20,10 +20,12 @@ class HyperliquidWebSocket {
         this._onAccountUpdate = null;
         this._onOrderUpdate = null;
         this._onFillUpdate = null;
+        this._onPriceUpdate = null;  // New: callback for price updates
 
         // Buffer for data received before callbacks are set
         this._lastAccountData = null;
         this._lastPositions = null;
+        this._lastPrices = {};  // New: cache for latest prices
 
         // Cache for HIP-3 positions (from REST API, not available via WebSocket)
         this._hip3PositionsCache = [];
@@ -59,6 +61,13 @@ class HyperliquidWebSocket {
         this._hip3PositionsCache = [];
     }
 
+    /**
+     * Get cached prices
+     */
+    get prices() {
+        return this._lastPrices;
+    }
+
     // Callback setters that also replay buffered data
     set onAccountUpdate(callback) {
         this._onAccountUpdate = callback;
@@ -85,6 +94,9 @@ class HyperliquidWebSocket {
 
     set onFillUpdate(callback) { this._onFillUpdate = callback; }
     get onFillUpdate() { return this._onFillUpdate; }
+
+    set onPriceUpdate(callback) { this._onPriceUpdate = callback; }
+    get onPriceUpdate() { return this._onPriceUpdate; }
 
     /**
      * Get WebSocket URL based on network
@@ -196,6 +208,30 @@ class HyperliquidWebSocket {
 
         console.log('[HL-WS] Subscribing to webData2 for:', this.userAddress);
         this.ws.send(JSON.stringify(subscription));
+
+        // Also subscribe to allMids for real-time price updates (no rate limit impact)
+        this.subscribeToAllMids();
+    }
+
+    /**
+     * Subscribe to allMids for real-time price updates
+     * This provides mid prices for ALL assets without counting against rate limits
+     */
+    subscribeToAllMids() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.error('[HL-WS] Cannot subscribe to allMids - not connected');
+            return;
+        }
+
+        const subscription = {
+            method: 'subscribe',
+            subscription: {
+                type: 'allMids'
+            }
+        };
+
+        console.log('[HL-WS] Subscribing to allMids for real-time prices');
+        this.ws.send(JSON.stringify(subscription));
     }
 
     /**
@@ -204,9 +240,6 @@ class HyperliquidWebSocket {
     handleMessage(data) {
         try {
             const msg = JSON.parse(data);
-
-            // Debug: log all messages
-            console.log('[HL-WS] Raw message channel:', msg.channel);
 
             // Handle subscription confirmation
             if (msg.channel === 'subscriptionResponse') {
@@ -221,6 +254,12 @@ class HyperliquidWebSocket {
                 return;
             }
 
+            // Handle allMids updates (real-time prices)
+            if (msg.channel === 'allMids') {
+                this.processAllMids(msg.data);
+                return;
+            }
+
             // Handle pong
             if (msg.channel === 'pong') {
                 return;
@@ -232,11 +271,28 @@ class HyperliquidWebSocket {
                 return;
             }
 
-            // Log other messages for debugging
-            console.log('[HL-WS] Unhandled message:', msg);
-
         } catch (error) {
             console.error('[HL-WS] Error parsing message:', error, data);
+        }
+    }
+
+    /**
+     * Process allMids updates - real-time price data for all assets
+     * Data format: { mids: { "BTC": "12345.67", "ETH": "2345.67", ... } }
+     */
+    processAllMids(data) {
+        if (!data || !data.mids) return;
+
+        const mids = data.mids;
+
+        // Update our price cache
+        for (const [coin, price] of Object.entries(mids)) {
+            this._lastPrices[coin] = parseFloat(price);
+        }
+
+        // Call the price update callback if set
+        if (this._onPriceUpdate) {
+            this._onPriceUpdate(this._lastPrices);
         }
     }
 

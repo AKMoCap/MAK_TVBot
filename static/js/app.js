@@ -145,10 +145,31 @@ function setupHyperliquidWebSocket() {
         // Could update activity list here if needed
     };
 
+    // Set up price update callback for real-time prices via allMids
+    hlWebSocket.onPriceUpdate = (prices) => {
+        // Update price displays with WebSocket data
+        updatePricesFromWebSocket(prices);
+    };
+
     // If wallet is already connected (session restored), connect WebSocket now
     if (typeof walletManager !== 'undefined' && walletManager.isConnected && walletManager.address) {
         console.log('[Dashboard] Wallet already connected, connecting WebSocket for:', walletManager.address);
         hlWebSocket.connect(walletManager.address);
+    }
+}
+
+/**
+ * Update price displays from WebSocket allMids data
+ * This is called in real-time and doesn't use REST API
+ */
+function updatePricesFromWebSocket(prices) {
+    if (!prices) return;
+
+    for (const [coin, price] of Object.entries(prices)) {
+        const el = document.getElementById('price-' + coin);
+        if (el) {
+            el.textContent = formatPrice(price);
+        }
     }
 }
 
@@ -238,15 +259,20 @@ async function refreshDashboard() {
         console.error('[Dashboard] Stats fetch failed:', error);
     }
 
-    try {
-        // Fetch market prices
-        const pricesData = await apiCall('/prices');
-        if (!pricesData.error) {
-            updatePrices(pricesData);
+    // Only fetch prices via REST API if WebSocket is not connected
+    // WebSocket allMids subscription provides real-time prices without rate limit impact
+    const wsConnected = typeof hlWebSocket !== 'undefined' && hlWebSocket.isConnected;
+    if (!wsConnected) {
+        try {
+            // Fetch market prices (fallback when WebSocket unavailable)
+            const pricesData = await apiCall('/prices');
+            if (!pricesData.error) {
+                updatePrices(pricesData);
+            }
+            connected = true;
+        } catch (error) {
+            console.error('[Dashboard] Prices fetch failed:', error);
         }
-        connected = true;
-    } catch (error) {
-        console.error('[Dashboard] Prices fetch failed:', error);
     }
 
     try {
