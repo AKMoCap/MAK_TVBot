@@ -216,6 +216,7 @@ class HyperliquidWebSocket {
     /**
      * Subscribe to allMids for real-time price updates
      * This provides mid prices for ALL assets without counting against rate limits
+     * Also subscribes to HIP-3 dexes if configured
      */
     subscribeToAllMids() {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -223,15 +224,74 @@ class HyperliquidWebSocket {
             return;
         }
 
-        const subscription = {
+        // Subscribe to main perp dex (default)
+        const mainSubscription = {
             method: 'subscribe',
             subscription: {
                 type: 'allMids'
             }
         };
+        console.log('[HL-WS] Subscribing to allMids for main perps');
+        this.ws.send(JSON.stringify(mainSubscription));
 
-        console.log('[HL-WS] Subscribing to allMids for real-time prices');
-        this.ws.send(JSON.stringify(subscription));
+        // Subscribe to HIP-3 dexes for builder-deployed perps
+        this.subscribeToHip3Dexes();
+    }
+
+    /**
+     * Subscribe to HIP-3 dex allMids for builder-deployed perp prices
+     * Extracts dex names from coin configs in localStorage cache
+     */
+    subscribeToHip3Dexes() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+        // Get HIP-3 dexes from localStorage cache
+        const hip3Dexes = this.getHip3DexesFromCache();
+        if (hip3Dexes.length === 0) {
+            console.log('[HL-WS] No HIP-3 dexes found in cache');
+            return;
+        }
+
+        console.log('[HL-WS] Found HIP-3 dexes:', hip3Dexes);
+
+        // Subscribe to each HIP-3 dex
+        for (const dexName of hip3Dexes) {
+            const subscription = {
+                method: 'subscribe',
+                subscription: {
+                    type: 'allMids',
+                    dex: dexName
+                }
+            };
+            console.log(`[HL-WS] Subscribing to allMids for HIP-3 dex: ${dexName}`);
+            this.ws.send(JSON.stringify(subscription));
+        }
+    }
+
+    /**
+     * Extract HIP-3 dex names from coin configs in localStorage
+     * Coin names are stored as "dex:COIN" format (e.g., "xyz:BTC")
+     */
+    getHip3DexesFromCache() {
+        try {
+            const cached = localStorage.getItem('mak_quick_trade_coins');
+            if (!cached) return [];
+
+            const coins = JSON.parse(cached);
+            const dexes = new Set();
+
+            for (const coin of coins) {
+                if (coin.coin && coin.coin.includes(':')) {
+                    const dexName = coin.coin.split(':')[0];
+                    dexes.add(dexName);
+                }
+            }
+
+            return Array.from(dexes);
+        } catch (e) {
+            console.warn('[HL-WS] Failed to parse coin cache for HIP-3 dexes:', e);
+            return [];
+        }
     }
 
     /**
@@ -255,8 +315,11 @@ class HyperliquidWebSocket {
             }
 
             // Handle allMids updates (real-time prices)
+            // For HIP-3 dexes, the subscription includes a dex field
             if (msg.channel === 'allMids') {
-                this.processAllMids(msg.data);
+                // Check if this is a HIP-3 dex subscription (has dex in subscription data)
+                const dexName = msg.data?.dex || null;
+                this.processAllMids(msg.data, dexName);
                 return;
             }
 
@@ -279,15 +342,24 @@ class HyperliquidWebSocket {
     /**
      * Process allMids updates - real-time price data for all assets
      * Data format: { mids: { "BTC": "12345.67", "ETH": "2345.67", ... } }
+     * For HIP-3 dexes, coin names are prefixed with "dex:" to match stored format
+     * @param {Object} data - The allMids data containing mids object
+     * @param {string|null} dexName - The HIP-3 dex name if this is a dex-specific subscription
      */
-    processAllMids(data) {
+    processAllMids(data, dexName = null) {
         if (!data || !data.mids) return;
 
         const mids = data.mids;
 
         // Update our price cache
         for (const [coin, price] of Object.entries(mids)) {
-            this._lastPrices[coin] = parseFloat(price);
+            // For HIP-3 dexes, prefix coin name with dex name to match "dex:COIN" format
+            const coinKey = dexName ? `${dexName}:${coin}` : coin;
+            this._lastPrices[coinKey] = parseFloat(price);
+        }
+
+        if (dexName) {
+            console.log(`[HL-WS] Updated ${Object.keys(mids).length} prices for HIP-3 dex: ${dexName}`);
         }
 
         // Call the price update callback if set

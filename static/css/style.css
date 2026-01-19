@@ -769,8 +769,9 @@ code {
 
 .coin-dropdown-trigger .selected-coin {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
+    gap: 1rem;
     flex: 1;
 }
 
@@ -781,7 +782,6 @@ code {
 .coin-dropdown-trigger .selected-coin .coin-price {
     color: var(--text-muted);
     font-size: 0.9rem;
-    margin-right: 0.5rem;
 }
 
 .coin-dropdown-trigger .dropdown-arrow {
@@ -824,8 +824,9 @@ code {
 
 .coin-dropdown-item {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
+    gap: 1rem;
     padding: 0.5rem 0.75rem;
     cursor: pointer;
     border-bottom: 1px solid rgba(48, 54, 61, 0.3);
