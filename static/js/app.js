@@ -940,7 +940,8 @@ function processCoinData(coins) {
     categoryCoins = {
         'CAT:L1s': [],
         'CAT:APPS': [],
-        'CAT:MEMES': []
+        'CAT:MEMES': [],
+        'CAT:HIP-3 Perps': []
     };
 
     // Populate caches
@@ -951,11 +952,20 @@ function processCoinData(coins) {
         const catKey = 'CAT:' + category;
         if (categoryCoins[catKey]) {
             categoryCoins[catKey].push(coin.coin);
+        } else {
+            // Handle any new categories dynamically
+            categoryCoins[catKey] = [coin.coin];
         }
     });
 
+    // Store full coin list for filtering
+    window.allCoinsData = coins;
+
     // Dynamically populate the Quick Trade dropdown
     populateQuickTradeDropdown(coins);
+
+    // Setup category filter buttons
+    setupCategoryFilters();
 
     // Populate form with default coin (first one selected)
     const coinSelect = document.getElementById('trade-coin');
@@ -992,31 +1002,39 @@ async function loadCoinConfigsForQuickTrade() {
 
 /**
  * Dynamically populate the Quick Trade dropdown from coin configs
+ * @param {Array} coins - Array of coin objects to display
+ * @param {string} filterCategory - Optional category to filter by (null = show all)
  */
-function populateQuickTradeDropdown(coins) {
+function populateQuickTradeDropdown(coins, filterCategory = null) {
     const coinSelect = document.getElementById('trade-coin');
     if (!coinSelect) return;
 
+    // Category order for display
+    const categoryOrder = ['L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+
     // Group coins by category
-    const groups = {
-        'L1s': [],
-        'APPS': [],
-        'MEMES': []
-    };
+    const groups = {};
+    categoryOrder.forEach(cat => groups[cat] = []);
 
     coins.forEach(coin => {
         const category = coin.category || 'L1s';
+        // If filtering, only include coins from the selected category
+        if (filterCategory && category !== filterCategory) return;
+
         if (groups[category]) {
             groups[category].push(coin.coin);
+        } else {
+            groups[category] = [coin.coin];
         }
     });
 
     // Build dropdown HTML
     let html = '';
 
-    // Add coin groups
-    for (const [category, coinList] of Object.entries(groups)) {
-        if (coinList.length > 0) {
+    // Add coin groups in order
+    for (const category of categoryOrder) {
+        const coinList = groups[category];
+        if (coinList && coinList.length > 0) {
             html += `<optgroup label="${categoryDisplayNames[category] || category}">`;
             coinList.forEach(coinName => {
                 html += `<option value="${coinName}">${coinName}</option>`;
@@ -1026,6 +1044,59 @@ function populateQuickTradeDropdown(coins) {
     }
 
     coinSelect.innerHTML = html;
+
+    // Trigger change to update form with first selected coin
+    if (coinSelect.options.length > 0) {
+        coinSelect.dispatchEvent(new Event('change'));
+    }
+}
+
+/**
+ * Setup category filter buttons for Quick Trade dropdown
+ */
+function setupCategoryFilters() {
+    const filterContainer = document.getElementById('coin-category-filters');
+    if (!filterContainer) return;
+
+    const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+
+    let html = '';
+    categories.forEach((cat, idx) => {
+        const isActive = idx === 0 ? 'active' : '';
+        const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
+        html += `<button type="button" class="btn ${btnClass} btn-sm me-1 mb-1 category-filter-btn ${isActive}"
+                         data-category="${cat === 'All' ? '' : cat}">${cat}</button>`;
+    });
+
+    filterContainer.innerHTML = html;
+
+    // Add click handlers
+    filterContainer.querySelectorAll('.category-filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Update active state
+            filterContainer.querySelectorAll('.category-filter-btn').forEach(b => {
+                b.classList.remove('active', 'btn-primary');
+                b.classList.add('btn-outline-secondary');
+            });
+            this.classList.add('active', 'btn-primary');
+            this.classList.remove('btn-outline-secondary');
+
+            // Filter dropdown
+            const category = this.dataset.category || null;
+            if (window.allCoinsData) {
+                populateQuickTradeDropdown(window.allCoinsData, category);
+            }
+        });
+    });
+}
+
+/**
+ * Filter Quick Trade dropdown by category
+ */
+function filterCoinsByCategory(category) {
+    if (window.allCoinsData) {
+        populateQuickTradeDropdown(window.allCoinsData, category || null);
+    }
 }
 
 function populateQuickTradeForm(selection) {
@@ -2191,6 +2262,31 @@ async function refreshLeverageTables() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Leverage Tables';
+    }
+}
+
+/**
+ * Cleanup duplicate coin entries (e.g., KBONK vs kBONK)
+ */
+async function cleanupDuplicates() {
+    const btn = document.getElementById('cleanup-duplicates-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cleaning...';
+
+    try {
+        const result = await apiCall('/coins/cleanup-duplicates', 'POST');
+        if (result.success) {
+            showToast(result.message, 'success');
+            invalidateCoinCache();  // Clear cache so Quick Trade reloads fresh data
+            loadCoinConfigs();  // Refresh the table
+        } else {
+            showToast('Failed to cleanup: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Failed to cleanup duplicates', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-trash me-1"></i>Cleanup Duplicates';
     }
 }
 

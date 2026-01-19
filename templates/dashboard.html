@@ -156,8 +156,14 @@
             </div>
             <div class="card-body">
                 <form id="quick-trade-form">
+                    <div class="mb-2">
+                        <label class="form-label mb-1">Filter by Category</label>
+                        <div id="coin-category-filters" class="d-flex flex-wrap">
+                            <!-- Category filter buttons will be populated by JS -->
+                        </div>
+                    </div>
                     <div class="mb-3">
-                        <label class="form-label">Coin / Category</label>
+                        <label class="form-label">Coin</label>
                         <select class="form-select bg-dark text-light border-secondary" id="trade-coin">
                             <option value="">Loading coins...</option>
                         </select>
