@@ -159,15 +159,70 @@
                     <div class="mb-2">
                         <label class="form-label mb-1">Filter by Category</label>
                         <div id="coin-category-filters" class="d-flex flex-wrap">
-                            <!-- Category filter buttons will be populated by JS -->
+                            <!-- Populated immediately from cache below -->
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Coin</label>
                         <select class="form-select bg-dark text-light border-secondary" id="trade-coin">
-                            <option value="">Loading coins...</option>
+                            <!-- Populated immediately from cache below -->
                         </select>
                     </div>
+                    <script>
+                    // IMMEDIATE cache load - runs synchronously before page finishes rendering
+                    (function() {
+                        const CACHE_KEY = 'mak_quick_trade_coins';
+                        const categoryOrder = ['L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+                        const categoryNames = {'L1s': 'L1s', 'APPS': 'APPS', 'MEMES': 'MEMES', 'HIP-3 Perps': 'HIP-3 Perps'};
+
+                        try {
+                            const cached = localStorage.getItem(CACHE_KEY);
+                            if (cached) {
+                                const coins = JSON.parse(cached);
+                                const select = document.getElementById('trade-coin');
+                                const filterDiv = document.getElementById('coin-category-filters');
+
+                                // Build category filter buttons
+                                if (filterDiv) {
+                                    const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+                                    let filterHtml = '';
+                                    categories.forEach((cat, idx) => {
+                                        const isActive = idx === 0 ? 'active' : '';
+                                        const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
+                                        filterHtml += '<button type="button" class="btn ' + btnClass + ' btn-sm me-1 mb-1 category-filter-btn ' + isActive + '" data-category="' + (cat === 'All' ? '' : cat) + '">' + cat + '</button>';
+                                    });
+                                    filterDiv.innerHTML = filterHtml;
+                                }
+
+                                // Build dropdown
+                                if (select && coins.length > 0) {
+                                    const groups = {};
+                                    categoryOrder.forEach(cat => groups[cat] = []);
+                                    coins.forEach(coin => {
+                                        const category = coin.category || 'L1s';
+                                        if (groups[category]) groups[category].push(coin.coin);
+                                        else groups[category] = [coin.coin];
+                                    });
+
+                                    let html = '';
+                                    categoryOrder.forEach(category => {
+                                        const coinList = groups[category];
+                                        if (coinList && coinList.length > 0) {
+                                            html += '<optgroup label="' + (categoryNames[category] || category) + '">';
+                                            coinList.forEach(coinName => {
+                                                html += '<option value="' + coinName + '">' + coinName + '</option>';
+                                            });
+                                            html += '</optgroup>';
+                                        }
+                                    });
+                                    select.innerHTML = html;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Quick cache load failed:', e);
+                        }
+                    })();
+                    </script>
 
                     <div class="row mb-3">
                         <div class="col-6">
