@@ -921,6 +921,76 @@ def api_bulk_update_coins():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/coins/refresh-leverage', methods=['POST'])
+def api_refresh_leverage():
+    """Refresh max leverage and margin mode data from Hyperliquid API"""
+    import requests
+    from datetime import datetime
+
+    try:
+        # Fetch perpetuals metadata from Hyperliquid
+        response = requests.post(
+            'https://api.hyperliquid.xyz/info',
+            json={'type': 'meta'},
+            headers={'Content-Type': 'application/json'},
+            timeout=10
+        )
+
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': f'Hyperliquid API error: {response.status_code}'}), 500
+
+        data = response.json()
+        universe = data.get('universe', [])
+
+        if not universe:
+            return jsonify({'success': False, 'error': 'No perpetuals data returned from Hyperliquid'}), 500
+
+        # Build a map of coin name -> metadata
+        hl_metadata = {}
+        for asset in universe:
+            name = asset.get('name')
+            if name:
+                hl_metadata[name] = {
+                    'maxLeverage': asset.get('maxLeverage', 50),
+                    'szDecimals': asset.get('szDecimals', 2),
+                    'onlyIsolated': asset.get('onlyIsolated', False),
+                    'marginMode': asset.get('marginMode')  # strictIsolated, noCross, or None
+                }
+
+        # Update all coin configs with the metadata
+        coins = CoinConfig.query.all()
+        updated = 0
+        not_found = []
+
+        for config in coins:
+            if config.coin in hl_metadata:
+                meta = hl_metadata[config.coin]
+                config.hl_max_leverage = meta['maxLeverage']
+                config.hl_sz_decimals = meta['szDecimals']
+                config.hl_only_isolated = meta['onlyIsolated']
+                config.hl_margin_mode = meta['marginMode']
+                config.hl_metadata_updated = datetime.utcnow()
+                updated += 1
+            else:
+                not_found.append(config.coin)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'updated': updated,
+            'not_found': not_found,
+            'message': f'Updated {updated} coins with Hyperliquid metadata'
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({'success': False, 'error': 'Hyperliquid API timeout'}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({'success': False, 'error': f'Network error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/test-connection', methods=['GET'])
 def api_test_connection():
     """Test Hyperliquid connection"""

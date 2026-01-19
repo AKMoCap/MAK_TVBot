@@ -168,10 +168,11 @@ class CoinConfig(db.Model):
     max_position_size = db.Column(db.Float, default=1000.0)  # 10x default collateral
     max_open_positions = db.Column(db.Integer, default=10)  # Per this coin
 
-    # Hyperliquid API metadata (refreshed daily)
-    hl_max_leverage = db.Column(db.Integer, default=10)  # Max leverage from Hyperliquid
+    # Hyperliquid API metadata (refreshed via button)
+    hl_max_leverage = db.Column(db.Integer, default=50)  # Max leverage from Hyperliquid
     hl_sz_decimals = db.Column(db.Integer, default=2)  # Size decimals for orders
     hl_only_isolated = db.Column(db.Boolean, default=False)  # Isolated margin only
+    hl_margin_mode = db.Column(db.String(20), nullable=True)  # strictIsolated, noCross, or null (cross)
     hl_metadata_updated = db.Column(db.DateTime, nullable=True)  # Last metadata refresh
 
     # Stop Loss default
@@ -218,6 +219,7 @@ class CoinConfig(db.Model):
             'hl_max_leverage': self.hl_max_leverage,
             'hl_sz_decimals': self.hl_sz_decimals,
             'hl_only_isolated': self.hl_only_isolated,
+            'hl_margin_mode': self.hl_margin_mode,
             'hl_metadata_updated': self.hl_metadata_updated.isoformat() if self.hl_metadata_updated else None
         }
 
