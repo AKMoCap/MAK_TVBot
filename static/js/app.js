@@ -34,6 +34,9 @@ function showToast(message, type = 'info') {
         'info': 'bi-info-circle'
     }[type] || 'bi-info-circle';
 
+    // Use longer delay for errors so users have time to read them
+    const delay = type === 'error' ? 10000 : (type === 'warning' ? 7000 : 5000);
+
     const html = `
         <div id="${toastId}" class="toast" role="alert">
             <div class="toast-header bg-dark text-light">
@@ -50,7 +53,7 @@ function showToast(message, type = 'info') {
 
     container.insertAdjacentHTML('beforeend', html);
     const toastEl = document.getElementById(toastId);
-    const toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });
+    const toast = new bootstrap.Toast(toastEl, { autohide: true, delay: delay });
     toast.show();
 
     toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
@@ -87,19 +90,56 @@ function formatDate(dateStr) {
     return date.toLocaleString();
 }
 
-async function apiCall(endpoint, method = 'GET', data = null) {
-    const options = {
+/**
+ * Make an API call with optional loading state management
+ * @param {string} endpoint - API endpoint (without /api prefix)
+ * @param {string} method - HTTP method
+ * @param {object} data - Request body data
+ * @param {object} options - Additional options
+ * @param {HTMLElement} options.loadingButton - Button to show loading state on
+ * @param {string} options.loadingText - Text to show while loading
+ * @param {boolean} options.silent - Don't show error toast on failure
+ */
+async function apiCall(endpoint, method = 'GET', data = null, options = {}) {
+    const { loadingButton, loadingText, silent } = options;
+    let originalButtonContent = null;
+
+    // Set loading state on button if provided
+    if (loadingButton) {
+        originalButtonContent = loadingButton.innerHTML;
+        loadingButton.disabled = true;
+        loadingButton.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${loadingText || 'Loading...'}`;
+    }
+
+    const fetchOptions = {
         method,
         headers: { 'Content-Type': 'application/json' }
     };
-    if (data) options.body = JSON.stringify(data);
+    if (data) fetchOptions.body = JSON.stringify(data);
 
     try {
-        const response = await fetch('/api' + endpoint, options);
-        return await response.json();
+        const response = await fetch('/api' + endpoint, fetchOptions);
+        const result = await response.json();
+
+        // Restore button state on success
+        if (loadingButton) {
+            loadingButton.disabled = false;
+            loadingButton.innerHTML = originalButtonContent;
+        }
+
+        return result;
     } catch (error) {
         console.error('API Error:', error);
-        showToast('API request failed: ' + error.message, 'error');
+
+        // Restore button state on error
+        if (loadingButton) {
+            loadingButton.disabled = false;
+            loadingButton.innerHTML = originalButtonContent;
+        }
+
+        if (!silent) {
+            showToast('API request failed: ' + error.message, 'error');
+        }
         throw error;
     }
 }
@@ -152,6 +192,32 @@ function setupHyperliquidWebSocket() {
     hlWebSocket.onPriceUpdate = (prices) => {
         // Update price displays with WebSocket data
         updatePricesFromWebSocket(prices);
+    };
+
+    // Set up connection status change callback for user notifications
+    hlWebSocket.onConnectionStatusChange = (connected, status, attempt, maxAttempts) => {
+        console.log('[WS] Connection status changed:', status);
+        if (status === 'connected') {
+            updateConnectionStatus(true);
+            // Only show reconnection success if we were previously trying to reconnect
+            if (attempt > 0) {
+                showToast('Real-time connection restored', 'success');
+            }
+        } else if (status === 'reconnecting') {
+            updateConnectionStatus(false);
+            // Show reconnection attempt on first retry
+            if (attempt === 1) {
+                showToast('Real-time connection lost. Attempting to reconnect...', 'warning');
+            }
+        } else if (status === 'disconnected') {
+            updateConnectionStatus(false);
+        }
+    };
+
+    // Set up callback for when max reconnection attempts are reached
+    hlWebSocket.onReconnectFailed = () => {
+        showToast('Real-time updates unavailable. Please refresh the page to reconnect.', 'error');
+        updateConnectionStatus(false);
     };
 
     // If wallet is already connected (session restored), connect WebSocket now
@@ -256,74 +322,70 @@ async function fetchBotStatus() {
 }
 
 async function refreshDashboard() {
+    // Use Promise.allSettled for parallel API calls - one failure won't block others
+    const wsConnected = typeof hlWebSocket !== 'undefined' && hlWebSocket.isConnected;
+
+    // Build list of promises for parallel execution
+    const promises = [
+        apiCall('/account', 'GET', null, { silent: true }).catch(e => ({ error: e.message })),
+        apiCall('/stats/daily', 'GET', null, { silent: true }).catch(e => ({ error: e.message })),
+        apiCall('/activity?limit=10', 'GET', null, { silent: true }).catch(e => ({ error: e.message })),
+        loadAndCacheSpotBalances().catch(e => null)
+    ];
+
+    // Only fetch prices via REST if WebSocket is not connected
+    if (!wsConnected) {
+        promises.push(
+            apiCall('/prices', 'GET', null, { silent: true }).catch(e => ({ error: e.message }))
+        );
+    }
+
+    // Execute all promises in parallel
+    const results = await Promise.allSettled(promises);
     let connected = false;
 
-    try {
-        // Fetch account info - handle errors gracefully
-        const accountData = await apiCall('/account');
+    // Process account data (index 0)
+    const accountResult = results[0];
+    if (accountResult.status === 'fulfilled' && accountResult.value) {
+        const accountData = accountResult.value;
         if (accountData.error) {
-            // Show error but still consider connected if we got a response
             console.log('[Dashboard] Account error:', accountData.error);
-            // Don't reset to $0.00 - keep last known value to prevent flashing
-            connected = true;  // We reached the server
+            connected = true; // We reached the server
         } else {
             updateAccountCards(accountData);
             updatePositionsTable(accountData.positions || []);
             connected = true;
 
             // Update WebSocket HIP-3 cache with positions from REST API
-            // This ensures HIP-3 positions persist between WebSocket updates
             if (typeof hlWebSocket !== 'undefined' && hlWebSocket.updateHip3Cache) {
                 hlWebSocket.updateHip3Cache(accountData.positions || []);
             }
         }
-    } catch (error) {
-        console.error('[Dashboard] Account fetch failed:', error);
     }
 
-    // Load/refresh spot balances (for account value calculation and Spot tab)
-    try {
-        await loadAndCacheSpotBalances();
-    } catch (error) {
-        console.error('[Dashboard] Spot balances fetch failed:', error);
-    }
-
-    try {
-        // Fetch daily stats
-        const statsData = await apiCall('/stats/daily');
-        if (!statsData.error) {
-            updateDailyStats(statsData);
-        }
+    // Process stats data (index 1)
+    const statsResult = results[1];
+    if (statsResult.status === 'fulfilled' && statsResult.value && !statsResult.value.error) {
+        updateDailyStats(statsResult.value);
         connected = true;
-    } catch (error) {
-        console.error('[Dashboard] Stats fetch failed:', error);
     }
 
-    // Only fetch prices via REST API if WebSocket is not connected
-    // WebSocket allMids subscription provides real-time prices without rate limit impact
-    const wsConnected = typeof hlWebSocket !== 'undefined' && hlWebSocket.isConnected;
-    if (!wsConnected) {
-        try {
-            // Fetch market prices (fallback when WebSocket unavailable)
-            const pricesData = await apiCall('/prices');
-            if (!pricesData.error) {
-                updatePrices(pricesData);
-            }
+    // Process activity data (index 2)
+    const activityResult = results[2];
+    if (activityResult.status === 'fulfilled' && activityResult.value && !activityResult.value.error) {
+        updateActivityList(activityResult.value.logs || []);
+        connected = true;
+    }
+
+    // Spot balances (index 3) - handled by loadAndCacheSpotBalances
+
+    // Process prices data (index 4, only if WebSocket not connected)
+    if (!wsConnected && results.length > 4) {
+        const pricesResult = results[4];
+        if (pricesResult.status === 'fulfilled' && pricesResult.value && !pricesResult.value.error) {
+            updatePrices(pricesResult.value);
             connected = true;
-        } catch (error) {
-            console.error('[Dashboard] Prices fetch failed:', error);
         }
-    }
-
-    try {
-        // Fetch recent activity
-        const activityData = await apiCall('/activity?limit=10');
-        if (!activityData.error) {
-            updateActivityList(activityData.logs || []);
-        }
-        connected = true;
-    } catch (error) {
-        console.error('[Dashboard] Activity fetch failed:', error);
     }
 
     // Update connection status based on whether any call succeeded
@@ -633,6 +695,86 @@ function updateRiskBars(data) {
 let positionsCache = [];
 let currentSortColumn = 'posValue';
 let currentSortDirection = 'desc';
+let positionsLastUpdate = 0;  // Track last update time for efficient diffing
+
+/**
+ * Generate a unique key for a position (used for efficient DOM diffing)
+ */
+function getPositionKey(pos) {
+    return `${pos.coin}-${pos.side}`;
+}
+
+/**
+ * Create HTML for a single position row
+ */
+function createPositionRowHtml(pos) {
+    const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
+    const sideClass = pos.side === 'long' ? 'badge-long' : 'badge-short';
+    const hip3Badge = pos.is_hip3 ? '<span class="badge bg-info ms-1" style="font-size:0.65rem;padding:2px 4px;" title="HIP-3 Builder Perp">HIP-3</span>' : '';
+    const positionValue = Math.abs(pos.size) * (pos.mark_price || pos.entry_price || 0);
+    const margin = pos.margin_used || 0;
+
+    let fundingDisplay = '--';
+    if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
+        const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
+        const rateClass = pos.funding_rate >= 0 ? 'text-success' : 'text-danger';
+        fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
+    }
+
+    return `
+        <tr data-coin="${pos.coin}" data-side="${pos.side}" data-pos-value="${positionValue}" data-pos-key="${getPositionKey(pos)}">
+            <td><strong>${pos.coin}</strong>${hip3Badge}</td>
+            <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${pos.side.toUpperCase()}</span></td>
+            <td>${pos.leverage}x</td>
+            <td>${formatCurrency(margin)}</td>
+            <td>${formatCurrency(positionValue)}</td>
+            <td>${Math.abs(pos.size).toFixed(4)}</td>
+            <td>${formatPrice(pos.entry_price)}</td>
+            <td>${formatPrice(pos.mark_price)}</td>
+            <td>${pos.liquidation_price ? formatPrice(pos.liquidation_price) : '--'}</td>
+            <td>${fundingDisplay}</td>
+            <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)}</td>
+            <td>
+                <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')">
+                    <i class="bi bi-x-circle"></i>
+                </button>
+            </td>
+        </tr>
+    `;
+}
+
+/**
+ * Update a single row with new position data (in-place update)
+ */
+function updatePositionRow(row, pos) {
+    const cells = row.cells;
+    const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
+    const positionValue = Math.abs(pos.size) * (pos.mark_price || pos.entry_price || 0);
+    const margin = pos.margin_used || 0;
+
+    // Update data attributes
+    row.dataset.posValue = positionValue;
+
+    // Update only the cells that change frequently (mark price, P&L, margin, position value)
+    cells[3].textContent = formatCurrency(margin);  // Margin
+    cells[4].textContent = formatCurrency(positionValue);  // Position value
+    cells[5].textContent = Math.abs(pos.size).toFixed(4);  // Size
+    cells[7].textContent = formatPrice(pos.mark_price);  // Mark price
+
+    // P&L cell with color
+    const pnlCell = cells[10];
+    pnlCell.textContent = formatCurrency(pos.unrealized_pnl);
+    pnlCell.className = pnlClass;
+
+    // Funding rate
+    let fundingDisplay = '--';
+    if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
+        const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
+        const rateClass = pos.funding_rate >= 0 ? 'text-success' : 'text-danger';
+        fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
+    }
+    cells[9].innerHTML = fundingDisplay;
+}
 
 function updatePositionsTable(positions) {
     console.log('[updatePositionsTable] Called with', positions?.length || 0, 'positions');
@@ -666,56 +808,35 @@ function updatePositionsTable(positions) {
                 </td>
             </tr>
         `;
+        positionsLastUpdate = Date.now();
         return;
     }
 
     // Apply sorting
     const sortedPositions = sortPositions(filteredPositions, currentSortColumn, currentSortDirection);
 
-    console.log('[updatePositionsTable] Rendering positions:', sortedPositions.length);
+    // Check if we can do an efficient in-place update
+    const existingRows = tbody.querySelectorAll('tr[data-pos-key]');
+    const existingKeys = new Set([...existingRows].map(r => r.dataset.posKey));
+    const newKeys = new Set(sortedPositions.map(getPositionKey));
 
-    tbody.innerHTML = sortedPositions.map(pos => {
-        const pnlClass = pos.unrealized_pnl >= 0 ? 'text-success' : 'text-danger';
-        const sideClass = pos.side === 'long' ? 'badge-long' : 'badge-short';
-        // HIP-3 badge for builder-deployed perps
-        const hip3Badge = pos.is_hip3 ? '<span class="badge bg-info ms-1" style="font-size:0.65rem;padding:2px 4px;" title="HIP-3 Builder Perp">HIP-3</span>' : '';
+    // If the set of positions hasn't changed and order is same, do in-place update
+    const canUpdateInPlace = existingRows.length === sortedPositions.length &&
+        sortedPositions.every((pos, idx) => existingRows[idx]?.dataset.posKey === getPositionKey(pos));
 
-        // Calculate position value (notional): |size| * mark_price
-        const positionValue = Math.abs(pos.size) * (pos.mark_price || pos.entry_price || 0);
+    if (canUpdateInPlace) {
+        // Efficient path: update existing rows in place
+        console.log('[updatePositionsTable] In-place update for', sortedPositions.length, 'positions');
+        sortedPositions.forEach((pos, idx) => {
+            updatePositionRow(existingRows[idx], pos);
+        });
+    } else {
+        // Full rebuild needed (positions added/removed/reordered)
+        console.log('[updatePositionsTable] Full rebuild for', sortedPositions.length, 'positions');
+        tbody.innerHTML = sortedPositions.map(createPositionRowHtml).join('');
+    }
 
-        // Margin used
-        const margin = pos.margin_used || 0;
-
-        // Funding - show annualized rate only
-        // Green if funding >= 0, red if below 0
-        let fundingDisplay = '--';
-        if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
-            const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
-            const rateClass = pos.funding_rate >= 0 ? 'text-success' : 'text-danger';
-            fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
-        }
-
-        return `
-            <tr data-coin="${pos.coin}" data-side="${pos.side}" data-pos-value="${positionValue}">
-                <td><strong>${pos.coin}</strong>${hip3Badge}</td>
-                <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${pos.side.toUpperCase()}</span></td>
-                <td>${pos.leverage}x</td>
-                <td>${formatCurrency(margin)}</td>
-                <td>${formatCurrency(positionValue)}</td>
-                <td>${Math.abs(pos.size).toFixed(4)}</td>
-                <td>${formatPrice(pos.entry_price)}</td>
-                <td>${formatPrice(pos.mark_price)}</td>
-                <td>${pos.liquidation_price ? formatPrice(pos.liquidation_price) : '--'}</td>
-                <td>${fundingDisplay}</td>
-                <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)}</td>
-                <td>
-                    <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')">
-                        <i class="bi bi-x-circle"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
+    positionsLastUpdate = Date.now();
 }
 
 /**
@@ -1956,16 +2077,84 @@ function setupDashboardEvents() {
     loadCoinConfigsForQuickTrade();
 }
 
-async function executeTrade(action) {
+/**
+ * Validate trade form inputs with detailed feedback
+ * @returns {object|null} - Validated data or null if validation failed
+ */
+function validateTradeForm() {
     const selection = document.getElementById('trade-coin').value;
-    const collateral = parseFloat(document.getElementById('trade-collateral').value);
-    const leverage = parseInt(document.getElementById('trade-leverage-range').value);
+    const collateralInput = document.getElementById('trade-collateral');
+    const leverageInput = document.getElementById('trade-leverage-range');
     const orderType = document.getElementById('order-type')?.value || 'market';
 
-    if (!selection || !collateral || !leverage) {
-        showToast('Please fill in all required fields', 'warning');
+    // Clear previous validation states
+    collateralInput.classList.remove('is-invalid');
+
+    // Validate coin selection
+    if (!selection) {
+        showToast('Please select a coin to trade', 'warning');
+        return null;
+    }
+
+    // Validate collateral
+    const collateral = parseFloat(collateralInput.value);
+    if (!collateral || isNaN(collateral)) {
+        showToast('Please enter a valid collateral amount', 'warning');
+        collateralInput.classList.add('is-invalid');
+        collateralInput.focus();
+        return null;
+    }
+
+    if (collateral <= 0) {
+        showToast('Collateral must be a positive amount', 'warning');
+        collateralInput.classList.add('is-invalid');
+        collateralInput.focus();
+        return null;
+    }
+
+    if (collateral < 1) {
+        showToast('Minimum collateral is $1', 'warning');
+        collateralInput.classList.add('is-invalid');
+        collateralInput.focus();
+        return null;
+    }
+
+    if (collateral > 100000) {
+        showToast('Maximum collateral is $100,000 per trade', 'warning');
+        collateralInput.classList.add('is-invalid');
+        collateralInput.focus();
+        return null;
+    }
+
+    // Validate leverage
+    const leverage = parseInt(leverageInput.value);
+    if (!leverage || isNaN(leverage) || leverage < 1) {
+        showToast('Please select a valid leverage', 'warning');
+        return null;
+    }
+
+    // Check leverage against coin's max leverage
+    const maxLeverage = getMaxLeverage(selection);
+    if (leverage > maxLeverage) {
+        showToast(`Leverage ${leverage}x exceeds maximum ${maxLeverage}x for ${selection}`, 'error');
+        return null;
+    }
+
+    return { selection, collateral, leverage, orderType };
+}
+
+async function executeTrade(action) {
+    // Validate action parameter
+    if (!['buy', 'sell'].includes(action.toLowerCase())) {
+        showToast('Invalid trade action', 'error');
         return;
     }
+
+    // Validate form inputs
+    const validated = validateTradeForm();
+    if (!validated) return;
+
+    const { selection, collateral, leverage, orderType } = validated;
 
     // Check if this is a category trade (only for market orders)
     if (isCategory(selection)) {
@@ -2005,6 +2194,9 @@ async function executeMarketOrder(coin, action, collateral, leverage) {
     const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
     const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
 
+    // Get the button for loading state
+    const button = document.getElementById(action === 'buy' ? 'buy-btn' : 'sell-btn');
+
     try {
         const result = await apiCall('/trade', 'POST', {
             coin,
@@ -2016,6 +2208,9 @@ async function executeMarketOrder(coin, action, collateral, leverage) {
             tp1_size_pct: tp1SizePct,
             tp2_pct: tp2Pct,
             tp2_size_pct: tp2SizePct
+        }, {
+            loadingButton: button,
+            loadingText: 'Executing...'
         });
 
         if (result.success) {
@@ -2062,6 +2257,9 @@ async function executeLimitOrder(coin, action, collateral, leverage) {
         return;
     }
 
+    // Get the button for loading state
+    const button = document.getElementById(action === 'buy' ? 'buy-btn' : 'sell-btn');
+
     try {
         const result = await apiCall('/limit-order', 'POST', {
             coin,
@@ -2069,6 +2267,9 @@ async function executeLimitOrder(coin, action, collateral, leverage) {
             leverage,
             collateral_usd: collateral,
             limit_price: limitPrice
+        }, {
+            loadingButton: button,
+            loadingText: 'Placing...'
         });
 
         if (result.success) {
@@ -2102,6 +2303,9 @@ async function executeTwapOrder(coin, action, collateral, leverage) {
         return;
     }
 
+    // Get the button for loading state
+    const button = document.getElementById(action === 'buy' ? 'buy-btn' : 'sell-btn');
+
     try {
         const result = await apiCall('/twap-order', 'POST', {
             coin,
@@ -2111,6 +2315,9 @@ async function executeTwapOrder(coin, action, collateral, leverage) {
             hours,
             minutes,
             randomize
+        }, {
+            loadingButton: button,
+            loadingText: 'Starting TWAP...'
         });
 
         if (result.success) {
@@ -2162,6 +2369,9 @@ async function executeScaleOrder(coin, action, collateral, leverage) {
     // For Short orders: Price From should be lower than Price To (selling at higher prices)
     const isLong = action === 'buy';
 
+    // Get the button for loading state
+    const button = document.getElementById(action === 'buy' ? 'buy-btn' : 'sell-btn');
+
     try {
         const result = await apiCall('/scale-order', 'POST', {
             coin,
@@ -2173,6 +2383,9 @@ async function executeScaleOrder(coin, action, collateral, leverage) {
             num_orders: numOrders,
             skew,
             reduce_only: reduceOnly
+        }, {
+            loadingButton: button,
+            loadingText: 'Placing orders...'
         });
 
         if (result.success) {

@@ -758,11 +758,42 @@ def api_trade():
             return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
 
         data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No trade data provided'}), 400
 
-        coin = data.get('coin', 'BTC')  # Preserve case - Hyperliquid uses case-sensitive names like kBONK
-        action = data.get('action', '').lower()
-        leverage = int(data.get('leverage', 10))
-        collateral_usd = float(data.get('collateral_usd', 100))
+        coin = data.get('coin', '').strip()  # Preserve case - Hyperliquid uses case-sensitive names like kBONK
+        action = data.get('action', '').lower().strip()
+
+        # Input validation
+        if not coin:
+            return jsonify({'success': False, 'error': 'Coin is required'}), 400
+
+        if action not in ('buy', 'sell'):
+            return jsonify({'success': False, 'error': 'Invalid action. Must be "buy" or "sell"'}), 400
+
+        try:
+            leverage = int(data.get('leverage', 10))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid leverage value'}), 400
+
+        try:
+            collateral_usd = float(data.get('collateral_usd', 100))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid collateral value'}), 400
+
+        # Validate ranges
+        if leverage < 1 or leverage > 100:
+            return jsonify({'success': False, 'error': 'Leverage must be between 1 and 100'}), 400
+
+        if collateral_usd <= 0:
+            return jsonify({'success': False, 'error': 'Collateral must be a positive amount'}), 400
+
+        if collateral_usd < 1:
+            return jsonify({'success': False, 'error': 'Minimum collateral is $1'}), 400
+
+        if collateral_usd > 100000:
+            return jsonify({'success': False, 'error': 'Maximum collateral is $100,000 per trade'}), 400
+
         stop_loss_pct = data.get('stop_loss_pct')
         take_profit_pct = data.get('take_profit_pct')
         tp1_pct = data.get('tp1_pct')
@@ -836,9 +867,22 @@ def api_trade():
 
         return jsonify(result)
 
+    except ValueError as e:
+        logger.warning(f"Trade validation error: {e}")
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f'Invalid input: {str(e)}'}), 400
     except Exception as e:
         logger.exception(f"Trade error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        db.session.rollback()
+        # Provide user-friendly error message
+        error_msg = str(e)
+        if 'insufficient' in error_msg.lower():
+            error_msg = 'Insufficient balance to execute this trade'
+        elif 'rate limit' in error_msg.lower() or '429' in error_msg:
+            error_msg = 'Too many requests. Please wait a moment and try again.'
+        elif 'timeout' in error_msg.lower():
+            error_msg = 'Request timed out. Please try again.'
+        return jsonify({'success': False, 'error': error_msg}), 500
 
 
 @app.route('/api/close', methods=['POST'])
@@ -1017,18 +1061,31 @@ def api_trades():
             page=page, per_page=per_page, error_out=False
         )
 
-        # Calculate stats
-        all_closed = Trade.query.filter_by(status='closed').all()
-        wins = [t for t in all_closed if (t.pnl or 0) > 0]
-        losses = [t for t in all_closed if (t.pnl or 0) < 0]
+        # Calculate stats using SQL aggregates for better performance
+        from sqlalchemy import func, case
+
+        # Get aggregate stats in a single query
+        stats_query = db.session.query(
+            func.count(Trade.id).label('total_trades'),
+            func.sum(Trade.pnl).label('total_pnl'),
+            func.max(Trade.pnl).label('best_trade'),
+            func.count(case((Trade.pnl > 0, 1))).label('win_count'),
+            func.count(case((Trade.pnl < 0, 1))).label('loss_count'),
+            func.sum(case((Trade.pnl > 0, Trade.pnl), else_=0)).label('total_wins'),
+            func.sum(case((Trade.pnl < 0, Trade.pnl), else_=0)).label('total_losses')
+        ).filter(Trade.status == 'closed').first()
+
+        total_trades = stats_query.total_trades or 0
+        win_count = stats_query.win_count or 0
+        loss_count = stats_query.loss_count or 0
 
         stats = {
-            'total_trades': len(all_closed),
-            'win_rate': (len(wins) / len(all_closed) * 100) if all_closed else 0,
-            'total_pnl': sum(t.pnl or 0 for t in all_closed),
-            'avg_win': (sum(t.pnl for t in wins) / len(wins)) if wins else 0,
-            'avg_loss': (sum(t.pnl for t in losses) / len(losses)) if losses else 0,
-            'best_trade': max((t.pnl or 0 for t in all_closed), default=0)
+            'total_trades': total_trades,
+            'win_rate': (win_count / total_trades * 100) if total_trades > 0 else 0,
+            'total_pnl': float(stats_query.total_pnl or 0),
+            'avg_win': float(stats_query.total_wins or 0) / win_count if win_count > 0 else 0,
+            'avg_loss': float(stats_query.total_losses or 0) / loss_count if loss_count > 0 else 0,
+            'best_trade': float(stats_query.best_trade or 0)
         }
 
         return jsonify({
@@ -1084,9 +1141,15 @@ def api_create_indicator():
     """Create a new indicator"""
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        name = data.get('name', '').strip()
+        if not name:
+            return jsonify({'success': False, 'error': 'Indicator name is required'}), 400
 
         indicator = Indicator(
-            name=data.get('name'),
+            name=name,
             indicator_type=data.get('indicator_type'),
             description=data.get('description'),
             webhook_key=data.get('webhook_key'),
@@ -1101,7 +1164,9 @@ def api_create_indicator():
         return jsonify({'success': True, 'indicator': indicator.to_dict()})
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        db.session.rollback()
+        logger.exception(f"Error creating indicator: {e}")
+        return jsonify({'success': False, 'error': 'Failed to create indicator. Please try again.'}), 500
 
 
 @app.route('/api/indicators/<int:id>', methods=['PUT'])
@@ -1125,7 +1190,9 @@ def api_update_indicator(id):
         return jsonify({'success': True})
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        db.session.rollback()
+        logger.exception(f"Error updating indicator: {e}")
+        return jsonify({'success': False, 'error': 'Failed to update indicator. Please try again.'}), 500
 
 
 @app.route('/api/indicators/<int:id>', methods=['DELETE'])
@@ -1133,15 +1200,18 @@ def api_delete_indicator(id):
     """Delete an indicator"""
     try:
         indicator = Indicator.query.get_or_404(id)
+        name = indicator.name
         db.session.delete(indicator)
         db.session.commit()
 
-        log_activity('info', 'system', f"Deleted indicator: {indicator.name}")
+        log_activity('info', 'system', f"Deleted indicator: {name}")
 
         return jsonify({'success': True})
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        db.session.rollback()
+        logger.exception(f"Error deleting indicator: {e}")
+        return jsonify({'success': False, 'error': 'Failed to delete indicator. Please try again.'}), 500
 
 
 # ============================================================================
@@ -1225,6 +1295,37 @@ def api_get_coins():
         return jsonify({'coins': [c.to_dict() for c in coins]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/coins/list', methods=['GET'])
+def api_get_coins_list():
+    """
+    Lightweight endpoint for Quick Trade dropdown.
+    Returns only essential fields: coin name, category, max leverage.
+    Much faster than /api/coins for dropdown population.
+    """
+    try:
+        # Use a targeted query selecting only needed columns
+        coins = db.session.query(
+            CoinConfig.coin,
+            CoinConfig.category,
+            CoinConfig.hl_max_leverage,
+            CoinConfig.enabled
+        ).filter(CoinConfig.enabled == True).all()
+
+        return jsonify({
+            'coins': [
+                {
+                    'coin': c.coin,
+                    'category': c.category or 'L1s',
+                    'hl_max_leverage': c.hl_max_leverage or 50
+                }
+                for c in coins
+            ]
+        })
+    except Exception as e:
+        logger.exception(f"Error getting coins list: {e}")
+        return jsonify({'error': 'Failed to load coins'}), 500
 
 
 @app.route('/api/coins/cleanup-duplicates', methods=['POST'])
@@ -1684,29 +1785,59 @@ def api_logs():
 
 @app.route('/api/trades/clear', methods=['DELETE'])
 def api_clear_trades():
-    """Clear all trade history"""
+    """Clear all trade history. Requires confirm=true parameter for safety."""
     try:
+        # Require explicit confirmation
+        confirm = request.args.get('confirm', '').lower() == 'true'
+        if not confirm:
+            count = Trade.query.count()
+            return jsonify({
+                'success': False,
+                'error': 'Confirmation required',
+                'message': f'This will permanently delete {count} trades. Add ?confirm=true to confirm.',
+                'count': count
+            }), 400
+
         count = Trade.query.count()
+        if count == 0:
+            return jsonify({'success': True, 'deleted': 0, 'message': 'No trades to delete'})
+
         Trade.query.delete()
         db.session.commit()
         log_activity('info', 'system', f'Cleared {count} trades from history')
         return jsonify({'success': True, 'deleted': count})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.exception(f"Error clearing trades: {e}")
+        return jsonify({'success': False, 'error': 'Failed to clear trades. Please try again.'}), 500
 
 
 @app.route('/api/logs/clear', methods=['DELETE'])
 def api_clear_logs():
-    """Clear all activity logs"""
+    """Clear all activity logs. Requires confirm=true parameter for safety."""
     try:
+        # Require explicit confirmation
+        confirm = request.args.get('confirm', '').lower() == 'true'
+        if not confirm:
+            count = ActivityLog.query.count()
+            return jsonify({
+                'success': False,
+                'error': 'Confirmation required',
+                'message': f'This will permanently delete {count} log entries. Add ?confirm=true to confirm.',
+                'count': count
+            }), 400
+
         count = ActivityLog.query.count()
+        if count == 0:
+            return jsonify({'success': True, 'deleted': 0, 'message': 'No logs to delete'})
+
         ActivityLog.query.delete()
         db.session.commit()
         return jsonify({'success': True, 'deleted': count})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.exception(f"Error clearing logs: {e}")
+        return jsonify({'success': False, 'error': 'Failed to clear logs. Please try again.'}), 500
 
 
 # ============================================================================

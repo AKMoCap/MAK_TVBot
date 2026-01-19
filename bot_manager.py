@@ -54,6 +54,16 @@ class BotManager:
         self._prices_cache_time = 0
         self._prices_cache_ttl = 2  # 2 seconds TTL for REST fallback
 
+        # HIP-3 DEX list cache (reduces API calls for DEX discovery)
+        self._hip3_dex_cache = []
+        self._hip3_dex_cache_time = 0
+        self._hip3_dex_cache_ttl = 300  # 5 minutes TTL for DEX list
+
+        # HIP-3 funding rates cache
+        self._hip3_funding_cache = {}
+        self._hip3_funding_cache_time = 0
+        self._hip3_funding_cache_ttl = 60  # 1 minute TTL for funding rates
+
     @property
     def is_enabled(self):
         return self._enabled
@@ -403,17 +413,27 @@ class BotManager:
 
         config = self.get_config()
         api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+        current_time = time.time()
 
         try:
-            # Step 1: Get list of all HIP-3 DEXs
-            dex_response = requests.post(
-                f"{api_url}/info",
-                json={"type": "perpDexs"},
-                headers={"Content-Type": "application/json"}
-            )
+            # Step 1: Get list of all HIP-3 DEXs (with caching)
+            if self._hip3_dex_cache and (current_time - self._hip3_dex_cache_time) < self._hip3_dex_cache_ttl:
+                dex_list = self._hip3_dex_cache
+                logger.debug(f"Using cached HIP-3 DEX list: {len(dex_list)} DEXs")
+            else:
+                dex_response = requests.post(
+                    f"{api_url}/info",
+                    json={"type": "perpDexs"},
+                    headers={"Content-Type": "application/json"},
+                    timeout=10
+                )
+                dex_list = dex_response.json()
+                logger.info(f"HIP-3 perpDexs response: {json.dumps(dex_list)[:500]}")
 
-            dex_list = dex_response.json()
-            logger.info(f"HIP-3 perpDexs response: {json.dumps(dex_list)[:500]}")
+                # Cache the result
+                if dex_list and isinstance(dex_list, list):
+                    self._hip3_dex_cache = dex_list
+                    self._hip3_dex_cache_time = current_time
 
             if not dex_list or not isinstance(dex_list, list):
                 logger.info("No HIP-3 DEXs found")
@@ -644,20 +664,37 @@ class BotManager:
 
         return size, current_price
 
-    def _retry_api_call(self, func, max_retries=3, initial_delay=2):
+    def _retry_api_call(self, func, max_retries=3, initial_delay=2, include_rate_limit_info=False):
         """
         Execute an API call with retry logic for rate limiting (429 errors).
         Uses exponential backoff: 2s, 4s, 8s
+
+        Args:
+            func: The function to call
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay in seconds (doubles each retry)
+            include_rate_limit_info: If True, returns tuple (result, rate_limited, retries)
+
+        Returns:
+            The result of func(), or tuple if include_rate_limit_info is True
         """
         last_error = None
+        was_rate_limited = False
+        total_retries = 0
+
         for attempt in range(max_retries):
             try:
-                return func()
+                result = func()
+                if include_rate_limit_info:
+                    return result, was_rate_limited, total_retries
+                return result
             except Exception as e:
                 last_error = e
                 error_str = str(e)
                 # Check for rate limiting (429)
                 if '429' in error_str:
+                    was_rate_limited = True
+                    total_retries = attempt + 1
                     if attempt < max_retries - 1:
                         delay = initial_delay * (2 ** attempt)  # Exponential backoff
                         logger.warning(f"Rate limited (429), retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
@@ -665,6 +702,10 @@ class BotManager:
                         continue
                 # Non-429 errors or max retries reached
                 raise
+
+        # Include rate limit info in the exception message
+        if was_rate_limited:
+            raise Exception(f"Rate limited after {total_retries} retries. Please wait a moment and try again.")
         raise last_error
 
     def execute_trade(self, coin, action, leverage, collateral_usd, stop_loss_pct=None, take_profit_pct=None,

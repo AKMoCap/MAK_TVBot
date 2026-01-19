@@ -21,6 +21,8 @@ class HyperliquidWebSocket {
         this._onOrderUpdate = null;
         this._onFillUpdate = null;
         this._onPriceUpdate = null;  // New: callback for price updates
+        this._onConnectionStatusChange = null;  // New: callback for connection status changes
+        this._onReconnectFailed = null;  // New: callback when max reconnect attempts reached
 
         // Buffer for data received before callbacks are set
         this._lastAccountData = null;
@@ -101,6 +103,12 @@ class HyperliquidWebSocket {
     set onPriceUpdate(callback) { this._onPriceUpdate = callback; }
     get onPriceUpdate() { return this._onPriceUpdate; }
 
+    set onConnectionStatusChange(callback) { this._onConnectionStatusChange = callback; }
+    get onConnectionStatusChange() { return this._onConnectionStatusChange; }
+
+    set onReconnectFailed(callback) { this._onReconnectFailed = callback; }
+    get onReconnectFailed() { return this._onReconnectFailed; }
+
     /**
      * Get WebSocket URL based on network
      */
@@ -155,6 +163,11 @@ class HyperliquidWebSocket {
                 this.isConnected = true;
                 this.reconnectAttempts = 0;
 
+                // Notify listeners of successful connection
+                if (this._onConnectionStatusChange) {
+                    this._onConnectionStatusChange(true, 'connected');
+                }
+
                 // Subscribe to webData2 for user positions/account data
                 this.subscribeToUserData();
 
@@ -175,12 +188,32 @@ class HyperliquidWebSocket {
                 this.isConnected = false;
                 this.stopPing();
 
+                // Notify listeners of disconnection
+                if (this._onConnectionStatusChange) {
+                    this._onConnectionStatusChange(false, 'disconnected');
+                }
+
                 // Attempt reconnection if not intentionally closed
                 if (this.userAddress && this.reconnectAttempts < this.maxReconnectAttempts) {
                     this.reconnectAttempts++;
                     const delay = this.reconnectDelay * this.reconnectAttempts;
                     console.log(`[HL-WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+
+                    // Notify listeners of reconnection attempt
+                    if (this._onConnectionStatusChange) {
+                        this._onConnectionStatusChange(false, 'reconnecting', this.reconnectAttempts, this.maxReconnectAttempts);
+                    }
+
                     setTimeout(() => this.connect(this.userAddress), delay);
+                } else if (this.userAddress && this.reconnectAttempts >= this.maxReconnectAttempts) {
+                    // Max reconnection attempts reached - notify user
+                    console.error('[HL-WS] Max reconnection attempts reached');
+                    if (this._onReconnectFailed) {
+                        this._onReconnectFailed();
+                    }
+                    if (this._onConnectionStatusChange) {
+                        this._onConnectionStatusChange(false, 'failed');
+                    }
                 }
             };
 
