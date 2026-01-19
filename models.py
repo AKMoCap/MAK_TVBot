@@ -323,29 +323,34 @@ class ActivityLog(db.Model):
         }
 
 
-def init_db(app, run_migrations=True):
-    """Initialize database with Flask-Migrate and seed default values"""
+def init_db(app, run_migrations=None):
+    """Initialize database with Flask-Migrate and seed default values
+    
+    run_migrations: True = always run, False = never run, None = auto-detect
+    In development (python app.py), migrations run automatically.
+    In production (gunicorn), migrations should run via build step.
+    """
     import logging
+    import os
     logger = logging.getLogger(__name__)
     
     db.init_app(app)
     migrate.init_app(app, db)
+    
+    # Auto-detect: run migrations in dev but not under gunicorn workers
+    if run_migrations is None:
+        # Check if we're running under gunicorn (production)
+        run_migrations = 'gunicorn' not in os.environ.get('SERVER_SOFTWARE', '')
 
     with app.app_context():
-        # Run Alembic migrations FIRST to ensure schema is up to date
+        # Run migrations to ensure schema is up to date
         if run_migrations:
             try:
                 from flask_migrate import upgrade
                 upgrade()
                 logger.info("Database migrations applied successfully")
             except Exception as e:
-                logger.warning(f"Migration warning (may be OK on first run): {e}")
-                # Fallback: create tables if migrations fail
-                try:
-                    db.create_all()
-                    logger.info("Database tables created via create_all fallback")
-                except Exception as e2:
-                    logger.error(f"Failed to create tables: {e2}")
+                logger.warning(f"Migration warning: {e}")
 
         # Verify user_wallets table exists - create if missing
         try:
