@@ -221,12 +221,13 @@ def api_open_orders():
 def api_cancel_order():
     """Cancel an open order"""
     try:
-        # Check if wallet is connected and authorized
-        wallet_address = session.get('wallet_address')
-        agent_key = session.get('agent_private_key')
+        # Get current user from session (same pattern as /api/trade)
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
 
-        if not wallet_address or not agent_key:
-            return jsonify({'success': False, 'error': 'Not authorized'})
+        wallet_address = user.address
+        agent_key = user.get_agent_key()
 
         data = request.json
         oid = data.get('oid')
