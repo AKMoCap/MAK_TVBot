@@ -264,7 +264,12 @@ let stablecoinBalances = {
     usdh: 0
 };
 
-function updateAccountCards(data) {
+// Track if stablecoin fetch is in progress to prevent concurrent calls
+let stablecoinFetchInProgress = false;
+let lastStablecoinFetchTime = 0;
+const STABLECOIN_FETCH_DEBOUNCE_MS = 3000; // Only fetch every 3 seconds at most
+
+function updateAccountCards(data, skipStablecoinFetch = false) {
     // Store perps account value and USDC balance
     const perpsAccountValue = parseFloat(data.account_value) || 0;
     stablecoinBalances.usdcPerps = parseFloat(data.withdrawable) || perpsAccountValue;
@@ -283,8 +288,17 @@ function updateAccountCards(data) {
         totalPositionValue += posValue;
     });
 
-    // Fetch spot balances for total calculation
-    updateStablecoinBreakdown(perpsAccountValue);
+    // Fetch spot balances for total calculation (debounced)
+    const now = Date.now();
+    if (!skipStablecoinFetch && !stablecoinFetchInProgress && (now - lastStablecoinFetchTime > STABLECOIN_FETCH_DEBOUNCE_MS)) {
+        updateStablecoinBreakdown(perpsAccountValue);
+    } else {
+        // Use cached values to update display immediately
+        const cachedTotalSpot = stablecoinBalances.usdcSpot + stablecoinBalances.usdh;
+        const totalValue = perpsAccountValue + cachedTotalSpot;
+        document.getElementById('account-value').textContent = formatCurrency(totalValue);
+        document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
+    }
 
     // Update Collateral at Risk
     const collateralEl = document.getElementById('collateral-at-risk');
@@ -325,6 +339,11 @@ async function updateStablecoinBreakdown(perpsAccountValue) {
     const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
     if (!walletAddress) return;
 
+    // Prevent concurrent fetches
+    if (stablecoinFetchInProgress) return;
+    stablecoinFetchInProgress = true;
+    lastStablecoinFetchTime = Date.now();
+
     try {
         const data = await apiCall(`/spot-balances?address=${walletAddress}`);
         const balances = data.balances || [];
@@ -361,6 +380,40 @@ async function updateStablecoinBreakdown(perpsAccountValue) {
         // Still show perps value
         document.getElementById('account-value').textContent = formatCurrency(perpsAccountValue);
         document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
+    } finally {
+        stablecoinFetchInProgress = false;
+    }
+}
+
+/**
+ * Force refresh stablecoin balances (for transfer modal)
+ */
+async function refreshStablecoinBalances() {
+    const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
+    if (!walletAddress) return;
+
+    try {
+        const data = await apiCall(`/spot-balances?address=${walletAddress}`);
+        const balances = data.balances || [];
+
+        balances.forEach(bal => {
+            if (bal.token === 'USDC') {
+                stablecoinBalances.usdcSpot = parseFloat(bal.total) || 0;
+            } else if (bal.token === 'USDH') {
+                stablecoinBalances.usdh = parseFloat(bal.total) || 0;
+            }
+        });
+
+        // Also get perps balance from account API
+        const accountData = await apiCall('/account');
+        if (!accountData.error) {
+            stablecoinBalances.usdcPerps = parseFloat(accountData.withdrawable) || parseFloat(accountData.account_value) || 0;
+        }
+
+        return stablecoinBalances;
+    } catch (error) {
+        console.error('Failed to refresh stablecoin balances:', error);
+        return stablecoinBalances;
     }
 }
 
@@ -385,10 +438,19 @@ function setupTransferModal() {
         directionSelect.addEventListener('change', updateAvailable);
     }
 
-    // Update available when modal opens
+    // Fetch fresh balances and update available when modal opens
     const transferModal = document.getElementById('transferModal');
     if (transferModal) {
-        transferModal.addEventListener('show.bs.modal', updateAvailable);
+        transferModal.addEventListener('show.bs.modal', async () => {
+            // Show loading state
+            availableEl.textContent = 'Loading...';
+
+            // Fetch fresh balances
+            await refreshStablecoinBalances();
+
+            // Update the display
+            updateAvailable();
+        });
     }
 
     // Max button
