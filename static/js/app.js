@@ -981,14 +981,17 @@ function processCoinData(coins) {
 /**
  * Load coin configs for Quick Trade dropdown
  * Uses STATIC localStorage cache - ONLY updates when user clicks "Refresh Leverage Tables"
- * This ensures instant loading and no unexpected refreshes
+ * Note: Dropdown is pre-populated by inline script in dashboard.html for INSTANT display
  */
 async function loadCoinConfigsForQuickTrade() {
-    // Try to load from static cache first (instant, no API call)
+    // Try to load from static cache first
     const cachedCoins = loadQuickTradeCache();
     if (cachedCoins && cachedCoins.length > 0) {
-        processCoinData(cachedCoins);
-        return;  // Use static cache - no API call needed
+        // Cache exists - the dropdown was already populated by inline script
+        // Just setup the internal data structures and event handlers
+        processCoinDataWithoutRepopulate(cachedCoins);
+        setupCategoryFilterHandlers();
+        return;
     }
 
     // No cache exists yet - fetch once and cache permanently
@@ -997,13 +1000,80 @@ async function loadCoinConfigsForQuickTrade() {
     try {
         const data = await apiCall('/coins');
         if (data.coins && data.coins.length > 0) {
-            // Save to static cache (won't be invalidated until explicit refresh)
             saveQuickTradeCache(data.coins);
-            processCoinData(data.coins);
+            processCoinData(data.coins);  // This will populate dropdown since cache was empty
         }
     } catch (error) {
         console.error('[QuickTrade] Failed to load initial coin configs:', error);
     }
+}
+
+/**
+ * Process coin data WITHOUT re-populating dropdown (for when inline script already did it)
+ */
+function processCoinDataWithoutRepopulate(coins) {
+    // Clear and rebuild caches
+    coinConfigsCache = {};
+    categoryCoins = {
+        'CAT:L1s': [],
+        'CAT:APPS': [],
+        'CAT:MEMES': [],
+        'CAT:HIP-3 Perps': []
+    };
+
+    // Populate caches
+    coins.forEach(coin => {
+        coinConfigsCache[coin.coin] = coin;
+        const category = coin.category || 'L1s';
+        const catKey = 'CAT:' + category;
+        if (categoryCoins[catKey]) {
+            categoryCoins[catKey].push(coin.coin);
+        } else {
+            categoryCoins[catKey] = [coin.coin];
+        }
+    });
+
+    // Store full coin list for filtering
+    window.allCoinsData = coins;
+
+    // DON'T repopulate dropdown - inline script already did it
+    // Just populate form with first selected coin
+    const coinSelect = document.getElementById('trade-coin');
+    if (coinSelect && coinSelect.value && !isCategory(coinSelect.value)) {
+        populateQuickTradeForm(coinSelect.value);
+    }
+}
+
+/**
+ * Setup click handlers for category filter buttons (pre-rendered by inline script)
+ */
+function setupCategoryFilterHandlers() {
+    const filterContainer = document.getElementById('coin-category-filters');
+    if (!filterContainer) return;
+
+    filterContainer.querySelectorAll('.category-filter-btn').forEach(btn => {
+        // Remove existing handlers to avoid duplicates
+        btn.replaceWith(btn.cloneNode(true));
+    });
+
+    // Re-query and add handlers
+    filterContainer.querySelectorAll('.category-filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Update active state
+            filterContainer.querySelectorAll('.category-filter-btn').forEach(b => {
+                b.classList.remove('active', 'btn-primary');
+                b.classList.add('btn-outline-secondary');
+            });
+            this.classList.add('active', 'btn-primary');
+            this.classList.remove('btn-outline-secondary');
+
+            // Filter dropdown
+            const category = this.dataset.category || null;
+            if (window.allCoinsData) {
+                populateQuickTradeDropdown(window.allCoinsData, category);
+            }
+        });
+    });
 }
 
 /**
@@ -1059,41 +1129,29 @@ function populateQuickTradeDropdown(coins, filterCategory = null) {
 
 /**
  * Setup category filter buttons for Quick Trade dropdown
+ * Only creates buttons if they don't exist (inline script may have already created them)
  */
 function setupCategoryFilters() {
     const filterContainer = document.getElementById('coin-category-filters');
     if (!filterContainer) return;
 
-    const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+    // Only create buttons if they don't exist yet
+    if (!filterContainer.querySelector('.category-filter-btn')) {
+        const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
 
-    let html = '';
-    categories.forEach((cat, idx) => {
-        const isActive = idx === 0 ? 'active' : '';
-        const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
-        html += `<button type="button" class="btn ${btnClass} btn-sm me-1 mb-1 category-filter-btn ${isActive}"
-                         data-category="${cat === 'All' ? '' : cat}">${cat}</button>`;
-    });
-
-    filterContainer.innerHTML = html;
-
-    // Add click handlers
-    filterContainer.querySelectorAll('.category-filter-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            // Update active state
-            filterContainer.querySelectorAll('.category-filter-btn').forEach(b => {
-                b.classList.remove('active', 'btn-primary');
-                b.classList.add('btn-outline-secondary');
-            });
-            this.classList.add('active', 'btn-primary');
-            this.classList.remove('btn-outline-secondary');
-
-            // Filter dropdown
-            const category = this.dataset.category || null;
-            if (window.allCoinsData) {
-                populateQuickTradeDropdown(window.allCoinsData, category);
-            }
+        let html = '';
+        categories.forEach((cat, idx) => {
+            const isActive = idx === 0 ? 'active' : '';
+            const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
+            html += `<button type="button" class="btn ${btnClass} btn-sm me-1 mb-1 category-filter-btn ${isActive}"
+                             data-category="${cat === 'All' ? '' : cat}">${cat}</button>`;
         });
-    });
+
+        filterContainer.innerHTML = html;
+    }
+
+    // Attach click handlers (works for both pre-rendered and newly created buttons)
+    setupCategoryFilterHandlers();
 }
 
 /**
