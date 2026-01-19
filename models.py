@@ -161,7 +161,8 @@ class CoinConfig(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     coin = db.Column(db.String(20), unique=True, nullable=False)
-    category = db.Column(db.String(20), default='L1s')  # L1s, APPS, MEMES
+    quote_asset = db.Column(db.String(20), default='USDC')  # Collateral asset: USDC, USDH, USDe, etc.
+    category = db.Column(db.String(20), default='L1s')  # L1s, APPS, MEMES, HIP-3 Perps
     enabled = db.Column(db.Boolean, default=True)
     default_leverage = db.Column(db.Integer, default=3)
     default_collateral = db.Column(db.Float, default=100.0)
@@ -201,6 +202,7 @@ class CoinConfig(db.Model):
         return {
             'id': self.id,
             'coin': self.coin,
+            'quote_asset': self.quote_asset or 'USDC',
             'category': self.category,
             'enabled': self.enabled,
             'default_leverage': self.default_leverage,
@@ -386,11 +388,12 @@ def init_db(app, run_migrations=True):
             db.session.add(default_risk)
 
         # Create default coin configs for popular coins
-        # Grouped as: L1s (Layer 1s), APPS (Applications/DeFi), MEMES
+        # Grouped as: L1s (Layer 1s), APPS (Applications/DeFi), MEMES, HIP-3 Perps
         default_coins = {
             'L1s': ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'MON', 'BNB', 'LTC', 'CC', 'TAO', 'TON', 'WLD'],
             'APPS': ['AAVE', 'ENA', 'PENDLE', 'AERO', 'VIRTUAL', 'PUMP', 'LIT', 'CRV', 'LINK', 'ETHFI', 'MORPHO', 'SYRUP', 'JUP'],
-            'MEMES': ['DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'SPX']
+            'MEMES': ['DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'SPX'],
+            'HIP-3 Perps': []  # HIP-3 perps are added manually via Add New Perp
         }
 
         for category, coins in default_coins.items():
