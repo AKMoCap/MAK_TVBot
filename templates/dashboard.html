@@ -311,16 +311,16 @@
                         </div>
                     </div>
 
-                    <!-- Limit Order Fields (placeholder) -->
+                    <!-- Limit Order Fields -->
                     <div id="limit-order-fields" style="display: none;">
                         <div class="mb-3">
-                            <label class="form-label">Limit Price</label>
+                            <label class="form-label d-flex justify-content-between">
+                                <span>Limit Price</span>
+                                <span class="text-muted" id="limit-mid-price">Mid: --</span>
+                            </label>
                             <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="trade-limit-price" placeholder="Enter limit price" step="0.01">
-                        </div>
-                        <div class="alert alert-info py-2 small">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Limit order functionality coming soon
+                                   id="trade-limit-price" placeholder="Enter limit price" step="any">
+                            <small class="text-muted">Long: price must be below mid | Short: price must be above mid</small>
                         </div>
                     </div>
 
@@ -543,6 +543,65 @@
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="confirm-transfer-btn">
                     <i class="bi bi-arrow-left-right me-1"></i>Transfer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modify Order Modal -->
+<div class="modal fade" id="modifyOrderModal" tabindex="-1" aria-labelledby="modifyOrderModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-darker border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-light" id="modifyOrderModalLabel">
+                    <i class="bi bi-pencil-square me-2"></i>Modify Order
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Order Details</span>
+                        <span class="text-muted" id="modify-order-info"></span>
+                    </label>
+                    <div class="bg-dark rounded p-2 small">
+                        <div class="d-flex justify-content-between">
+                            <span>Coin:</span>
+                            <strong id="modify-order-coin">--</strong>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>Side:</span>
+                            <span id="modify-order-side">--</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>Current Size:</span>
+                            <span id="modify-order-current-size">--</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>Current Price:</span>
+                            <span id="modify-order-current-price">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">New Limit Price</label>
+                    <input type="number" class="form-control bg-dark text-light border-secondary"
+                           id="modify-order-new-price" placeholder="Enter new price" step="any">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">New Size (optional)</label>
+                    <input type="number" class="form-control bg-dark text-light border-secondary"
+                           id="modify-order-new-size" placeholder="Leave empty to keep current size" step="any">
+                    <small class="text-muted">Reduce the size to partially close the order</small>
+                </div>
+                <input type="hidden" id="modify-order-oid">
+                <input type="hidden" id="modify-order-coin-value">
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitModifyOrder()">
+                    <i class="bi bi-check-circle me-1"></i>Update Order
                 </button>
             </div>
         </div>

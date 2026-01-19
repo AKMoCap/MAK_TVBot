@@ -242,6 +242,108 @@ def api_cancel_order():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/limit-order', methods=['POST'])
+def api_limit_order():
+    """Place a limit order"""
+    try:
+        # Check if wallet is connected and authorized
+        wallet_address = session.get('wallet_address')
+        agent_key = session.get('agent_private_key')
+
+        if not wallet_address or not agent_key:
+            return jsonify({'success': False, 'error': 'Not authorized. Please connect and authorize your wallet.'})
+
+        data = request.json
+        coin = data.get('coin')
+        action = data.get('action')  # 'buy' or 'sell'
+        limit_price = data.get('limit_price')
+        collateral_usd = data.get('collateral_usd')
+        leverage = data.get('leverage')
+
+        if not all([coin, action, limit_price, collateral_usd, leverage]):
+            return jsonify({'success': False, 'error': 'Missing required fields'})
+
+        limit_price = float(limit_price)
+        collateral_usd = float(collateral_usd)
+        leverage = int(leverage)
+        is_buy = action.lower() == 'buy'
+
+        # Get asset metadata to calculate position size
+        asset_meta = bot_manager.get_asset_metadata()
+        coin_meta = asset_meta.get(coin, {})
+
+        if not coin_meta:
+            return jsonify({'success': False, 'error': f"Coin '{coin}' not found in Hyperliquid"})
+
+        # Check and set leverage
+        max_leverage = coin_meta.get('maxLeverage', 10)
+        if leverage > max_leverage:
+            return jsonify({'success': False, 'error': f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"})
+
+        # Set leverage using exchange
+        _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
+        try:
+            exchange.update_leverage(leverage, coin, is_cross=False)
+        except Exception as lev_error:
+            return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
+
+        # Calculate position size
+        notional_value = collateral_usd * leverage
+        size = notional_value / limit_price
+
+        # Round size according to asset decimals
+        sz_decimals = coin_meta.get('szDecimals', 2)
+        size = round(size, sz_decimals)
+
+        # Place limit order
+        result = bot_manager.place_limit_order(
+            coin, is_buy, size, limit_price,
+            reduce_only=False,
+            user_wallet=wallet_address,
+            user_agent_key=agent_key
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error placing limit order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/modify-order', methods=['POST'])
+def api_modify_order():
+    """Modify an existing order"""
+    try:
+        # Check if wallet is connected and authorized
+        wallet_address = session.get('wallet_address')
+        agent_key = session.get('agent_private_key')
+
+        if not wallet_address or not agent_key:
+            return jsonify({'success': False, 'error': 'Not authorized. Please connect and authorize your wallet.'})
+
+        data = request.json
+        coin = data.get('coin')
+        oid = data.get('oid')
+        new_price = data.get('new_price')
+        new_size = data.get('new_size')  # Optional
+
+        if not all([coin, oid, new_price]):
+            return jsonify({'success': False, 'error': 'Missing required fields (coin, oid, new_price)'})
+
+        new_price = float(new_price)
+        new_size = float(new_size) if new_size else None
+
+        result = bot_manager.modify_order(
+            coin, oid, new_price, new_size,
+            user_wallet=wallet_address,
+            user_agent_key=agent_key
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error modifying order: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/transfer-usdc', methods=['POST'])
 def api_transfer_usdc():
     """Transfer USDC between Spot and Perps accounts"""

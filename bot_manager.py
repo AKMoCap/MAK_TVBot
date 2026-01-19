@@ -1049,6 +1049,211 @@ class BotManager:
             logger.exception(f"Error placing take profit: {e}")
             return {'success': False, 'error': str(e)}
 
+    def place_limit_order(self, coin, is_buy, size, limit_price, reduce_only=False,
+                          user_wallet=None, user_agent_key=None):
+        """
+        Place a limit order on the exchange.
+
+        Args:
+            coin: Trading pair (e.g., 'BTC', 'ETH')
+            is_buy: True for buy/long, False for sell/short
+            size: Position size in base currency
+            limit_price: The limit price for the order
+            reduce_only: If True, only reduces existing position
+            user_wallet: Optional wallet address
+            user_agent_key: Optional agent private key
+
+        Returns:
+            dict with success status and result or error
+        """
+        try:
+            _, exchange = self.get_exchange(user_wallet, user_agent_key)
+
+            # Get size decimals for proper rounding
+            sz_decimals = self.get_size_decimals(coin)
+            size = round(size, sz_decimals)
+
+            # Skip if size is too small after rounding
+            if size <= 0:
+                logger.warning(f"Limit order size too small for {coin} after rounding")
+                return {'success': False, 'error': 'Size too small'}
+
+            # Round price to 5 significant figures (Hyperliquid standard)
+            limit_price = float(f"{limit_price:.5g}")
+
+            # Limit order with GTC (Good til canceled)
+            order_type = {"limit": {"tif": "Gtc"}}
+
+            result = exchange.order(
+                coin,
+                is_buy,
+                size,
+                limit_price,
+                order_type,
+                reduce_only=reduce_only
+            )
+
+            logger.info(f"Limit order result for {coin}: price={limit_price}, size={size}, is_buy={is_buy}, result={result}")
+
+            # Check if order was successful
+            statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+            if statuses and len(statuses) > 0:
+                status = statuses[0]
+                if "error" in status:
+                    logger.error(f"Limit order error for {coin}: {status['error']}")
+                    return {'success': False, 'error': status['error']}
+                elif "resting" in status:
+                    oid = status["resting"].get("oid")
+                    logger.info(f"Limit order placed successfully for {coin}, oid={oid}")
+                    return {'success': True, 'result': result, 'oid': oid}
+                elif "filled" in status:
+                    # Order filled immediately
+                    filled = status["filled"]
+                    logger.info(f"Limit order filled immediately for {coin}")
+                    return {'success': True, 'result': result, 'filled': True}
+
+            # Check for top-level error
+            if result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                logger.error(f"Limit order failed for {coin}: {error_msg}")
+                return {'success': False, 'error': str(error_msg)}
+
+            return {'success': True, 'result': result}
+        except Exception as e:
+            logger.exception(f"Error placing limit order: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def modify_order(self, coin, oid, new_price, new_size=None, user_wallet=None, user_agent_key=None):
+        """
+        Modify an existing order's price and optionally size.
+
+        Args:
+            coin: Trading pair
+            oid: Order ID to modify
+            new_price: New limit price
+            new_size: New size (optional, keeps original if not provided)
+            user_wallet: Optional wallet address
+            user_agent_key: Optional agent private key
+
+        Returns:
+            dict with success status and result or error
+        """
+        try:
+            info, exchange = self.get_exchange(user_wallet, user_agent_key)
+
+            # If no new size provided, we need to get the current order details
+            if new_size is None:
+                # Get open orders to find the current size
+                config = self.get_config()
+                wallet = user_wallet or config['main_wallet']
+                orders = self.get_open_orders(wallet)
+
+                current_order = None
+                for order in orders:
+                    if order.get('oid') == oid and order.get('coin') == coin:
+                        current_order = order
+                        break
+
+                if not current_order:
+                    return {'success': False, 'error': 'Order not found'}
+
+                new_size = float(current_order.get('sz', current_order.get('size', 0)))
+
+            # Get size decimals for proper rounding
+            sz_decimals = self.get_size_decimals(coin)
+            new_size = round(new_size, sz_decimals)
+
+            # Round price to 5 significant figures
+            new_price = float(f"{new_price:.5g}")
+
+            # Use the SDK's modify method if available, otherwise use batch_modify
+            # The modify action format: {"oid": int, "order": {...}}
+            try:
+                # Try using exchange.modify if available
+                result = exchange.modify_order(oid, coin, True, new_size, new_price, {"limit": {"tif": "Gtc"}})
+            except AttributeError:
+                # Fall back to using the raw order action with modify
+                # Build the modify request manually
+                import requests
+                from hyperliquid.utils import constants
+                from hyperliquid.utils.signing import sign_l1_action, get_timestamp_ms
+
+                config = self.get_config()
+                api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
+
+                # Get asset index for the coin
+                meta = info.meta()
+                universe = meta.get('universe', [])
+                asset_index = None
+                for idx, asset in enumerate(universe):
+                    if asset.get('name') == coin:
+                        asset_index = idx
+                        break
+
+                if asset_index is None:
+                    return {'success': False, 'error': f'Asset {coin} not found'}
+
+                # Determine is_buy from original order
+                orders = self.get_open_orders(user_wallet or config['main_wallet'])
+                is_buy = True
+                for order in orders:
+                    if order.get('oid') == oid:
+                        is_buy = order.get('side', '').lower() == 'b' or order.get('side', '').lower() == 'buy'
+                        break
+
+                # Use batchModify action
+                modify_action = {
+                    "type": "batchModify",
+                    "modifies": [{
+                        "oid": oid,
+                        "order": {
+                            "a": asset_index,
+                            "b": is_buy,
+                            "p": str(new_price),
+                            "s": str(new_size),
+                            "r": False,
+                            "t": {"limit": {"tif": "Gtc"}}
+                        }
+                    }]
+                }
+
+                nonce = get_timestamp_ms()
+                signature = sign_l1_action(exchange.wallet, modify_action, None, nonce, config['use_testnet'])
+
+                payload = {
+                    "action": modify_action,
+                    "nonce": nonce,
+                    "signature": signature
+                }
+
+                response = requests.post(
+                    f"{api_url}/exchange",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                result = response.json()
+
+            logger.info(f"Modify order result for {coin} oid={oid}: {result}")
+
+            # Check result
+            if result.get("status") == "ok":
+                return {'success': True, 'result': result}
+            elif result.get("status") == "err":
+                error_msg = result.get("response", "Unknown error")
+                return {'success': False, 'error': str(error_msg)}
+
+            # Check statuses array
+            statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+            if statuses:
+                status = statuses[0]
+                if "error" in status:
+                    return {'success': False, 'error': status['error']}
+
+            return {'success': True, 'result': result}
+        except Exception as e:
+            logger.exception(f"Error modifying order: {e}")
+            return {'success': False, 'error': str(e)}
+
     def get_open_orders(self, wallet_address):
         """
         Get all open orders for a wallet address.

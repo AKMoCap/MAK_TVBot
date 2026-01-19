@@ -1240,6 +1240,11 @@ function handleOrderTypeChange(orderType) {
         selectedFields.style.display = 'block';
     }
 
+    // Update mid price display for limit orders
+    if (orderType === 'limit') {
+        updateLimitMidPrice();
+    }
+
     // Update button text based on order type
     const buyBtn = document.getElementById('buy-btn');
     const sellBtn = document.getElementById('sell-btn');
@@ -1326,6 +1331,30 @@ function populateQuickTradeForm(selection) {
     }
     if (tp2SizeInput && config.tp2_size_pct) {
         tp2SizeInput.value = config.tp2_size_pct;
+    }
+
+    // Update mid price display for limit orders
+    updateLimitMidPrice();
+}
+
+/**
+ * Update the mid price display for limit order field
+ */
+function updateLimitMidPrice() {
+    const midPriceEl = document.getElementById('limit-mid-price');
+    if (!midPriceEl) return;
+
+    const selectedCoin = document.getElementById('trade-coin')?.value;
+    if (!selectedCoin || isCategory(selectedCoin)) {
+        midPriceEl.textContent = 'Mid: --';
+        return;
+    }
+
+    const price = livePrices[selectedCoin];
+    if (price) {
+        midPriceEl.textContent = `Mid: ${formatPrice(price)}`;
+    } else {
+        midPriceEl.textContent = 'Mid: --';
     }
 }
 
@@ -1540,8 +1569,11 @@ async function loadOpenOrders() {
                     <td>${formatCurrency(orderValue)}</td>
                     <td>${filledPct}%</td>
                     <td>
-                        <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="cancelOrder(${order.oid}, '${order.coin}')">
-                            <i class="bi bi-x-circle"></i>
+                        <button class="btn btn-outline-secondary btn-sm py-0 px-2 me-1" onclick="openModifyOrderModal(${order.oid}, '${order.coin}', ${size}, ${price}, '${order.side}')" title="Modify Order">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="cancelOrder(${order.oid}, '${order.coin}')" title="Cancel Order">
+                            <i class="bi bi-x"></i>
                         </button>
                     </td>
                 </tr>
@@ -1576,6 +1608,71 @@ async function cancelOrder(oid, coin) {
         }
     } catch (error) {
         showToast('Failed to cancel order', 'error');
+    }
+}
+
+/**
+ * Open the modify order modal with order details
+ */
+function openModifyOrderModal(oid, coin, size, price, side) {
+    // Populate modal fields
+    document.getElementById('modify-order-oid').value = oid;
+    document.getElementById('modify-order-coin-value').value = coin;
+    document.getElementById('modify-order-coin').textContent = coin;
+    document.getElementById('modify-order-side').textContent = side === 'B' ? 'BUY (Long)' : 'SELL (Short)';
+    document.getElementById('modify-order-side').className = side === 'B' ? 'text-success' : 'text-danger';
+    document.getElementById('modify-order-current-size').textContent = size.toFixed(4);
+    document.getElementById('modify-order-current-price').textContent = formatPrice(price);
+
+    // Pre-fill new price with current price
+    document.getElementById('modify-order-new-price').value = price;
+    document.getElementById('modify-order-new-size').value = '';
+
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('modifyOrderModal'));
+    modal.show();
+}
+
+/**
+ * Submit the modify order request
+ */
+async function submitModifyOrder() {
+    const oid = parseInt(document.getElementById('modify-order-oid').value);
+    const coin = document.getElementById('modify-order-coin-value').value;
+    const newPrice = parseFloat(document.getElementById('modify-order-new-price').value);
+    const newSizeInput = document.getElementById('modify-order-new-size').value;
+    const newSize = newSizeInput ? parseFloat(newSizeInput) : null;
+
+    if (!oid || !coin || !newPrice || newPrice <= 0) {
+        showToast('Please enter a valid new price', 'warning');
+        return;
+    }
+
+    if (newSize !== null && newSize <= 0) {
+        showToast('New size must be greater than 0', 'warning');
+        return;
+    }
+
+    try {
+        const payload = { oid, coin, new_price: newPrice };
+        if (newSize !== null) {
+            payload.new_size = newSize;
+        }
+
+        const result = await apiCall('/modify-order', 'POST', payload);
+
+        if (result.success) {
+            showToast(`Order modified successfully for ${coin}`, 'success');
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modifyOrderModal'));
+            if (modal) modal.hide();
+            // Refresh orders
+            loadOpenOrders();
+        } else {
+            showToast('Failed to modify order: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Failed to modify order', 'error');
     }
 }
 
@@ -1729,29 +1826,50 @@ async function executeTrade(action) {
     const selection = document.getElementById('trade-coin').value;
     const collateral = parseFloat(document.getElementById('trade-collateral').value);
     const leverage = parseInt(document.getElementById('trade-leverage-range').value);
-    const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
-
-    // Get TP1 and TP2 values
-    const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
-    const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
-    const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
-    const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
+    const orderType = document.getElementById('order-type')?.value || 'market';
 
     if (!selection || !collateral || !leverage) {
         showToast('Please fill in all required fields', 'warning');
         return;
     }
 
-    // Check if this is a category trade
+    // Check if this is a category trade (only for market orders)
     if (isCategory(selection)) {
+        if (orderType !== 'market') {
+            showToast('Category trades only support market orders', 'warning');
+            return;
+        }
+        const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
+        const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
+        const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
+        const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
+        const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
         await executeCategoryTrade(selection, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct);
         return;
     }
 
-    // Single coin trade
+    // Handle based on order type
+    if (orderType === 'limit') {
+        await executeLimitOrder(selection, action, collateral, leverage);
+    } else {
+        // Market order
+        await executeMarketOrder(selection, action, collateral, leverage);
+    }
+}
+
+/**
+ * Execute a market order
+ */
+async function executeMarketOrder(coin, action, collateral, leverage) {
+    const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
+    const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
+    const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
+    const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
+    const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
+
     try {
         const result = await apiCall('/trade', 'POST', {
-            coin: selection,
+            coin,
             action,
             leverage,
             collateral_usd: collateral,
@@ -1763,13 +1881,71 @@ async function executeTrade(action) {
         });
 
         if (result.success) {
-            showToast(`${action.toUpperCase()} order executed for ${selection}`, 'success');
+            showToast(`${action.toUpperCase()} order executed for ${coin}`, 'success');
             refreshDashboard();
         } else {
             showToast('Trade failed: ' + (result.error || 'Unknown error'), 'error');
         }
     } catch (error) {
         showToast('Trade execution failed', 'error');
+    }
+}
+
+/**
+ * Execute a limit order with price validation
+ */
+async function executeLimitOrder(coin, action, collateral, leverage) {
+    const limitPrice = parseFloat(document.getElementById('trade-limit-price').value);
+
+    if (!limitPrice || limitPrice <= 0) {
+        showToast('Please enter a valid limit price', 'warning');
+        return;
+    }
+
+    // Get current mid price for validation
+    const midPrice = livePrices[coin];
+    if (!midPrice) {
+        showToast('Could not get current price. Please try again.', 'warning');
+        return;
+    }
+
+    // Validate limit price against mid price
+    // Long: limit price must be BELOW mid (buying at a discount)
+    // Short: limit price must be ABOVE mid (selling at a premium)
+    const isLong = action === 'buy';
+
+    if (isLong && limitPrice >= midPrice) {
+        showToast(`Long limit price must be below mid price (${formatPrice(midPrice)}). Your order would execute immediately at market.`, 'error');
+        return;
+    }
+
+    if (!isLong && limitPrice <= midPrice) {
+        showToast(`Short limit price must be above mid price (${formatPrice(midPrice)}). Your order would execute immediately at market.`, 'error');
+        return;
+    }
+
+    try {
+        const result = await apiCall('/limit-order', 'POST', {
+            coin,
+            action,
+            leverage,
+            collateral_usd: collateral,
+            limit_price: limitPrice
+        });
+
+        if (result.success) {
+            if (result.filled) {
+                showToast(`Limit order filled immediately for ${coin}`, 'success');
+            } else {
+                showToast(`Limit order placed for ${coin} at ${formatPrice(limitPrice)}`, 'success');
+            }
+            refreshDashboard();
+            loadOpenOrders();
+        } else {
+            showToast('Limit order failed: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Limit order execution failed', 'error');
     }
 }
 
