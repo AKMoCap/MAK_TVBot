@@ -856,9 +856,6 @@ function updateConnectionStatus(connected) {
 // Store coin configs globally for quick trade form
 let coinConfigsCache = {};
 
-// Store asset metadata (szDecimals, maxLeverage) from Hyperliquid API
-let assetMetaCache = {};
-
 // Category definitions for batch trading (dynamically populated from coin configs)
 let categoryCoins = {
     'CAT:L1s': [],
@@ -877,35 +874,16 @@ function isCategory(value) {
     return value && value.startsWith('CAT:');
 }
 
-async function loadAssetMetadata() {
-    try {
-        const data = await apiCall('/asset-meta');
-        if (data && !data.error) {
-            assetMetaCache = data;
-            console.log('Loaded asset metadata for', Object.keys(assetMetaCache).length, 'assets');
-        }
-    } catch (error) {
-        console.error('Failed to load asset metadata:', error);
-    }
-}
-
 function getMaxLeverage(coin) {
-    // Get max leverage from asset metadata (stored in database, refreshed daily)
-    if (assetMetaCache[coin]) {
-        return assetMetaCache[coin].maxLeverage || 10;
-    }
-    // Fallback to coin config if available
+    // Get max leverage from coin config (stored in database)
     if (coinConfigsCache[coin] && coinConfigsCache[coin].hl_max_leverage) {
         return coinConfigsCache[coin].hl_max_leverage;
     }
-    return 10;
+    return 50;  // Default max leverage
 }
 
 async function loadCoinConfigsForQuickTrade() {
     try {
-        // Load asset metadata first
-        await loadAssetMetadata();
-
         const data = await apiCall('/coins');
         if (data.coins) {
             // Clear and rebuild caches
