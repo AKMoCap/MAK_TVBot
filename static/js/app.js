@@ -557,8 +557,10 @@ function updatePositionsTable(positions) {
     console.log('[updatePositionsTable] Called with', positions?.length || 0, 'positions');
 
     // Cache positions for sorting/filtering
-    if (positions && positions.length > 0) {
-        positionsCache = positions;
+    // positions === null means use cached data (for sorting/filtering)
+    // positions === [] (empty array) means clear the cache (positions were closed)
+    if (positions !== null) {
+        positionsCache = positions || [];
     }
 
     const tbody = document.getElementById('positions-table');
@@ -758,6 +760,7 @@ function updatePrices(prices) {
 
 function updateActivityList(logs) {
     const container = document.getElementById('activity-list');
+    if (!container) return;  // Activity list not present on this page
 
     if (!logs || logs.length === 0) {
         container.innerHTML = `
