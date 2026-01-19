@@ -246,12 +246,13 @@ def api_cancel_order():
 def api_limit_order():
     """Place a limit order"""
     try:
-        # Check if wallet is connected and authorized
-        wallet_address = session.get('wallet_address')
-        agent_key = session.get('agent_private_key')
+        # Get current user from session (same pattern as /api/trade)
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
 
-        if not wallet_address or not agent_key:
-            return jsonify({'success': False, 'error': 'Not authorized. Please connect and authorize your wallet.'})
+        wallet_address = user.address
+        agent_key = user.get_agent_private_key()
 
         data = request.json
         coin = data.get('coin')
@@ -313,12 +314,13 @@ def api_limit_order():
 def api_modify_order():
     """Modify an existing order"""
     try:
-        # Check if wallet is connected and authorized
-        wallet_address = session.get('wallet_address')
-        agent_key = session.get('agent_private_key')
+        # Get current user from session (same pattern as /api/trade)
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
 
-        if not wallet_address or not agent_key:
-            return jsonify({'success': False, 'error': 'Not authorized. Please connect and authorize your wallet.'})
+        wallet_address = user.address
+        agent_key = user.get_agent_private_key()
 
         data = request.json
         coin = data.get('coin')
