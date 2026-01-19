@@ -1,7 +1,7 @@
 """Add hl_margin_mode column to coin_configs
 
 Revision ID: add_margin_mode_002
-Revises: add_category_001
+Revises: add_category_002
 Create Date: 2025-01-19
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_margin_mode_002'
-down_revision = 'add_category_001'
+down_revision = 'add_category_002'
 branch_labels = None
 depends_on = None
 
