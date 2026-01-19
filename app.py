@@ -242,6 +242,38 @@ def api_cancel_order():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/transfer-usdc', methods=['POST'])
+def api_transfer_usdc():
+    """Transfer USDC between Spot and Perps accounts"""
+    try:
+        # Check if wallet is connected and authorized
+        wallet_address = session.get('wallet_address')
+        agent_key = session.get('agent_private_key')
+
+        if not wallet_address or not agent_key:
+            return jsonify({'success': False, 'error': 'Not authorized. Please connect and authorize your wallet.'})
+
+        data = request.json
+        direction = data.get('direction')  # 'spotToPerp' or 'perpToSpot'
+        amount = data.get('amount')
+
+        if not direction or not amount:
+            return jsonify({'success': False, 'error': 'Missing direction or amount'})
+
+        amount = float(amount)
+        if amount <= 0:
+            return jsonify({'success': False, 'error': 'Amount must be greater than 0'})
+
+        # Convert direction to toPerp boolean
+        to_perp = direction == 'spotToPerp'
+
+        result = bot_manager.transfer_usdc(wallet_address, agent_key, amount, to_perp)
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error transferring USDC: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/asset-meta', methods=['GET'])
 def api_asset_metadata():
     """Get asset metadata from database (no API call - use /api/asset-meta/refresh to update)"""
