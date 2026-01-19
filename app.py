@@ -882,7 +882,7 @@ def api_update_coin(coin):
             config = CoinConfig(coin=coin)
             db.session.add(config)
 
-        for key in ['enabled', 'default_leverage', 'default_collateral', 'max_position_size',
+        for key in ['enabled', 'category', 'default_leverage', 'default_collateral', 'max_position_size',
                     'max_open_positions', 'default_stop_loss_pct',
                     'tp1_pct', 'tp1_size_pct', 'tp2_pct', 'tp2_size_pct',
                     'use_trailing_stop', 'trailing_stop_pct']:
@@ -923,12 +923,30 @@ def api_bulk_update_coins():
 
 @app.route('/api/coins/refresh-leverage', methods=['POST'])
 def api_refresh_leverage():
-    """Refresh max leverage and margin mode data from Hyperliquid API"""
+    """Refresh max leverage, margin mode, and quote asset data from Hyperliquid API"""
     import requests
     from datetime import datetime
 
     try:
-        # Fetch perpetuals metadata from Hyperliquid
+        # Step 1: Fetch spotMeta for token list (to map collateralToken indices to names)
+        spot_response = requests.post(
+            'https://api.hyperliquid.xyz/info',
+            json={'type': 'spotMeta'},
+            headers={'Content-Type': 'application/json'},
+            timeout=10
+        )
+
+        token_map = {0: 'USDC'}  # Default: index 0 is USDC
+        if spot_response.status_code == 200:
+            spot_data = spot_response.json()
+            tokens = spot_data.get('tokens', [])
+            for token in tokens:
+                token_index = token.get('index')
+                token_name = token.get('name')
+                if token_index is not None and token_name:
+                    token_map[token_index] = token_name
+
+        # Step 2: Fetch standard perpetuals metadata from Hyperliquid
         response = requests.post(
             'https://api.hyperliquid.xyz/info',
             json={'type': 'meta'},
@@ -951,17 +969,58 @@ def api_refresh_leverage():
         for asset in universe:
             name = asset.get('name')
             if name:
+                collateral_token = asset.get('collateralToken', 0)
                 meta = {
                     'maxLeverage': asset.get('maxLeverage', 50),
                     'szDecimals': asset.get('szDecimals', 2),
                     'onlyIsolated': asset.get('onlyIsolated', False),
-                    'marginMode': asset.get('marginMode')  # strictIsolated, noCross, or None
+                    'marginMode': asset.get('marginMode'),  # strictIsolated, noCross, or None
+                    'quoteAsset': token_map.get(collateral_token, 'USDC')
                 }
                 hl_metadata[name] = meta
                 hl_metadata_lower[name.lower()] = meta
 
-        # Update all coin configs with the metadata
+        # Step 3: Get all coins and identify HIP-3 perps (format: dex:TICKER)
         coins = CoinConfig.query.all()
+        hip3_dexes = set()
+
+        for config in coins:
+            if ':' in config.coin:
+                dex_name = config.coin.split(':')[0].lower()
+                hip3_dexes.add(dex_name)
+
+        # Step 4: Fetch metadata for each HIP-3 DEX
+        for dex_name in hip3_dexes:
+            try:
+                dex_response = requests.post(
+                    'https://api.hyperliquid.xyz/info',
+                    json={'type': 'meta', 'dex': dex_name},
+                    headers={'Content-Type': 'application/json'},
+                    timeout=10
+                )
+
+                if dex_response.status_code == 200:
+                    dex_data = dex_response.json()
+                    dex_universe = dex_data.get('universe', [])
+
+                    for asset in dex_universe:
+                        name = asset.get('name')
+                        if name:
+                            collateral_token = asset.get('collateralToken', 0)
+                            meta = {
+                                'maxLeverage': asset.get('maxLeverage', 50),
+                                'szDecimals': asset.get('szDecimals', 2),
+                                'onlyIsolated': asset.get('onlyIsolated', False),
+                                'marginMode': asset.get('marginMode'),
+                                'quoteAsset': token_map.get(collateral_token, 'USDC')
+                            }
+                            hl_metadata[name] = meta
+                            hl_metadata_lower[name.lower()] = meta
+            except Exception as e:
+                # Continue with other DEXes if one fails
+                pass
+
+        # Step 5: Update all coin configs with the metadata
         updated = 0
         not_found = []
 
@@ -973,6 +1032,7 @@ def api_refresh_leverage():
                 config.hl_sz_decimals = meta['szDecimals']
                 config.hl_only_isolated = meta['onlyIsolated']
                 config.hl_margin_mode = meta['marginMode']
+                config.quote_asset = meta['quoteAsset']
                 config.hl_metadata_updated = datetime.utcnow()
                 updated += 1
             else:
@@ -1026,6 +1086,26 @@ def api_add_coin():
         if existing:
             return jsonify({'success': False, 'error': f'Coin {existing.coin} already exists'}), 400
 
+        # Fetch spotMeta for token list (to map collateralToken indices to names)
+        token_map = {0: 'USDC'}  # Default: index 0 is USDC
+        try:
+            spot_response = requests.post(
+                'https://api.hyperliquid.xyz/info',
+                json={'type': 'spotMeta'},
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            if spot_response.status_code == 200:
+                spot_data = spot_response.json()
+                tokens = spot_data.get('tokens', [])
+                for token in tokens:
+                    token_index = token.get('index')
+                    token_name = token.get('name')
+                    if token_index is not None and token_name:
+                        token_map[token_index] = token_name
+        except Exception:
+            pass  # Continue with default token map
+
         # Fetch metadata from Hyperliquid to verify the coin exists
         if is_hip3:
             # For HIP-3 perps, use meta endpoint with dex parameter
@@ -1076,9 +1156,14 @@ def api_add_coin():
                 error_msg += ' on Hyperliquid. Check the ticker spelling.'
             return jsonify({'success': False, 'error': error_msg}), 404
 
+        # Get quote asset from collateralToken
+        collateral_token = coin_meta.get('collateralToken', 0)
+        quote_asset = token_map.get(collateral_token, 'USDC')
+
         # Create new coin config with metadata from API
         new_coin = CoinConfig(
             coin=coin_name,
+            quote_asset=quote_asset,
             category=category,
             enabled=True,
             default_leverage=3,
@@ -1102,7 +1187,7 @@ def api_add_coin():
         return jsonify({
             'success': True,
             'coin': new_coin.to_dict(),
-            'message': f'Successfully added {coin_name}'
+            'message': f'Successfully added {coin_name} (Quote: {quote_asset})'
         })
 
     except requests.exceptions.Timeout:

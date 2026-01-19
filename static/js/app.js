@@ -867,7 +867,8 @@ let categoryCoins = {
 const categoryDisplayNames = {
     'L1s': 'L1s',
     'APPS': 'APPS',
-    'MEMES': 'MEMES'
+    'MEMES': 'MEMES',
+    'HIP-3 Perps': 'HIP-3 Perps'
 };
 
 // localStorage cache key for coins
@@ -1950,7 +1951,7 @@ function updateCoinConfigTable(coins) {
 
     // Group coins by their category from the API
     const groups = {};
-    const categoryOrder = ['L1s', 'APPS', 'MEMES'];
+    const categoryOrder = ['L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
 
     coins.forEach(coin => {
         const category = coin.category || 'L1s';
@@ -1969,7 +1970,7 @@ function updateCoinConfigTable(coins) {
             // Add group header
             html += `
                 <tr class="table-active">
-                    <td colspan="11" class="py-1" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
+                    <td colspan="12" class="py-1" style="background-color: rgba(58, 180, 239, 0.15); color: #3AB4EF; font-weight: 600;">
                         <i class="bi bi-collection me-2"></i>${categoryDisplayNames[categoryName] || categoryName}
                     </td>
                 </tr>
@@ -1985,9 +1986,11 @@ function updateCoinConfigTable(coins) {
                 // Max leverage and margin mode from Hyperliquid metadata
                 const maxLevDisplay = coin.hl_max_leverage ? `${coin.hl_max_leverage}x` : '--';
                 const marginMode = (coin.hl_margin_mode === 'strictIsolated' || coin.hl_margin_mode === 'noCross' || coin.hl_only_isolated) ? 'Isolated' : 'Cross';
+                const quoteAsset = coin.quote_asset || 'USDC';
                 html += `
                     <tr>
                         <td><strong>${coin.coin}</strong></td>
+                        <td><small>${quoteAsset}</small></td>
                         <td>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" ${coin.enabled ? 'checked' : ''}
@@ -2198,6 +2201,7 @@ async function addNewPerp() {
     const ticker = document.getElementById('new-perp-ticker').value.trim();
     const isHip3 = document.getElementById('new-perp-hip3').checked;
     const dexName = document.getElementById('new-perp-dex').value.trim();
+    const category = document.getElementById('new-perp-category').value;
     const resultDiv = document.getElementById('add-perp-result');
 
     if (!ticker) {
@@ -2222,7 +2226,7 @@ async function addNewPerp() {
             ticker: ticker,
             is_hip3: isHip3,
             dex_name: dexName,
-            category: 'L1s'  // Default category
+            category: category
         });
 
         if (result.success) {
@@ -2237,6 +2241,7 @@ async function addNewPerp() {
             document.getElementById('new-perp-hip3').checked = false;
             document.getElementById('new-perp-dex').value = '';
             document.getElementById('hip3-dex-container').style.display = 'none';
+            document.getElementById('new-perp-category').value = 'HIP-3 Perps';
 
             // Invalidate cache so Quick Trade reloads
             invalidateCoinCache();
