@@ -945,17 +945,20 @@ def api_refresh_leverage():
         if not universe:
             return jsonify({'success': False, 'error': 'No perpetuals data returned from Hyperliquid'}), 500
 
-        # Build a map of coin name -> metadata
+        # Build maps of coin name -> metadata (exact match and lowercase for fallback)
         hl_metadata = {}
+        hl_metadata_lower = {}
         for asset in universe:
             name = asset.get('name')
             if name:
-                hl_metadata[name] = {
+                meta = {
                     'maxLeverage': asset.get('maxLeverage', 50),
                     'szDecimals': asset.get('szDecimals', 2),
                     'onlyIsolated': asset.get('onlyIsolated', False),
                     'marginMode': asset.get('marginMode')  # strictIsolated, noCross, or None
                 }
+                hl_metadata[name] = meta
+                hl_metadata_lower[name.lower()] = meta
 
         # Update all coin configs with the metadata
         coins = CoinConfig.query.all()
@@ -963,8 +966,9 @@ def api_refresh_leverage():
         not_found = []
 
         for config in coins:
-            if config.coin in hl_metadata:
-                meta = hl_metadata[config.coin]
+            # Try exact match first, then case-insensitive match
+            meta = hl_metadata.get(config.coin) or hl_metadata_lower.get(config.coin.lower())
+            if meta:
                 config.hl_max_leverage = meta['maxLeverage']
                 config.hl_sz_decimals = meta['szDecimals']
                 config.hl_only_isolated = meta['onlyIsolated']

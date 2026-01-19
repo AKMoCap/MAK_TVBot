@@ -77,7 +77,7 @@
                         <small class="text-muted">Maximum collateral per position</small>
                     </div>
 
-                    <div class="mb-3">
+                    <div class="mb-4">
                         <label class="form-label">Max Total Exposure</label>
                         <div class="input-group">
                             <input type="number" class="form-control bg-dark text-light border-secondary"
@@ -85,15 +85,6 @@
                             <span class="input-group-text bg-dark text-light border-secondary">%</span>
                         </div>
                         <small class="text-muted">Maximum % of account USDC collateral at risk</small>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Max Leverage Allowed</label>
-                        <div class="input-group">
-                            <input type="number" class="form-control bg-dark text-light border-secondary"
-                                   id="max-leverage" value="10" min="1" max="20">
-                            <span class="input-group-text bg-dark text-light border-secondary">x</span>
-                        </div>
                     </div>
 
                     <button type="submit" class="btn btn-primary">
@@ -125,9 +116,9 @@
                             <tr>
                                 <th>Coin</th>
                                 <th>Enabled</th>
-                                <th>Max Lev</th>
+                                <th>Lev Offered</th>
                                 <th>Margin</th>
-                                <th>Leverage</th>
+                                <th>Default Lev</th>
                                 <th>Collateral</th>
                                 <th>Max Size</th>
                                 <th>SL %</th>
