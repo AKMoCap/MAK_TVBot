@@ -203,7 +203,7 @@ async function refreshDashboard() {
         if (accountData.error) {
             // Show error but still consider connected if we got a response
             console.log('[Dashboard] Account error:', accountData.error);
-            document.getElementById('account-value').textContent = '$0.00';
+            // Don't reset to $0.00 - keep last known value to prevent flashing
             connected = true;  // We reached the server
         } else {
             updateAccountCards(accountData);
@@ -218,6 +218,13 @@ async function refreshDashboard() {
         }
     } catch (error) {
         console.error('[Dashboard] Account fetch failed:', error);
+    }
+
+    // Load/refresh spot balances (for account value calculation and Spot tab)
+    try {
+        await loadAndCacheSpotBalances();
+    } catch (error) {
+        console.error('[Dashboard] Spot balances fetch failed:', error);
     }
 
     try {
@@ -257,22 +264,29 @@ async function refreshDashboard() {
     updateConnectionStatus(connected);
 }
 
-// Global cache for stablecoin balances (for transfer modal)
+// Global cache for stablecoin balances (for transfer modal and display)
 let stablecoinBalances = {
-    usdcPerps: 0,
+    usdcPerps: 0,        // Total perps account value (marginSummary.accountValue)
+    usdcPerpsAvail: 0,   // Available/withdrawable perps balance
     usdcSpot: 0,
-    usdh: 0
+    usdh: 0,
+    totalSpotValue: 0    // Total spot value in USD (for account value calculation)
 };
 
-// Track if stablecoin fetch is in progress to prevent concurrent calls
-let stablecoinFetchInProgress = false;
-let lastStablecoinFetchTime = 0;
-const STABLECOIN_FETCH_DEBOUNCE_MS = 3000; // Only fetch every 3 seconds at most
+// Track last known values to prevent flashing
+let lastKnownAccountValue = null;
+let spotBalancesLoaded = false;
 
-function updateAccountCards(data, skipStablecoinFetch = false) {
-    // Store perps account value and USDC balance
+// Cache for spot balances (for Spot tab display)
+let spotBalancesCache = [];
+
+function updateAccountCards(data) {
+    // Store perps account value and available balance
     const perpsAccountValue = parseFloat(data.account_value) || 0;
-    stablecoinBalances.usdcPerps = parseFloat(data.withdrawable) || perpsAccountValue;
+    const perpsAvailable = parseFloat(data.withdrawable) || 0;
+
+    stablecoinBalances.usdcPerps = perpsAccountValue;
+    stablecoinBalances.usdcPerpsAvail = perpsAvailable;
 
     // Calculate totals from positions
     const positions = data.positions || [];
@@ -288,17 +302,22 @@ function updateAccountCards(data, skipStablecoinFetch = false) {
         totalPositionValue += posValue;
     });
 
-    // Fetch spot balances for total calculation (debounced)
-    const now = Date.now();
-    if (!skipStablecoinFetch && !stablecoinFetchInProgress && (now - lastStablecoinFetchTime > STABLECOIN_FETCH_DEBOUNCE_MS)) {
-        updateStablecoinBreakdown(perpsAccountValue);
-    } else {
-        // Use cached values to update display immediately
-        const cachedTotalSpot = stablecoinBalances.usdcSpot + stablecoinBalances.usdh;
-        const totalValue = perpsAccountValue + cachedTotalSpot;
+    // Calculate and display total account value using cached spot values
+    const totalValue = perpsAccountValue + stablecoinBalances.totalSpotValue;
+
+    // Only update display if we have valid data (prevent flashing to $0)
+    if (totalValue > 0 || lastKnownAccountValue === null) {
+        lastKnownAccountValue = totalValue;
         document.getElementById('account-value').textContent = formatCurrency(totalValue);
-        document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
     }
+
+    // Update perps breakdown (always have this data)
+    document.getElementById('usdc-perps').textContent = formatCurrency(perpsAccountValue);
+    document.getElementById('usdc-perps-avail').textContent = formatCurrency(perpsAvailable);
+
+    // Update spot values from cache
+    document.getElementById('usdc-spot').textContent = formatCurrency(stablecoinBalances.usdcSpot);
+    document.getElementById('usdh-balance').textContent = formatCurrency(stablecoinBalances.usdh);
 
     // Update Collateral at Risk
     const collateralEl = document.getElementById('collateral-at-risk');
@@ -333,22 +352,18 @@ function updateAccountCards(data, skipStablecoinFetch = false) {
 }
 
 /**
- * Update stablecoin breakdown and total account value
+ * Load and cache spot balances (called on init and periodically)
+ * This is the single source of truth for spot data
  */
-async function updateStablecoinBreakdown(perpsAccountValue) {
+async function loadAndCacheSpotBalances() {
     const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
-    if (!walletAddress) return;
-
-    // Prevent concurrent fetches
-    if (stablecoinFetchInProgress) return;
-    stablecoinFetchInProgress = true;
-    lastStablecoinFetchTime = Date.now();
+    if (!walletAddress) return null;
 
     try {
         const data = await apiCall(`/spot-balances?address=${walletAddress}`);
         const balances = data.balances || [];
 
-        // Find stablecoin balances
+        // Calculate totals and cache individual balances
         let usdcSpot = 0;
         let usdh = 0;
         let totalSpotValue = 0;
@@ -359,29 +374,35 @@ async function updateStablecoinBreakdown(perpsAccountValue) {
 
             if (bal.token === 'USDC') {
                 usdcSpot = parseFloat(bal.total) || 0;
-                stablecoinBalances.usdcSpot = usdcSpot;
             } else if (bal.token === 'USDH') {
                 usdh = parseFloat(bal.total) || 0;
-                stablecoinBalances.usdh = usdh;
             }
         });
 
-        // Update total account value (perps + spot)
-        const totalValue = perpsAccountValue + totalSpotValue;
-        document.getElementById('account-value').textContent = formatCurrency(totalValue);
+        // Update the global cache
+        stablecoinBalances.usdcSpot = usdcSpot;
+        stablecoinBalances.usdh = usdh;
+        stablecoinBalances.totalSpotValue = totalSpotValue;
+        spotBalancesLoaded = true;
 
-        // Update stablecoin breakdown
-        document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
+        // Update the display elements
         document.getElementById('usdc-spot').textContent = formatCurrency(usdcSpot);
         document.getElementById('usdh-balance').textContent = formatCurrency(usdh);
 
+        // Recalculate total account value if we have perps data
+        if (stablecoinBalances.usdcPerps > 0 || spotBalancesLoaded) {
+            const totalValue = stablecoinBalances.usdcPerps + totalSpotValue;
+            lastKnownAccountValue = totalValue;
+            document.getElementById('account-value').textContent = formatCurrency(totalValue);
+        }
+
+        // Cache the full balances array for the Spot tab (filtered > $5)
+        spotBalancesCache = balances.filter(bal => (parseFloat(bal.value_usd) || 0) > 5);
+
+        return balances;
     } catch (error) {
-        console.error('Failed to fetch spot balances for breakdown:', error);
-        // Still show perps value
-        document.getElementById('account-value').textContent = formatCurrency(perpsAccountValue);
-        document.getElementById('usdc-perps').textContent = formatCurrency(stablecoinBalances.usdcPerps);
-    } finally {
-        stablecoinFetchInProgress = false;
+        console.error('Failed to load spot balances:', error);
+        return null;
     }
 }
 
@@ -390,24 +411,17 @@ async function updateStablecoinBreakdown(perpsAccountValue) {
  */
 async function refreshStablecoinBalances() {
     const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
-    if (!walletAddress) return;
+    if (!walletAddress) return stablecoinBalances;
 
     try {
-        const data = await apiCall(`/spot-balances?address=${walletAddress}`);
-        const balances = data.balances || [];
-
-        balances.forEach(bal => {
-            if (bal.token === 'USDC') {
-                stablecoinBalances.usdcSpot = parseFloat(bal.total) || 0;
-            } else if (bal.token === 'USDH') {
-                stablecoinBalances.usdh = parseFloat(bal.total) || 0;
-            }
-        });
+        // Load spot balances
+        await loadAndCacheSpotBalances();
 
         // Also get perps balance from account API
         const accountData = await apiCall('/account');
         if (!accountData.error) {
-            stablecoinBalances.usdcPerps = parseFloat(accountData.withdrawable) || parseFloat(accountData.account_value) || 0;
+            stablecoinBalances.usdcPerps = parseFloat(accountData.account_value) || 0;
+            stablecoinBalances.usdcPerpsAvail = parseFloat(accountData.withdrawable) || 0;
         }
 
         return stablecoinBalances;
@@ -428,9 +442,10 @@ function setupTransferModal() {
     const availableEl = document.getElementById('transfer-available');
 
     // Update available balance when direction changes
+    // For perps->spot, use the available/withdrawable balance (usdcPerpsAvail)
     const updateAvailable = () => {
         const direction = directionSelect.value;
-        const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerps;
+        const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerpsAvail;
         availableEl.textContent = formatCurrency(available);
     };
 
@@ -457,7 +472,7 @@ function setupTransferModal() {
     if (maxBtn) {
         maxBtn.addEventListener('click', () => {
             const direction = directionSelect.value;
-            const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerps;
+            const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerpsAvail;
             amountInput.value = available.toFixed(2);
         });
     }
@@ -473,7 +488,7 @@ function setupTransferModal() {
                 return;
             }
 
-            const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerps;
+            const available = direction === 'spotToPerp' ? stablecoinBalances.usdcSpot : stablecoinBalances.usdcPerpsAvail;
             if (amount > available) {
                 showToast('Amount exceeds available balance', 'error');
                 return;
@@ -969,8 +984,7 @@ function clearQuickTradeForm() {
     if (tp2SizeInput) tp2SizeInput.value = '';
 }
 
-// Cache for spot balances and open orders
-let spotBalancesCache = [];
+// Cache for open orders (for Orders tab display)
 let openOrdersCache = [];
 
 /**
@@ -1018,7 +1032,8 @@ function setupPositionTabs() {
 }
 
 /**
- * Load spot balances from API
+ * Render spot balances to the Spot tab table
+ * Uses cached data for instant display, refreshes if cache is empty
  */
 async function loadSpotBalances() {
     const tbody = document.getElementById('spot-table');
@@ -1038,51 +1053,46 @@ async function loadSpotBalances() {
         return;
     }
 
-    try {
-        const data = await apiCall(`/spot-balances?address=${walletAddress}`);
-        if (data.error) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="3" class="text-center text-muted py-3">
-                        <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
-                        ${data.error}
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        const balances = data.balances || [];
-        if (balances.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="3" class="text-center text-muted py-3">
-                        <i class="bi bi-inbox fs-4 d-block mb-1"></i>
-                        No spot balances
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        tbody.innerHTML = balances.map(bal => `
-            <tr>
-                <td><strong>${bal.token}</strong></td>
-                <td>${parseFloat(bal.total).toFixed(4)}</td>
-                <td>${formatCurrency(bal.value_usd)}</td>
-            </tr>
-        `).join('');
-    } catch (error) {
-        console.error('Failed to load spot balances:', error);
+    // If cache is empty, load from API first
+    if (!spotBalancesLoaded || spotBalancesCache.length === 0) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="3" class="text-center text-muted py-3">
-                    <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
-                    Failed to load balances
+                    <i class="bi bi-hourglass-split fs-4 d-block mb-1"></i>
+                    Loading...
                 </td>
             </tr>
         `;
+        await loadAndCacheSpotBalances();
     }
+
+    // Use cached data (already filtered to > $5)
+    const balances = spotBalancesCache;
+
+    if (!balances || balances.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" class="text-center text-muted py-3">
+                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                    No spot balances (> $5)
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // Sort by value descending
+    const sortedBalances = [...balances].sort((a, b) =>
+        (parseFloat(b.value_usd) || 0) - (parseFloat(a.value_usd) || 0)
+    );
+
+    tbody.innerHTML = sortedBalances.map(bal => `
+        <tr>
+            <td><strong>${bal.token}</strong></td>
+            <td>${parseFloat(bal.total).toFixed(4)}</td>
+            <td>${formatCurrency(bal.value_usd)}</td>
+        </tr>
+    `).join('');
 }
 
 /**
