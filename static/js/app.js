@@ -764,7 +764,10 @@ function createPositionRowHtml(pos) {
                 <button class="btn btn-outline-secondary btn-sm btn-share-pnl py-0 px-1 me-1" onclick='showPnlCard(${posDataJson})' title="Share P&L">
                     <i class="bi bi-share"></i>
                 </button>
-                <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')">
+                <button class="btn btn-outline-warning btn-sm py-0 px-1 me-1" onclick="showSlTpModal('${pos.coin}', '${pos.side}', ${pos.size}, ${pos.entry_price}, ${pos.mark_price})" title="Set SL/TP">
+                    <i class="bi bi-shield-check"></i>
+                </button>
+                <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')" title="Close Position">
                     <i class="bi bi-x-circle"></i>
                 </button>
             </td>
@@ -2719,6 +2722,92 @@ function loadScript(src) {
         script.onerror = reject;
         document.head.appendChild(script);
     });
+}
+
+/**
+ * Show the SL/TP modal for a position
+ */
+function showSlTpModal(coin, side, size, entryPrice, markPrice) {
+    // Populate modal fields
+    document.getElementById('sltp-coin').textContent = coin;
+    document.getElementById('sltp-coin-value').value = coin;
+
+    const sideDisplay = document.getElementById('sltp-side');
+    sideDisplay.textContent = side.toUpperCase();
+    sideDisplay.className = side === 'long' ? 'text-success' : 'text-danger';
+    document.getElementById('sltp-side-value').value = side;
+
+    document.getElementById('sltp-size').textContent = Math.abs(size).toFixed(4);
+    document.getElementById('sltp-size-value').value = Math.abs(size);
+
+    document.getElementById('sltp-entry').textContent = formatPrice(entryPrice);
+    document.getElementById('sltp-mark').textContent = formatPrice(markPrice);
+
+    // Clear previous values
+    document.getElementById('sltp-sl-price').value = '';
+    document.getElementById('sltp-tp-price').value = '';
+
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('slTpModal'));
+    modal.show();
+}
+
+/**
+ * Submit SL/TP orders for a position
+ */
+async function submitSlTpOrders() {
+    const coin = document.getElementById('sltp-coin-value').value;
+    const side = document.getElementById('sltp-side-value').value;
+    const size = parseFloat(document.getElementById('sltp-size-value').value);
+    const slPrice = document.getElementById('sltp-sl-price').value;
+    const tpPrice = document.getElementById('sltp-tp-price').value;
+
+    if (!slPrice && !tpPrice) {
+        showToast('Please enter at least one price (SL or TP)', 'warning');
+        return;
+    }
+
+    const orders = [];
+
+    // For a LONG position: SL is below entry (sell), TP is above entry (sell)
+    // For a SHORT position: SL is above entry (buy), TP is below entry (buy)
+    const closeSide = side === 'long' ? 'sell' : 'buy';
+
+    if (slPrice) {
+        orders.push({
+            type: 'stop_loss',
+            price: parseFloat(slPrice),
+            size: size,
+            side: closeSide
+        });
+    }
+
+    if (tpPrice) {
+        orders.push({
+            type: 'take_profit',
+            price: parseFloat(tpPrice),
+            size: size,
+            side: closeSide
+        });
+    }
+
+    try {
+        const result = await apiCall('/set-sl-tp', 'POST', {
+            coin: coin,
+            orders: orders
+        });
+
+        if (result.success) {
+            showToast(`SL/TP orders set for ${coin}`, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('slTpModal')).hide();
+            loadOpenOrders(); // Refresh orders list
+        } else {
+            showToast('Failed to set SL/TP: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Failed to set SL/TP:', error);
+        showToast('Failed to set SL/TP orders', 'error');
+    }
 }
 
 async function toggleBot() {
