@@ -587,23 +587,23 @@ code {
 .positions-table-compact th:nth-child(3),
 .positions-table-compact td:nth-child(3) { width: 5%; }  /* Lev */
 .positions-table-compact th:nth-child(4),
-.positions-table-compact td:nth-child(4) { width: 8%; }  /* Margin */
+.positions-table-compact td:nth-child(4) { width: 7%; }  /* Margin */
 .positions-table-compact th:nth-child(5),
 .positions-table-compact td:nth-child(5) { width: 9%; }  /* Pos Value */
 .positions-table-compact th:nth-child(6),
-.positions-table-compact td:nth-child(6) { width: 8%; }  /* Size */
+.positions-table-compact td:nth-child(6) { width: 7%; }  /* Size */
 .positions-table-compact th:nth-child(7),
 .positions-table-compact td:nth-child(7) { width: 9%; }  /* Entry */
 .positions-table-compact th:nth-child(8),
 .positions-table-compact td:nth-child(8) { width: 9%; }  /* Mark */
 .positions-table-compact th:nth-child(9),
-.positions-table-compact td:nth-child(9) { width: 8%; }  /* Liq */
+.positions-table-compact td:nth-child(9) { width: 7%; }  /* Liq */
 .positions-table-compact th:nth-child(10),
-.positions-table-compact td:nth-child(10) { width: 11%; } /* Funding */
+.positions-table-compact td:nth-child(10) { width: 9%; } /* Funding */
 .positions-table-compact th:nth-child(11),
-.positions-table-compact td:nth-child(11) { width: 9%; }  /* P&L */
+.positions-table-compact td:nth-child(11) { width: 12%; }  /* P&L */
 .positions-table-compact th:nth-child(12),
-.positions-table-compact td:nth-child(12) { width: 5%; }  /* Actions */
+.positions-table-compact td:nth-child(12) { width: 7%; }  /* Actions */
 
 .positions-table-compact strong {
     font-size: 0.82rem;
@@ -866,4 +866,151 @@ code {
     color: var(--text-muted);
     font-size: 0.85rem;
     font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+/* P&L Percentage display */
+.pnl-percent {
+    font-size: 0.7rem;
+    margin-left: 0.25rem;
+}
+
+/* P&L Card Modal */
+.pnl-card-container {
+    width: 400px;
+    height: 250px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-radius: 16px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    color: #fff;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.pnl-card-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: var(--pnl-card-bg, none);
+    background-size: cover;
+    background-position: center;
+    opacity: 0.3;
+    z-index: 0;
+}
+
+.pnl-card-content {
+    position: relative;
+    z-index: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.pnl-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.pnl-card-coin {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+.pnl-card-side {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.pnl-card-side.long {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.pnl-card-side.short {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.pnl-card-leverage {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 4px;
+}
+
+.pnl-card-prices {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 20px;
+}
+
+.pnl-card-price-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.pnl-card-price-label {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.pnl-card-price-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+.pnl-card-pnl {
+    margin-top: auto;
+    text-align: center;
+}
+
+.pnl-card-pnl-label {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.pnl-card-pnl-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -1px;
+}
+
+.pnl-card-pnl-value.positive {
+    color: #22c55e;
+    text-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
+}
+
+.pnl-card-pnl-value.negative {
+    color: #ef4444;
+    text-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+}
+
+.pnl-card-footer {
+    position: absolute;
+    bottom: 12px;
+    right: 16px;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.3);
+}
+
+/* Share button in actions column */
+.btn-share-pnl {
+    font-size: 0.7rem;
 }

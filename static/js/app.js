@@ -726,12 +726,26 @@ function createPositionRowHtml(pos) {
     const positionValue = Math.abs(pos.size) * (pos.mark_price || pos.entry_price || 0);
     const margin = pos.margin_used || 0;
 
+    // Calculate P&L percentage (P&L / Posted Collateral)
+    const pnlPercent = margin > 0 ? (pos.unrealized_pnl / margin) * 100 : 0;
+    const pnlPercentDisplay = `<span class="pnl-percent">(${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(1)}%)</span>`;
+
     let fundingDisplay = '--';
     if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
         const annualPct = (pos.funding_rate * 100 * 24 * 365).toFixed(1);
         const rateClass = pos.funding_rate >= 0 ? 'text-success' : 'text-danger';
         fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
     }
+
+    // Escape data for onclick handler
+    const posDataJson = JSON.stringify({
+        coin: pos.coin,
+        side: pos.side,
+        leverage: pos.leverage,
+        entry_price: pos.entry_price,
+        mark_price: pos.mark_price,
+        pnl_percent: pnlPercent
+    }).replace(/"/g, '&quot;');
 
     return `
         <tr data-coin="${pos.coin}" data-side="${pos.side}" data-pos-value="${positionValue}" data-pos-key="${getPositionKey(pos)}">
@@ -745,8 +759,11 @@ function createPositionRowHtml(pos) {
             <td>${formatPrice(pos.mark_price)}</td>
             <td>${pos.liquidation_price ? formatPrice(pos.liquidation_price) : '--'}</td>
             <td>${fundingDisplay}</td>
-            <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)}</td>
+            <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)} ${pnlPercentDisplay}</td>
             <td>
+                <button class="btn btn-outline-secondary btn-sm btn-share-pnl py-0 px-1 me-1" onclick='showPnlCard(${posDataJson})' title="Share P&L">
+                    <i class="bi bi-share"></i>
+                </button>
                 <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="closePosition('${pos.coin}')">
                     <i class="bi bi-x-circle"></i>
                 </button>
@@ -764,6 +781,10 @@ function updatePositionRow(row, pos) {
     const positionValue = Math.abs(pos.size) * (pos.mark_price || pos.entry_price || 0);
     const margin = pos.margin_used || 0;
 
+    // Calculate P&L percentage
+    const pnlPercent = margin > 0 ? (pos.unrealized_pnl / margin) * 100 : 0;
+    const pnlPercentDisplay = `<span class="pnl-percent">(${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(1)}%)</span>`;
+
     // Update data attributes
     row.dataset.posValue = positionValue;
 
@@ -773,9 +794,9 @@ function updatePositionRow(row, pos) {
     cells[5].textContent = Math.abs(pos.size).toFixed(4);  // Size
     cells[7].textContent = formatPrice(pos.mark_price);  // Mark price
 
-    // P&L cell with color
+    // P&L cell with color and percentage
     const pnlCell = cells[10];
-    pnlCell.textContent = formatCurrency(pos.unrealized_pnl);
+    pnlCell.innerHTML = `${formatCurrency(pos.unrealized_pnl)} ${pnlPercentDisplay}`;
     pnlCell.className = pnlClass;
 
     // Funding rate
@@ -786,6 +807,20 @@ function updatePositionRow(row, pos) {
         fundingDisplay = `<span class="${rateClass}">${annualPct}%</span>`;
     }
     cells[9].innerHTML = fundingDisplay;
+
+    // Update share button data
+    const shareBtn = cells[11].querySelector('.btn-share-pnl');
+    if (shareBtn) {
+        const posData = {
+            coin: pos.coin,
+            side: pos.side,
+            leverage: pos.leverage,
+            entry_price: pos.entry_price,
+            mark_price: pos.mark_price,
+            pnl_percent: pnlPercent
+        };
+        shareBtn.onclick = () => showPnlCard(posData);
+    }
 }
 
 function updatePositionsTable(positions) {
@@ -2603,6 +2638,86 @@ async function closeAllPositions() {
     } catch (error) {
         showToast('Failed to close positions', 'error');
     }
+}
+
+/**
+ * Show the P&L Card modal with position data
+ */
+function showPnlCard(posData) {
+    // Update card content
+    document.getElementById('pnl-card-coin').textContent = posData.coin;
+    document.getElementById('pnl-card-leverage').textContent = `${posData.leverage}x Leverage`;
+
+    const sideEl = document.getElementById('pnl-card-side');
+    sideEl.textContent = posData.side.toUpperCase();
+    sideEl.className = `pnl-card-side ${posData.side}`;
+
+    document.getElementById('pnl-card-entry').textContent = formatPrice(posData.entry_price);
+    document.getElementById('pnl-card-mark').textContent = formatPrice(posData.mark_price);
+
+    const pnlEl = document.getElementById('pnl-card-pnl');
+    const pnlPercent = posData.pnl_percent;
+    pnlEl.textContent = `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%`;
+    pnlEl.className = `pnl-card-pnl-value ${pnlPercent >= 0 ? 'positive' : 'negative'}`;
+
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('pnlCardModal'));
+    modal.show();
+}
+
+/**
+ * Copy the P&L Card as an image to clipboard
+ */
+async function copyPnlCardImage() {
+    const card = document.getElementById('pnl-card');
+
+    try {
+        // Use html2canvas to capture the card
+        if (typeof html2canvas === 'undefined') {
+            // Load html2canvas dynamically if not available
+            await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+        }
+
+        const canvas = await html2canvas(card, {
+            backgroundColor: null,
+            scale: 2,
+            logging: false
+        });
+
+        // Convert to blob
+        canvas.toBlob(async (blob) => {
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({ 'image/png': blob })
+                ]);
+                showToast('P&L card copied to clipboard!', 'success');
+            } catch (err) {
+                // Fallback: download the image
+                const url = canvas.toDataURL('image/png');
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `pnl-card-${Date.now()}.png`;
+                a.click();
+                showToast('Image downloaded (clipboard not supported)', 'info');
+            }
+        }, 'image/png');
+    } catch (error) {
+        console.error('Failed to generate P&L card image:', error);
+        showToast('Failed to generate image', 'error');
+    }
+}
+
+/**
+ * Dynamically load a script
+ */
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
 }
 
 async function toggleBot() {

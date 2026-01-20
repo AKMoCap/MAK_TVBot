@@ -644,6 +644,54 @@
         </div>
     </div>
 </div>
+
+<!-- P&L Card Modal -->
+<div class="modal fade" id="pnlCardModal" tabindex="-1" aria-labelledby="pnlCardModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-darker border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-light" id="pnlCardModalLabel">
+                    <i class="bi bi-share me-2"></i>Share P&L
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body d-flex flex-column align-items-center">
+                <div id="pnl-card-wrapper">
+                    <div class="pnl-card-container" id="pnl-card">
+                        <div class="pnl-card-content">
+                            <div class="pnl-card-header">
+                                <div>
+                                    <div class="pnl-card-coin" id="pnl-card-coin">BTC</div>
+                                    <div class="pnl-card-leverage" id="pnl-card-leverage">10x Leverage</div>
+                                </div>
+                                <div class="pnl-card-side long" id="pnl-card-side">LONG</div>
+                            </div>
+                            <div class="pnl-card-prices">
+                                <div class="pnl-card-price-item">
+                                    <span class="pnl-card-price-label">Entry</span>
+                                    <span class="pnl-card-price-value" id="pnl-card-entry">$0.00</span>
+                                </div>
+                                <div class="pnl-card-price-item">
+                                    <span class="pnl-card-price-label">Mark</span>
+                                    <span class="pnl-card-price-value" id="pnl-card-mark">$0.00</span>
+                                </div>
+                            </div>
+                            <div class="pnl-card-pnl">
+                                <div class="pnl-card-pnl-label">Profit & Loss</div>
+                                <div class="pnl-card-pnl-value positive" id="pnl-card-pnl">+0.00%</div>
+                            </div>
+                            <div class="pnl-card-footer">Powered by MAK TVBot</div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary mt-3" onclick="copyPnlCardImage()">
+                    <i class="bi bi-clipboard me-2"></i>Copy Image
+                </button>
+                <small class="text-muted mt-2">Click to copy image to clipboard</small>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
