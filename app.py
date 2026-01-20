@@ -1241,13 +1241,16 @@ def api_get_settings():
     try:
         risk = RiskSettings.query.first()
 
+        # Read USE_TESTNET fresh from environment (not cached) to match bot_manager behavior
+        current_use_testnet = os.environ.get("USE_TESTNET", "true").lower().strip() == "true"
+
         # Debug: log the actual value
-        logger.info(f"[SETTINGS] USE_TESTNET={USE_TESTNET}, returning use_testnet='{str(USE_TESTNET).lower()}'")
+        logger.info(f"[SETTINGS] USE_TESTNET (cached)={USE_TESTNET}, current env={current_use_testnet}")
 
         return jsonify({
             'bot_enabled': BotConfig.get('bot_enabled', 'true'),
-            'use_testnet': str(USE_TESTNET).lower(),  # Use actual environment variable
-            'network': 'testnet' if USE_TESTNET else 'mainnet',  # Add explicit network field
+            'use_testnet': str(current_use_testnet).lower(),  # Use current environment variable
+            'network': 'testnet' if current_use_testnet else 'mainnet',  # Use current env value
             'default_leverage': BotConfig.get('default_leverage', '3'),
             'default_collateral': BotConfig.get('default_collateral', '100'),
             'slippage_tolerance': BotConfig.get('slippage_tolerance', '0.003'),
@@ -2329,14 +2332,25 @@ def webhook():
 
         if not data:
             logger.warning("Received empty webhook request")
+            log_activity('warning', 'webhook', 'Empty webhook request received')
             return jsonify({"error": "No data received"}), 400
 
-        logger.info(f"Received webhook: {json.dumps(data, indent=2)}")
+        # Log webhook receipt (mask sensitive data)
+        safe_data = {k: v for k, v in data.items() if k != 'secret'}
+        safe_data['secret'] = '***' if data.get('secret') else 'MISSING'
+        logger.info(f"Received webhook: {json.dumps(safe_data, indent=2)}")
+        log_activity('info', 'webhook', f"Webhook received: {data.get('action', 'unknown')} {data.get('coin', 'unknown')}",
+                    {'indicator': data.get('indicator'), 'has_secret': bool(data.get('secret'))})
 
-        # Validate secret
-        if data.get("secret") != WEBHOOK_SECRET:
-            logger.warning("Invalid webhook secret!")
-            log_activity('warning', 'webhook', 'Invalid webhook secret received')
+        # Validate secret with detailed debugging
+        received_secret = data.get("secret", "")
+        if received_secret != WEBHOOK_SECRET:
+            # Log details to help debug (without exposing actual secrets)
+            logger.warning(f"Invalid webhook secret! "
+                          f"Received length: {len(received_secret)}, Expected length: {len(WEBHOOK_SECRET)}, "
+                          f"Match: {received_secret == WEBHOOK_SECRET}")
+            log_activity('warning', 'webhook', 'Invalid webhook secret received',
+                        {'received_length': len(received_secret), 'expected_length': len(WEBHOOK_SECRET)})
             return jsonify({"error": "Invalid secret"}), 401
 
         # Parse data
@@ -2472,6 +2486,47 @@ def webhook():
         logger.exception(f"Webhook error: {e}")
         log_activity('error', 'webhook', f"Webhook error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ============================================================================
+# WEBHOOK TEST ENDPOINT
+# ============================================================================
+
+@app.route('/webhook/test', methods=['GET', 'POST'])
+def webhook_test():
+    """Test endpoint to verify webhook configuration"""
+    current_use_testnet = os.environ.get("USE_TESTNET", "true").lower().strip() == "true"
+
+    if request.method == 'GET':
+        return jsonify({
+            "status": "ok",
+            "message": "Webhook endpoint is reachable",
+            "webhook_url": request.url_root.rstrip('/') + '/webhook',
+            "secret_configured": bool(WEBHOOK_SECRET and WEBHOOK_SECRET != 'your-secret-key-change-me'),
+            "secret_length": len(WEBHOOK_SECRET) if WEBHOOK_SECRET else 0,
+            "bot_enabled": bot_manager.is_enabled,
+            "network": "testnet" if current_use_testnet else "mainnet",
+            "test_payload_example": {
+                "secret": "your-secret-here",
+                "action": "buy",
+                "coin": "BTC",
+                "indicator": "your-indicator-key"
+            }
+        })
+
+    # POST - test secret validation
+    data = request.get_json() or {}
+    received_secret = data.get("secret", "")
+
+    return jsonify({
+        "status": "test",
+        "secret_valid": received_secret == WEBHOOK_SECRET,
+        "received_length": len(received_secret),
+        "expected_length": len(WEBHOOK_SECRET),
+        "bot_enabled": bot_manager.is_enabled,
+        "network": "testnet" if current_use_testnet else "mainnet",
+        "note": "This is a TEST endpoint. Use /webhook for actual trades."
+    })
 
 
 # ============================================================================
