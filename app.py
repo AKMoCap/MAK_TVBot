@@ -483,6 +483,88 @@ def api_scale_order():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/set-sl-tp', methods=['POST'])
+def api_set_sl_tp():
+    """Set Stop Loss and/or Take Profit orders for an existing position"""
+    try:
+        # Get current user from session
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        wallet_address = user.address
+        agent_key = user.get_agent_key()
+
+        data = request.json
+        coin = data.get('coin')
+        orders = data.get('orders', [])
+
+        if not coin:
+            return jsonify({'success': False, 'error': 'Missing coin parameter'})
+
+        if not orders:
+            return jsonify({'success': False, 'error': 'No orders specified'})
+
+        # Get current position to determine side
+        positions = bot_manager.get_positions(wallet_address)
+        position = None
+        for pos in positions:
+            if pos.get('coin') == coin:
+                position = pos
+                break
+
+        if not position:
+            return jsonify({'success': False, 'error': f'No open position found for {coin}'})
+
+        side = position.get('side', 'long')
+
+        results = []
+        errors = []
+
+        for order in orders:
+            order_type = order.get('type')
+            price = order.get('price')
+            size = order.get('size')
+
+            if not all([order_type, price, size]):
+                errors.append(f"Invalid order: missing type, price, or size")
+                continue
+
+            if order_type == 'stop_loss':
+                result = bot_manager.place_stop_loss_order(
+                    coin, side, price, size,
+                    user_wallet=wallet_address,
+                    user_agent_key=agent_key
+                )
+            elif order_type == 'take_profit':
+                result = bot_manager.place_take_profit_order(
+                    coin, side, price, size,
+                    user_wallet=wallet_address,
+                    user_agent_key=agent_key
+                )
+            else:
+                errors.append(f"Unknown order type: {order_type}")
+                continue
+
+            if result.get('success'):
+                results.append({'type': order_type, 'price': price, 'success': True})
+            else:
+                errors.append(f"{order_type}: {result.get('error', 'Unknown error')}")
+
+        if not results and errors:
+            return jsonify({'success': False, 'error': '; '.join(errors)})
+
+        return jsonify({
+            'success': True,
+            'orders_set': len(results),
+            'results': results,
+            'errors': errors if errors else None
+        })
+    except Exception as e:
+        logger.exception(f"Error setting SL/TP: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/twap-order', methods=['POST'])
 def api_twap_order():
     """Place a TWAP order"""
