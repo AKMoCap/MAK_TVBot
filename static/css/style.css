@@ -868,18 +868,27 @@ code {
     font-family: 'SFMono-Regular', Consolas, monospace;
 }
 
-/* P&L Percentage display */
+/* P&L Percentage display - inherit color from parent (text-success/text-danger) */
 .pnl-percent {
     font-size: 0.7rem;
     margin-left: 0.25rem;
-    color: inherit;
+}
+
+.text-success .pnl-percent,
+td.text-success .pnl-percent {
+    color: var(--bs-success) !important;
+}
+
+.text-danger .pnl-percent,
+td.text-danger .pnl-percent {
+    color: var(--bs-danger) !important;
 }
 
 /* P&L Card Modal */
 .pnl-card-container {
     width: 400px;
     height: 250px;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    background: url('/static/images/pnl-card-bg.jpg') center/cover no-repeat;
     border-radius: 16px;
     padding: 24px;
     position: relative;
@@ -895,10 +904,7 @@ code {
     left: 0;
     right: 0;
     bottom: 0;
-    background-image: var(--pnl-card-bg, none);
-    background-size: cover;
-    background-position: center;
-    opacity: 0.3;
+    background: rgba(0, 0, 0, 0.4);
     z-index: 0;
 }
 
