@@ -888,7 +888,7 @@ td.text-danger .pnl-percent {
 .pnl-card-container {
     width: 400px;
     height: 250px;
-    background: url('/static/images/pnl-card-bg.jpg') center/cover no-repeat;
+    background: url('/static/b2.png') center/cover no-repeat;
     border-radius: 16px;
     padding: 24px;
     position: relative;
