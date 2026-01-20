@@ -1857,12 +1857,16 @@ async function loadTwapOrders() {
 
         const twaps = data.twaps || [];
 
+        // Debug: Log raw TWAP data to understand API response structure
+        console.log('[loadTwapOrders] Raw TWAP data:', JSON.stringify(twaps, null, 2));
+
         // Filter to only show active/running TWAPs
         // Note: Hyperliquid API uses Rust-style enum encoding where status is an object
         // e.g., { status: { running: { twapId: 123 } } } not { status: "running" }
         const activeTwaps = twaps.filter(twap => {
             const state = twap.state || {};
             const status = state.status || {};
+            console.log('[loadTwapOrders] TWAP state:', twap.state, 'status:', status);
             // Check if status object has 'running' or 'activated' key (Rust enum style)
             return typeof status === 'object' && ('running' in status || 'activated' in status);
         });
