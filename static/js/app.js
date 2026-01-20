@@ -1857,11 +1857,19 @@ async function loadTwapOrders() {
 
         const twaps = data.twaps || [];
 
-        // Filter to only show active/running TWAPs
-        // Note: Hyperliquid API uses empty status object {} for running TWAPs
+        // Filter to only show active/running TWAPs for THIS user
+        // Note: twapHistory API returns all TWAPs globally, so we must filter by user
+        // Hyperliquid API uses empty status object {} for running TWAPs
         // Terminated TWAPs have status like { terminated: {...} } or { finished: {...} }
         const activeTwaps = twaps.filter(twap => {
             const state = twap.state || {};
+
+            // First, filter by user - only show TWAPs belonging to connected wallet
+            const twapUser = (state.user || '').toLowerCase();
+            if (twapUser !== walletAddress.toLowerCase()) {
+                return false;
+            }
+
             const status = state.status || {};
 
             // Check if status is empty (running) or explicitly has 'running'/'activated' key
