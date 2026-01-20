@@ -3016,6 +3016,9 @@ async function loadSettings() {
         if (!data.api_secret_configured) {
             document.getElementById('api-wallet-status').innerHTML =
                 '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Not Configured</span>';
+        } else {
+            document.getElementById('api-wallet-status').innerHTML =
+                '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>';
         }
 
     } catch (error) {
@@ -3471,6 +3474,35 @@ function setupSettingsEvents() {
 
     // Check HIP-3 DEX abstraction status
     checkHip3Status();
+
+    // Check Agent Wallet status
+    checkAgentWalletStatus();
+}
+
+/**
+ * Check and display Agent Wallet status on Settings page
+ */
+async function checkAgentWalletStatus() {
+    const agentStatusEl = document.getElementById('api-wallet-status');
+    if (!agentStatusEl) return;
+
+    try {
+        const result = await apiCall('/wallet/status');
+
+        if (!result.connected) {
+            agentStatusEl.innerHTML = `<span class="badge bg-secondary"><i class="bi bi-wallet2 me-1"></i>Connect Wallet</span>`;
+            return;
+        }
+
+        if (result.has_agent_key) {
+            agentStatusEl.innerHTML = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Authorized</span>`;
+        } else {
+            agentStatusEl.innerHTML = `<span class="badge bg-warning"><i class="bi bi-key me-1"></i>Not Authorized</span>`;
+        }
+    } catch (error) {
+        console.error('Failed to check agent wallet status:', error);
+        // Fall back to settings data
+    }
 }
 
 /**
