@@ -2035,6 +2035,24 @@ def api_wallet_connect():
         if is_new_user:
             logger.info(f"New user {address[:10]}... - seeding default settings")
             seed_user_defaults(user.id)
+        else:
+            # For existing users, check if there's orphaned data to migrate
+            # This handles the transition from single-user to multi-user
+            orphan_count = (
+                CoinConfig.query.filter(CoinConfig.user_id.is_(None)).count() +
+                Indicator.query.filter(Indicator.user_id.is_(None)).count() +
+                RiskSettings.query.filter(RiskSettings.user_id.is_(None)).count()
+            )
+            if orphan_count > 0:
+                logger.info(f"Found {orphan_count} orphaned records - migrating to user {address[:10]}...")
+                # Migrate orphaned data to this user
+                CoinConfig.query.filter(CoinConfig.user_id.is_(None)).update({'user_id': user.id})
+                Indicator.query.filter(Indicator.user_id.is_(None)).update({'user_id': user.id})
+                RiskSettings.query.filter(RiskSettings.user_id.is_(None)).update({'user_id': user.id})
+                Trade.query.filter(Trade.user_id.is_(None)).update({'user_id': user.id})
+                ActivityLog.query.filter(ActivityLog.user_id.is_(None)).update({'user_id': user.id})
+                db.session.commit()
+                logger.info(f"Successfully migrated orphaned data to user {address[:10]}...")
 
         # Set session
         session['wallet_session'] = session_token
@@ -2373,6 +2391,73 @@ def api_hip3_dexs():
 
     except Exception as e:
         logger.exception(f"Error fetching HIP-3 DEXs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/migrate-user-data', methods=['POST'])
+def api_migrate_user_data():
+    """
+    Migrate orphaned data (user_id = NULL) to the current user.
+    This is needed after upgrading to multi-user support to claim existing data.
+    """
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet first'}), 401
+
+        migrated = {
+            'indicators': 0,
+            'coin_configs': 0,
+            'risk_settings': 0,
+            'trades': 0,
+            'activity_logs': 0
+        }
+
+        # Migrate orphaned Indicators
+        orphan_indicators = Indicator.query.filter(Indicator.user_id.is_(None)).all()
+        for ind in orphan_indicators:
+            ind.user_id = user.id
+            migrated['indicators'] += 1
+
+        # Migrate orphaned CoinConfigs
+        orphan_configs = CoinConfig.query.filter(CoinConfig.user_id.is_(None)).all()
+        for config in orphan_configs:
+            config.user_id = user.id
+            migrated['coin_configs'] += 1
+
+        # Migrate orphaned RiskSettings
+        orphan_risks = RiskSettings.query.filter(RiskSettings.user_id.is_(None)).all()
+        for risk in orphan_risks:
+            risk.user_id = user.id
+            migrated['risk_settings'] += 1
+
+        # Migrate orphaned Trades
+        orphan_trades = Trade.query.filter(Trade.user_id.is_(None)).all()
+        for trade in orphan_trades:
+            trade.user_id = user.id
+            migrated['trades'] += 1
+
+        # Migrate orphaned ActivityLogs
+        orphan_logs = ActivityLog.query.filter(ActivityLog.user_id.is_(None)).all()
+        for log in orphan_logs:
+            log.user_id = user.id
+            migrated['activity_logs'] += 1
+
+        db.session.commit()
+
+        total = sum(migrated.values())
+        logger.info(f"Migrated {total} records to user {user.address[:10]}...: {migrated}")
+
+        return jsonify({
+            'success': True,
+            'migrated': migrated,
+            'total': total,
+            'message': f'Successfully migrated {total} records to your account'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.exception(f"Error migrating user data: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
