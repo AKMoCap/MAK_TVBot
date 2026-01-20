@@ -3396,7 +3396,7 @@ async function clearTradeHistory() {
     }
 
     try {
-        const result = await apiCall('/trades/clear', 'DELETE');
+        const result = await apiCall('/trades/clear?confirm=true', 'DELETE');
         if (result.success) {
             showToast(`Cleared ${result.deleted} trades from history`, 'success');
             // Refresh the page if on trades page, or refresh dashboard
@@ -3420,7 +3420,7 @@ async function clearActivityLogs() {
     }
 
     try {
-        const result = await apiCall('/logs/clear', 'DELETE');
+        const result = await apiCall('/logs/clear?confirm=true', 'DELETE');
         if (result.success) {
             showToast(`Cleared ${result.deleted} log entries`, 'success');
         } else {
