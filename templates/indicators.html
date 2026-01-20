@@ -42,6 +42,17 @@
                                 <small class="text-muted">Used to identify which indicator triggered the signal</small>
                             </div>
                             <div class="col-md-4">
+                                <label class="form-label">Webhook Secret</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control bg-dark text-light border-secondary"
+                                           id="indicator-webhook-secret" placeholder="Your TradingView webhook secret">
+                                    <button class="btn btn-outline-secondary" type="button" id="generate-secret" title="Generate random secret">
+                                        <i class="bi bi-shuffle"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">Secret used to authenticate TradingView webhooks for this indicator</small>
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label">Timeframe</label>
                                 <select class="form-select bg-dark text-light border-secondary" id="indicator-timeframe">
                                     <option value="1m">1 Minute</option>
@@ -110,9 +121,10 @@
                                 <th>Status</th>
                                 <th>Name</th>
                                 <th>Type</th>
+                                <th>Webhook Secret</th>
                                 <th>Timeframe</th>
                                 <th>Coins</th>
-                                <th>Total Trades</th>
+                                <th>Trades</th>
                                 <th>Win Rate</th>
                                 <th>P&L</th>
                                 <th>Actions</th>
@@ -120,7 +132,7 @@
                         </thead>
                         <tbody id="indicators-table">
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-4">
+                                <td colspan="10" class="text-center text-muted py-4">
                                     <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                                     No indicators configured
                                 </td>
@@ -178,7 +190,7 @@
                                 <tr>
                                     <td><code>secret</code></td>
                                     <td><span class="badge bg-danger">Yes</span></td>
-                                    <td>The <strong>actual value</strong> of your WEBHOOK_SECRET from Replit Secrets (not the name)</td>
+                                    <td>The <strong>Webhook Secret</strong> from your indicator above (unique per indicator)</td>
                                 </tr>
                                 <tr>
                                     <td><code>action</code></td>
@@ -447,6 +459,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('new-indicator-form').addEventListener('submit', saveIndicator);
     document.getElementById('copy-webhook').addEventListener('click', copyWebhookUrl);
     document.getElementById('copy-template').addEventListener('click', copyTemplate);
+    document.getElementById('generate-secret').addEventListener('click', generateWebhookSecret);
 });
+
+function generateWebhookSecret() {
+    // Generate a random 32-character hex string
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    const secret = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+    document.getElementById('indicator-webhook-secret').value = secret;
+}
 </script>
 {% endblock %}

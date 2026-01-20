@@ -51,6 +51,13 @@ class UserWallet(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Relationships - user owns their data
+    trades = db.relationship('Trade', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    coin_configs = db.relationship('CoinConfig', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    risk_settings = db.relationship('RiskSettings', backref='user', uselist=False, cascade='all, delete-orphan')
+    indicators = db.relationship('Indicator', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    activity_logs = db.relationship('ActivityLog', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+
     def set_agent_key(self, agent_key):
         """Encrypt and store agent private key"""
         if agent_key:
@@ -84,16 +91,19 @@ class UserWallet(db.Model):
 
 
 class Trade(db.Model):
-    """Record of all executed trades"""
+    """Record of all executed trades - per user"""
     __tablename__ = 'trades'
 
     # Composite indexes for commonly used query patterns
     __table_args__ = (
-        db.Index('idx_trade_status_timestamp', 'status', 'timestamp'),  # For stats queries
-        db.Index('idx_trade_status_pnl', 'status', 'pnl'),  # For win/loss aggregates
+        db.Index('idx_trade_user_status', 'user_id', 'status'),  # For user's open/closed trades
+        db.Index('idx_trade_user_timestamp', 'user_id', 'timestamp'),  # For user's trade history
+        db.Index('idx_trade_status_timestamp', 'status', 'timestamp'),  # Legacy - for stats queries
+        db.Index('idx_trade_status_pnl', 'status', 'pnl'),  # Legacy - for win/loss aggregates
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_wallets.id'), nullable=True, index=True)  # nullable for migration
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     coin = db.Column(db.String(20), nullable=False, index=True)
     action = db.Column(db.String(10), nullable=False)  # buy, sell, close
@@ -162,11 +172,18 @@ class BotConfig(db.Model):
 
 
 class CoinConfig(db.Model):
-    """Per-coin trading configuration"""
+    """Per-coin trading configuration - per user"""
     __tablename__ = 'coin_configs'
 
+    # Unique constraint: each user can have one config per coin
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'coin', name='uq_user_coin'),
+        db.Index('idx_coinconfig_user', 'user_id'),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
-    coin = db.Column(db.String(20), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_wallets.id'), nullable=True, index=True)  # nullable for migration
+    coin = db.Column(db.String(20), nullable=False)
     quote_asset = db.Column(db.String(20), default='USDC')  # Collateral asset: USDC, USDH, USDe, etc.
     category = db.Column(db.String(20), default='L1s')  # L1s, APPS, MEMES, HIP-3 Perps
     enabled = db.Column(db.Boolean, default=True)
@@ -233,10 +250,11 @@ class CoinConfig(db.Model):
 
 
 class RiskSettings(db.Model):
-    """Global risk management settings"""
+    """Per-user risk management settings"""
     __tablename__ = 'risk_settings'
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_wallets.id'), nullable=True, unique=True, index=True)  # One per user
 
     # Position limits
     max_position_value_usd = db.Column(db.Float, default=1000.0)
@@ -266,17 +284,26 @@ class RiskSettings(db.Model):
 
 
 class Indicator(db.Model):
-    """Registered TradingView indicators"""
+    """Registered TradingView indicators - per user"""
     __tablename__ = 'indicators'
 
+    # Unique constraint: each user can have one indicator with a given name
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'name', name='uq_user_indicator_name'),
+        db.Index('idx_indicator_user', 'user_id'),
+        db.Index('idx_indicator_webhook_secret', 'webhook_secret'),  # For webhook lookups
+    )
+
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_wallets.id'), nullable=True, index=True)  # nullable for migration
+    name = db.Column(db.String(100), nullable=False)
     indicator_type = db.Column(db.String(50), nullable=False)  # custom, rsi, macd, ema, bollinger
     description = db.Column(db.Text, nullable=True)
     enabled = db.Column(db.Boolean, default=True)
 
-    # Webhook identification
-    webhook_key = db.Column(db.String(100), nullable=True)  # Unique key sent in webhook
+    # Webhook identification - per-indicator secret for TradingView
+    webhook_key = db.Column(db.String(100), nullable=True)  # Unique key sent in webhook payload
+    webhook_secret = db.Column(db.String(64), nullable=True)  # User's TradingView webhook secret
 
     # Settings
     timeframe = db.Column(db.String(20), default='1h')  # 1m, 5m, 15m, 1h, 4h, 1d
@@ -298,6 +325,7 @@ class Indicator(db.Model):
             'description': self.description,
             'enabled': self.enabled,
             'webhook_key': self.webhook_key,
+            'webhook_secret': self.webhook_secret,  # User's TradingView webhook secret
             'timeframe': self.timeframe,
             'coins': self.coins,
             'total_trades': self.total_trades,
@@ -308,15 +336,17 @@ class Indicator(db.Model):
 
 
 class ActivityLog(db.Model):
-    """Activity and event logging"""
+    """Activity and event logging - per user"""
     __tablename__ = 'activity_logs'
 
     # Composite index for efficient log queries by category
     __table_args__ = (
+        db.Index('idx_activitylog_user_timestamp', 'user_id', 'timestamp'),
         db.Index('idx_activitylog_category_timestamp', 'category', 'timestamp'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_wallets.id'), nullable=True, index=True)  # nullable for migration
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     level = db.Column(db.String(20), default='info', index=True)  # info, warning, error, trade
     category = db.Column(db.String(50), nullable=False, index=True)  # trade, risk, system, webhook
@@ -380,42 +410,9 @@ def seed_defaults():
     """Seed default values into database. Call after migrations are complete."""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     try:
-        # Create default risk settings if not exist
-        if not RiskSettings.query.first():
-            default_risk = RiskSettings()
-            db.session.add(default_risk)
-
-        # Create default coin configs for popular coins
-        default_coins = {
-            'L1s': ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'MON', 'BNB', 'LTC', 'CC', 'TAO', 'TON', 'WLD'],
-            'APPS': ['AAVE', 'ENA', 'PENDLE', 'AERO', 'VIRTUAL', 'PUMP', 'LIT', 'CRV', 'LINK', 'ETHFI', 'MORPHO', 'SYRUP', 'JUP'],
-            'MEMES': ['DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'SPX'],
-            'HIP-3 Perps': []
-        }
-
-        for category, coins in default_coins.items():
-            for coin in coins:
-                existing = CoinConfig.query.filter_by(coin=coin).first()
-                if existing:
-                    if existing.category != category:
-                        existing.category = category
-                else:
-                    coin_config = CoinConfig(
-                        coin=coin,
-                        category=category,
-                        default_collateral=100.0,
-                        max_position_size=1000.0,
-                        default_stop_loss_pct=15.0,
-                        tp1_pct=50.0,
-                        tp1_size_pct=25.0,
-                        tp2_pct=100.0,
-                        tp2_size_pct=50.0
-                    )
-                    db.session.add(coin_config)
-
-        # Set default bot config
+        # Set default bot config (global settings)
         defaults = {
             'bot_enabled': 'true',
             'use_testnet': 'true',
@@ -432,3 +429,56 @@ def seed_defaults():
     except Exception as e:
         logger.error(f"Seeding error: {e}")
         db.session.rollback()
+
+
+def seed_user_defaults(user_id):
+    """
+    Seed default settings for a new user.
+    Called when a user connects their wallet for the first time.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Check if user already has settings
+        existing_risk = RiskSettings.query.filter_by(user_id=user_id).first()
+        if existing_risk:
+            logger.info(f"User {user_id} already has settings, skipping seed")
+            return True
+
+        # Create default risk settings for this user
+        risk_settings = RiskSettings(user_id=user_id)
+        db.session.add(risk_settings)
+
+        # Create default coin configs for this user
+        default_coins = {
+            'L1s': ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'MON', 'BNB', 'LTC', 'CC', 'TAO', 'TON', 'WLD'],
+            'APPS': ['AAVE', 'ENA', 'PENDLE', 'AERO', 'VIRTUAL', 'PUMP', 'LIT', 'CRV', 'LINK', 'ETHFI', 'MORPHO', 'SYRUP', 'JUP'],
+            'MEMES': ['DOGE', 'FARTCOIN', 'kBONK', 'kPEPE', 'PENGU', 'SPX'],
+            'HIP-3 Perps': []
+        }
+
+        for category, coins in default_coins.items():
+            for coin in coins:
+                coin_config = CoinConfig(
+                    user_id=user_id,
+                    coin=coin,
+                    category=category,
+                    default_collateral=100.0,
+                    max_position_size=1000.0,
+                    default_stop_loss_pct=15.0,
+                    tp1_pct=50.0,
+                    tp1_size_pct=25.0,
+                    tp2_pct=100.0,
+                    tp2_size_pct=50.0
+                )
+                db.session.add(coin_config)
+
+        db.session.commit()
+        logger.info(f"Seeded default settings for user {user_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error seeding user defaults: {e}")
+        db.session.rollback()
+        return False
