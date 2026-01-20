@@ -2364,10 +2364,27 @@ def webhook():
             log_activity('warning', 'webhook', 'Webhook received but bot is disabled')
             return jsonify({"error": "Bot is disabled"}), 400
 
+        # Find a connected user with valid agent key for the current network
+        current_use_testnet = os.environ.get("USE_TESTNET", "true").lower().strip() == "true"
+        webhook_user = UserWallet.query.filter(
+            UserWallet.agent_key_encrypted.isnot(None),
+            UserWallet.use_testnet == current_use_testnet
+        ).order_by(UserWallet.last_connected.desc()).first()
+
+        if not webhook_user or not webhook_user.has_agent_key():
+            error_msg = f"No connected wallet with agent key found for {'testnet' if current_use_testnet else 'mainnet'}. Please connect your wallet and approve an agent first."
+            logger.error(error_msg)
+            log_activity('error', 'webhook', error_msg)
+            return jsonify({"error": error_msg}), 400
+
+        user_wallet = webhook_user.address
+        user_agent_key = webhook_user.get_agent_key()
+        logger.info(f"Webhook using agent wallet for user: {user_wallet[:10]}...")
+
         # Handle close position
         if close_position:
             logger.info(f"Closing position for {coin}")
-            result = bot_manager.close_position(coin)
+            result = bot_manager.close_position(coin, user_wallet=user_wallet, user_agent_key=user_agent_key)
 
             # Update trade record
             trade = Trade.query.filter_by(coin=coin, status='open').first()
@@ -2423,7 +2440,7 @@ def webhook():
         tp2_pct = coin_config.tp2_pct
         tp2_size_pct = coin_config.tp2_size_pct
 
-        # Execute trade
+        # Execute trade using connected wallet's agent key
         result = bot_manager.execute_trade(
             coin=coin,
             action=action,
@@ -2434,7 +2451,9 @@ def webhook():
             tp1_pct=tp1_pct,
             tp1_size_pct=tp1_size_pct,
             tp2_pct=tp2_pct,
-            tp2_size_pct=tp2_size_pct
+            tp2_size_pct=tp2_size_pct,
+            user_wallet=user_wallet,
+            user_agent_key=user_agent_key
         )
 
         if result.get('success'):
@@ -2497,6 +2516,14 @@ def webhook_test():
     """Test endpoint to verify webhook configuration"""
     current_use_testnet = os.environ.get("USE_TESTNET", "true").lower().strip() == "true"
 
+    # Check for connected wallet with agent key
+    webhook_user = UserWallet.query.filter(
+        UserWallet.agent_key_encrypted.isnot(None),
+        UserWallet.use_testnet == current_use_testnet
+    ).order_by(UserWallet.last_connected.desc()).first()
+
+    agent_wallet_ready = webhook_user is not None and webhook_user.has_agent_key()
+
     if request.method == 'GET':
         return jsonify({
             "status": "ok",
@@ -2506,6 +2533,8 @@ def webhook_test():
             "secret_length": len(WEBHOOK_SECRET) if WEBHOOK_SECRET else 0,
             "bot_enabled": bot_manager.is_enabled,
             "network": "testnet" if current_use_testnet else "mainnet",
+            "agent_wallet_ready": agent_wallet_ready,
+            "agent_wallet_address": webhook_user.address[:10] + '...' if agent_wallet_ready else None,
             "test_payload_example": {
                 "secret": "your-secret-here",
                 "action": "buy",
