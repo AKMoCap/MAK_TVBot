@@ -1990,7 +1990,11 @@ async function loadTwapOrders() {
             }
 
             // twapId can be at multiple locations depending on API response
-            const twapId = twap.twap_id || state.twapId || twap.oid || state.oid;
+            // Debug: log the full twap object to find where ID is stored
+            console.log('[loadTwapOrders] Full TWAP object for', coin, ':', JSON.stringify(twap, null, 2));
+            const twapId = twap.id || twap.twap_id || twap.twapId || twap.oid ||
+                           state.id || state.twap_id || state.twapId || state.oid;
+            console.log('[loadTwapOrders] Extracted twapId:', twapId);
 
             return `
                 <tr>
