@@ -887,10 +887,11 @@ td.text-danger .pnl-percent {
 /* P&L Card Modal */
 .pnl-card-container {
     width: 400px;
-    height: 250px;
+    height: 280px;
     background: url('/static/b2.png') center/cover no-repeat;
     border-radius: 16px;
     padding: 24px;
+    padding-bottom: 32px;
     position: relative;
     overflow: hidden;
     color: #fff;
@@ -914,6 +915,7 @@ td.text-danger .pnl-percent {
     height: 100%;
     display: flex;
     flex-direction: column;
+    padding-bottom: 20px;
 }
 
 .pnl-card-header {
@@ -983,7 +985,6 @@ td.text-danger .pnl-percent {
 .pnl-card-pnl {
     margin-top: auto;
     text-align: center;
-    padding-bottom: 20px;
 }
 
 .pnl-card-pnl-value {
@@ -1004,12 +1005,13 @@ td.text-danger .pnl-percent {
 
 .pnl-card-footer {
     position: absolute;
-    bottom: 8px;
+    bottom: 10px;
     left: 0;
     right: 0;
     text-align: center;
     font-size: 0.55rem;
     color: rgba(255, 255, 255, 0.3);
+    z-index: 2;
 }
 
 /* Share button in actions column */
