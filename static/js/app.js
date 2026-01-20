@@ -1857,18 +1857,23 @@ async function loadTwapOrders() {
 
         const twaps = data.twaps || [];
 
-        // Debug: Log raw TWAP data to understand API response structure
-        console.log('[loadTwapOrders] Raw TWAP data:', JSON.stringify(twaps, null, 2));
-
         // Filter to only show active/running TWAPs
-        // Note: Hyperliquid API uses Rust-style enum encoding where status is an object
-        // e.g., { status: { running: { twapId: 123 } } } not { status: "running" }
+        // Note: Hyperliquid API uses empty status object {} for running TWAPs
+        // Terminated TWAPs have status like { terminated: {...} } or { finished: {...} }
         const activeTwaps = twaps.filter(twap => {
             const state = twap.state || {};
             const status = state.status || {};
-            console.log('[loadTwapOrders] TWAP state:', twap.state, 'status:', status);
-            // Check if status object has 'running' or 'activated' key (Rust enum style)
-            return typeof status === 'object' && ('running' in status || 'activated' in status);
+
+            // Check if status is empty (running) or explicitly has 'running'/'activated' key
+            const statusKeys = Object.keys(status);
+            const isRunning = statusKeys.length === 0 ||
+                              statusKeys.includes('running') ||
+                              statusKeys.includes('activated');
+            // Exclude terminated/finished TWAPs
+            const isTerminated = statusKeys.includes('terminated') ||
+                                 statusKeys.includes('finished') ||
+                                 statusKeys.includes('error');
+            return isRunning && !isTerminated;
         });
 
         updateTabCount('twaps', activeTwaps.length);
@@ -1887,12 +1892,12 @@ async function loadTwapOrders() {
 
         tbody.innerHTML = activeTwaps.map(twap => {
             const state = twap.state || {};
-            const status = state.status || {};
-            // Get the active status data (running or activated)
-            const statusData = status.running || status.activated || {};
 
             const coin = twap.coin || state.coin || 'Unknown';
-            const isBuy = twap.is_buy !== undefined ? twap.is_buy : state.isBuy;
+            // API returns side as "B" (buy) or "A"/"S" (sell), or isBuy boolean
+            const isBuy = twap.is_buy !== undefined ? twap.is_buy :
+                          state.isBuy !== undefined ? state.isBuy :
+                          state.side === 'B';
             const sideClass = isBuy ? 'badge-long' : 'badge-short';
             const sideText = isBuy ? 'BUY' : 'SELL';
 
@@ -1900,16 +1905,31 @@ async function loadTwapOrders() {
             const totalSize = parseFloat(twap.sz || state.sz || 0);
             const executedSize = parseFloat(twap.executed_sz || state.executedSz || 0);
 
-            // Average price
-            const avgPrice = parseFloat(twap.avg_px || state.avgPx || 0);
+            // Average price - may be in executedNtl/executedSz if avgPx not provided
+            let avgPrice = parseFloat(twap.avg_px || state.avgPx || 0);
+            if (avgPrice === 0 && executedSize > 0) {
+                const executedNtl = parseFloat(state.executedNtl || 0);
+                if (executedNtl > 0) {
+                    avgPrice = executedNtl / executedSize;
+                }
+            }
 
-            // Running time - calculate from timestamps if available
+            // Running time - calculate from timestamp
             const durationMinutes = parseInt(twap.minutes || state.minutes || 0);
             let runningTime = '--';
             let totalTime = `${durationMinutes}m`;
 
-            if (twap.start_time || state.startTime) {
-                const startTime = new Date(twap.start_time || state.startTime);
+            // API returns timestamp as unix ms, or start_time/startTime as ISO string
+            const startTimestamp = state.timestamp || twap.timestamp;
+            const startTimeStr = twap.start_time || state.startTime;
+            if (startTimestamp) {
+                const startTime = new Date(startTimestamp);
+                const now = new Date();
+                const elapsedMs = now - startTime;
+                const elapsedMinutes = Math.floor(elapsedMs / 60000);
+                runningTime = `${elapsedMinutes}m`;
+            } else if (startTimeStr) {
+                const startTime = new Date(startTimeStr);
                 const now = new Date();
                 const elapsedMs = now - startTime;
                 const elapsedMinutes = Math.floor(elapsedMs / 60000);
@@ -1917,7 +1937,7 @@ async function loadTwapOrders() {
             }
 
             // twapId can be at multiple locations depending on API response
-            const twapId = twap.twap_id || state.twapId || statusData.twapId || twap.oid;
+            const twapId = twap.twap_id || state.twapId || twap.oid || state.oid;
 
             return `
                 <tr>
