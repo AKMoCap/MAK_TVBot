@@ -91,65 +91,142 @@
         </div>
     </div>
 
-    <!-- Main Content Row -->
-    <div class="col-lg-8">
-        <!-- TradingView Chart -->
-        <div class="card bg-darker border-secondary" id="tradingview-card">
-            <!-- TradingView Widget BEGIN -->
-            <div class="tradingview-widget-container" style="height:100%;width:100%">
-                <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
-                <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/symbols/BTCUSDT/?exchange=BINANCE" rel="noopener nofollow" target="_blank"><span class="blue-text">BTCUSDT price</span></a><span class="trademark"> by TradingView</span></div>
-                <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-                {
-                    "allow_symbol_change": true,
-                    "calendar": false,
-                    "details": false,
-                    "hide_side_toolbar": true,
-                    "hide_top_toolbar": false,
-                    "hide_legend": false,
-                    "hide_volume": false,
-                    "hotlist": false,
-                    "interval": "240",
-                    "locale": "en",
-                    "save_image": false,
-                    "style": "1",
-                    "symbol": "BINANCE:BTCUSDT",
-                    "theme": "dark",
-                    "timezone": "America/New_York",
-                    "backgroundColor": "#0d1117",
-                    "gridColor": "rgba(242, 242, 242, 0.06)",
-                    "watchlist": [
-                        "BINANCE:BTCUSDT",
-                        "BINANCE:ETHUSDT",
-                        "BINANCE:SOLUSDT",
-                        "PYTH:HYPEUSD",
-                        "BINANCE:AAVEUSDT",
-                        "BINANCE:ENAUSDT",
-                        "CRYPTOCAP:PENDLE",
-                        "COINBASE:AEROUSD",
-                        "BINANCE:VIRTUALUSDT",
-                        "CRYPTOCAP:DOGE",
-                        "BINANCE:BONKUSDT",
-                        "BINANCE:PEPEUSDT",
-                        "CRYPTO:FARTCOINUSD"
-                    ],
-                    "withdateranges": false,
-                    "range": "YTD",
-                    "compareSymbols": [],
-                    "studies": [
-                        "STD;RSI"
-                    ],
-                    "autosize": true
-                }
-                </script>
+    <!-- Positions/Spot/Orders Table -->
+    <div class="col-lg-8 order-lg-1">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <div class="positions-tabs">
+                    <span class="positions-tab active" data-tab="perps">Perps<span id="tab-count-perps" class="tab-count"></span></span>
+                    <span class="positions-tab" data-tab="spot">Spot</span>
+                    <span class="positions-tab" data-tab="orders">Open Orders<span id="tab-count-orders" class="tab-count"></span></span>
+                    <span class="positions-tab" data-tab="twaps">TWAPs<span id="tab-count-twaps" class="tab-count"></span></span>
+                </div>
+                <div id="perps-controls">
+                    <select id="side-filter" class="form-select form-select-sm d-inline-block me-2" style="width: auto; background-color: var(--bg-darker); color: var(--text-light); border-color: var(--border-color);">
+                        <option value="">All Sides</option>
+                        <option value="long">Long Only</option>
+                        <option value="short">Short Only</option>
+                    </select>
+                    <button class="btn btn-outline-danger btn-sm" id="close-all-btn">
+                        <i class="bi bi-x-circle me-1"></i>Close All
+                    </button>
+                </div>
             </div>
-            <!-- TradingView Widget END -->
+
+            <!-- Perps Tab Content -->
+            <div class="card-body p-0 tab-content" id="tab-perps">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact" id="perps-table-sortable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="coin" data-type="text">Coin <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="side" data-type="text">Side <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="leverage" data-type="number">Lev <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="margin" data-type="number">Posted <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable active desc" data-sort="posValue" data-type="number">Pos. Value <i class="bi bi-arrow-down sort-icon"></i></th>
+                                <th class="sortable" data-sort="size" data-type="number">Size <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="entry" data-type="number">Entry <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="mark" data-type="number">Mark <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="liq" data-type="number">Liq. <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="funding" data-type="number">Funding <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th class="sortable" data-sort="pnl" data-type="number">P&L <i class="bi bi-arrow-down-up sort-icon"></i></th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-table">
+                            <tr>
+                                <td colspan="12" class="text-center text-muted py-3">
+                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                                    No open positions
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Spot Tab Content -->
+            <div class="card-body p-0 tab-content" id="tab-spot" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 table-sm spot-table-compact">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Units</th>
+                                <th>$ Value</th>
+                            </tr>
+                        </thead>
+                        <tbody id="spot-table">
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-3">
+                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                                    No spot balances
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Open Orders Tab Content -->
+            <div class="card-body p-0 tab-content" id="tab-orders" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Direction</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Price</th>
+                                <th>Order Value</th>
+                                <th>Filled</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-table">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-3">
+                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                                    No open orders
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TWAPs Tab Content -->
+            <div class="card-body p-0 tab-content" id="tab-twaps" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Side</th>
+                                <th>Size</th>
+                                <th>Executed</th>
+                                <th>Avg. Price</th>
+                                <th>Running / Total</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="twaps-table">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-3">
+                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                                    No active TWAP orders
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Right Sidebar -->
-    <div class="col-lg-4">
-        <!-- Quick Trade Panel -->
+    <!-- Quick Trade Panel -->
+    <div class="col-lg-4 order-lg-2">
         <div class="card bg-darker border-secondary" id="quick-trade-card">
             <div class="card-header bg-transparent border-secondary">
                 <h5 class="mb-0"><i class="bi bi-lightning me-2"></i>Quick Trade</h5>
@@ -390,140 +467,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Positions/Spot/Orders Table - Full Width -->
-    <div class="col-12">
-        <div class="card bg-darker border-secondary">
-            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
-                <div class="positions-tabs">
-                    <span class="positions-tab active" data-tab="perps">Perps<span id="tab-count-perps" class="tab-count"></span></span>
-                    <span class="positions-tab" data-tab="spot">Spot</span>
-                    <span class="positions-tab" data-tab="orders">Open Orders<span id="tab-count-orders" class="tab-count"></span></span>
-                    <span class="positions-tab" data-tab="twaps">TWAPs<span id="tab-count-twaps" class="tab-count"></span></span>
-                </div>
-                <div id="perps-controls">
-                    <select id="side-filter" class="form-select form-select-sm d-inline-block me-2" style="width: auto; background-color: var(--bg-darker); color: var(--text-light); border-color: var(--border-color);">
-                        <option value="">All Sides</option>
-                        <option value="long">Long Only</option>
-                        <option value="short">Short Only</option>
-                    </select>
-                    <button class="btn btn-outline-danger btn-sm" id="close-all-btn">
-                        <i class="bi bi-x-circle me-1"></i>Close All
-                    </button>
-                </div>
-            </div>
-
-            <!-- Perps Tab Content -->
-            <div class="card-body p-0 tab-content" id="tab-perps">
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact" id="perps-table-sortable">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-sort="coin" data-type="text">Coin <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="side" data-type="text">Side <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="leverage" data-type="number">Lev <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="margin" data-type="number">Posted <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable active desc" data-sort="posValue" data-type="number">Pos. Value <i class="bi bi-arrow-down sort-icon"></i></th>
-                                <th class="sortable" data-sort="size" data-type="number">Size <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="entry" data-type="number">Entry <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="mark" data-type="number">Mark <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="liq" data-type="number">Liq. <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="funding" data-type="number">Funding <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th class="sortable" data-sort="pnl" data-type="number">P&L <i class="bi bi-arrow-down-up sort-icon"></i></th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="positions-table">
-                            <tr>
-                                <td colspan="12" class="text-center text-muted py-3">
-                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
-                                    No open positions
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Spot Tab Content -->
-            <div class="card-body p-0 tab-content" id="tab-spot" style="display: none;">
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 table-sm spot-table-compact">
-                        <thead>
-                            <tr>
-                                <th>Coin</th>
-                                <th>Units</th>
-                                <th>$ Value</th>
-                            </tr>
-                        </thead>
-                        <tbody id="spot-table">
-                            <tr>
-                                <td colspan="3" class="text-center text-muted py-3">
-                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
-                                    No spot balances
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Open Orders Tab Content -->
-            <div class="card-body p-0 tab-content" id="tab-orders" style="display: none;">
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
-                        <thead>
-                            <tr>
-                                <th>Coin</th>
-                                <th>Direction</th>
-                                <th>Type</th>
-                                <th>Size</th>
-                                <th>Price</th>
-                                <th>Order Value</th>
-                                <th>Filled</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="orders-table">
-                            <tr>
-                                <td colspan="8" class="text-center text-muted py-3">
-                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
-                                    No open orders
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- TWAPs Tab Content -->
-            <div class="card-body p-0 tab-content" id="tab-twaps" style="display: none;">
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
-                        <thead>
-                            <tr>
-                                <th>Coin</th>
-                                <th>Side</th>
-                                <th>Size</th>
-                                <th>Executed</th>
-                                <th>Avg. Price</th>
-                                <th>Running / Total</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="twaps-table">
-                            <tr>
-                                <td colspan="7" class="text-center text-muted py-3">
-                                    <i class="bi bi-inbox fs-4 d-block mb-1"></i>
-                                    No active TWAP orders
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- Close Position Modal -->
@@ -655,21 +598,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Refresh data every 30 seconds (backup for WebSocket)
     // WebSocket provides real-time updates, REST API is fallback for HIP-3/funding rates
     setInterval(refreshDashboard, 30000);
-
-    // Sync TradingView chart height with Quick Trade panel
-    function syncChartHeight() {
-        const quickTradeCard = document.getElementById('quick-trade-card');
-        const tradingviewCard = document.getElementById('tradingview-card');
-        if (quickTradeCard && tradingviewCard) {
-            tradingviewCard.style.height = quickTradeCard.offsetHeight + 'px';
-        }
-    }
-
-    // Sync on load and resize
-    syncChartHeight();
-    window.addEventListener('resize', syncChartHeight);
-    // Also sync after a short delay to ensure Quick Trade panel is fully rendered
-    setTimeout(syncChartHeight, 100);
 });
 </script>
 {% endblock %}
