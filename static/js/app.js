@@ -2873,6 +2873,84 @@ async function deleteIndicator(id) {
     }
 }
 
+async function editIndicator(id) {
+    try {
+        const result = await apiCall(`/indicators/${id}`, 'GET');
+        if (!result.success) {
+            showToast('Failed to load indicator', 'error');
+            return;
+        }
+
+        const ind = result.indicator;
+
+        // Populate the edit form
+        document.getElementById('edit-indicator-id').value = ind.id;
+        document.getElementById('edit-indicator-name').value = ind.name || '';
+        document.getElementById('edit-indicator-type').value = ind.indicator_type || 'custom';
+        document.getElementById('edit-indicator-webhook-key').value = ind.webhook_key || '';
+        document.getElementById('edit-indicator-timeframe').value = ind.timeframe || '1h';
+        document.getElementById('edit-indicator-description').value = ind.description || '';
+
+        // Handle coins - parse JSON string if needed
+        const coinsSelect = document.getElementById('edit-indicator-coins');
+        const coins = typeof ind.coins === 'string' ? JSON.parse(ind.coins || '[]') : (ind.coins || []);
+
+        // Clear previous selections
+        Array.from(coinsSelect.options).forEach(opt => opt.selected = false);
+
+        // Select the coins
+        coins.forEach(coin => {
+            const option = coinsSelect.querySelector(`option[value="${coin}"]`);
+            if (option) option.selected = true;
+        });
+
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('editIndicatorModal'));
+        modal.show();
+
+        // Set up form submission handler (remove old listeners first)
+        const form = document.getElementById('edit-indicator-form');
+        const newForm = form.cloneNode(true);
+        form.parentNode.replaceChild(newForm, form);
+        newForm.addEventListener('submit', updateIndicator);
+
+    } catch (error) {
+        console.error('Failed to load indicator:', error);
+        showToast('Failed to load indicator', 'error');
+    }
+}
+
+async function updateIndicator(e) {
+    e.preventDefault();
+
+    const id = document.getElementById('edit-indicator-id').value;
+    const data = {
+        name: document.getElementById('edit-indicator-name').value,
+        indicator_type: document.getElementById('edit-indicator-type').value,
+        webhook_key: document.getElementById('edit-indicator-webhook-key').value,
+        timeframe: document.getElementById('edit-indicator-timeframe').value,
+        coins: Array.from(document.getElementById('edit-indicator-coins').selectedOptions).map(o => o.value),
+        description: document.getElementById('edit-indicator-description').value
+    };
+
+    try {
+        const result = await apiCall(`/indicators/${id}`, 'PUT', data);
+        if (result.success) {
+            showToast('Indicator updated successfully', 'success');
+            loadIndicators();
+
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editIndicatorModal'));
+            if (modal) modal.hide();
+        } else {
+            showToast('Failed to update indicator: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Failed to update indicator:', error);
+        showToast('Failed to update indicator', 'error');
+    }
+}
+
 function setupWebhookInfo() {
     const webhookUrl = window.location.origin + '/webhook';
     document.getElementById('webhook-url').value = webhookUrl;

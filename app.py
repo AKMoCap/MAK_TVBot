@@ -1136,6 +1136,16 @@ def api_get_indicators():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/indicators/<int:id>', methods=['GET'])
+def api_get_indicator(id):
+    """Get a single indicator by ID"""
+    try:
+        indicator = Indicator.query.get_or_404(id)
+        return jsonify({'success': True, 'indicator': indicator.to_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/indicators', methods=['POST'])
 def api_create_indicator():
     """Create a new indicator"""
@@ -1180,14 +1190,21 @@ def api_update_indicator(id):
             indicator.enabled = data['enabled']
         if 'name' in data:
             indicator.name = data['name']
+        if 'indicator_type' in data:
+            indicator.indicator_type = data['indicator_type']
+        if 'webhook_key' in data:
+            indicator.webhook_key = data['webhook_key']
         if 'timeframe' in data:
             indicator.timeframe = data['timeframe']
         if 'coins' in data:
             indicator.coins = json.dumps(data['coins'])
+        if 'description' in data:
+            indicator.description = data['description']
 
         db.session.commit()
+        log_activity('info', 'system', f"Updated indicator: {indicator.name}")
 
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'indicator': indicator.to_dict()})
 
     except Exception as e:
         db.session.rollback()
@@ -2325,11 +2342,7 @@ def webhook():
         # Parse data
         action = data.get("action", "").lower()
         coin = data.get("coin", "BTC")  # Preserve case - Hyperliquid uses case-sensitive names
-        leverage = int(data.get("leverage", 10))
-        collateral_usd = float(data.get("collateral_usd", 100))
         close_position = data.get("close_position", False)
-        stop_loss_pct = data.get("stop_loss_pct")
-        take_profit_pct = data.get("take_profit_pct")
         indicator_key = data.get("indicator")
 
         # Check if bot is enabled
@@ -2371,19 +2384,24 @@ def webhook():
         if action not in ["buy", "sell"]:
             return jsonify({"error": "Invalid action. Must be 'buy' or 'sell'"}), 400
 
+        # Get coin config for defaults (leverage, collateral, SL, TP)
+        coin_config = risk_manager.get_coin_config(coin)
+
+        # Use webhook values if provided, otherwise fall back to coin config defaults
+        leverage = int(data.get("leverage")) if data.get("leverage") is not None else coin_config.default_leverage
+        collateral_usd = float(data.get("collateral_usd")) if data.get("collateral_usd") is not None else coin_config.default_collateral
+        stop_loss_pct = data.get("stop_loss_pct") if data.get("stop_loss_pct") is not None else coin_config.default_stop_loss_pct
+        take_profit_pct = data.get("take_profit_pct") if data.get("take_profit_pct") is not None else coin_config.default_take_profit_pct
+
+        logger.info(f"Webhook using: leverage={leverage} (config default: {coin_config.default_leverage}), "
+                   f"collateral=${collateral_usd} (config default: ${coin_config.default_collateral})")
+
         # Risk check
         allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
         if not allowed:
             log_activity('warning', 'risk', f"Webhook trade blocked: {reason}",
                         {'coin': coin, 'action': action})
             return jsonify({"error": reason}), 400
-
-        # Get coin config for defaults
-        coin_config = risk_manager.get_coin_config(coin)
-        if stop_loss_pct is None and coin_config.default_stop_loss_pct:
-            stop_loss_pct = coin_config.default_stop_loss_pct
-        if take_profit_pct is None and coin_config.default_take_profit_pct:
-            take_profit_pct = coin_config.default_take_profit_pct
 
         # Use coin config defaults for TP1/TP2 (webhook uses coin config defaults)
         tp1_pct = coin_config.tp1_pct

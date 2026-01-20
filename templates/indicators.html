@@ -141,8 +141,9 @@
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
-                        <h6>Webhook URL:</h6>
-                        <div class="input-group mb-3">
+                        <h6><i class="bi bi-1-circle me-2"></i>Webhook URL</h6>
+                        <p class="text-muted small mb-2">Copy this URL into TradingView's "Webhook URL" field</p>
+                        <div class="input-group mb-4">
                             <input type="text" class="form-control bg-dark text-light border-secondary"
                                    id="webhook-url" readonly value="Loading...">
                             <button class="btn btn-outline-secondary" type="button" id="copy-webhook">
@@ -150,46 +151,79 @@
                             </button>
                         </div>
 
-                        <h6>Alert Message Template:</h6>
-                        <pre class="bg-black p-3 rounded"><code id="webhook-template">{% raw %}{
-    "secret": "YOUR_WEBHOOK_SECRET",
-    "action": "{{strategy.order.action}}",
-    "coin": "{{ticker}}",
-    "leverage": 10,
-    "collateral_usd": 100,
-    "indicator": "your-indicator-key",
-    "stop_loss_pct": 2,
-    "take_profit_pct": 5
-}{% endraw %}</code></pre>
-                        <button class="btn btn-outline-secondary btn-sm" id="copy-template">
+                        <h6><i class="bi bi-2-circle me-2"></i>Alert Message Template (Minimal)</h6>
+                        <p class="text-muted small mb-2">Paste this into TradingView's "Message" field</p>
+                        <pre class="bg-black p-3 rounded"><code id="webhook-template">{
+    "secret": "paste-your-actual-secret-here",
+    "action": "buy",
+    "coin": "BTC",
+    "indicator": "your-indicator-key"
+}</code></pre>
+                        <button class="btn btn-outline-secondary btn-sm mb-3" id="copy-template">
                             <i class="bi bi-clipboard me-1"></i>Copy Template
                         </button>
+
+                        <div class="alert alert-success py-2">
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>Coin Config Defaults:</strong> Leverage, collateral, stop loss, and take profit will automatically use your <a href="/coin-config" class="alert-link">Coin Configuration</a> defaults if not specified in the webhook.
+                        </div>
                     </div>
                     <div class="col-md-6">
-                        <h6>Setup Steps:</h6>
-                        <ol class="ps-3">
-                            <li>Create your indicator or strategy in TradingView Pine Script</li>
-                            <li>Set up an alert on the chart with your indicator</li>
-                            <li>In the alert settings, select "Webhook URL" and paste the URL above</li>
-                            <li>In the "Message" field, paste the JSON template</li>
-                            <li>Replace values as needed:
-                                <ul>
-                                    <li><code>YOUR_WEBHOOK_SECRET</code> - Your secret key from Settings</li>
-                                    <li><code>leverage</code> - Desired leverage (1-20)</li>
-                                    <li><code>collateral_usd</code> - Amount to risk per trade</li>
-                                    <li><code>indicator</code> - The webhook key for this indicator</li>
-                                </ul>
-                            </li>
-                            <li>Use Pine Script placeholders:
-                                <ul>
-                                    <li><code>{% raw %}{{strategy.order.action}}{% endraw %}</code> - "buy" or "sell"</li>
-                                    <li><code>{% raw %}{{ticker}}{% endraw %}</code> - The coin symbol</li>
-                                    <li><code>{% raw %}{{close}}{% endraw %}</code> - Current price</li>
-                                </ul>
-                            </li>
-                        </ol>
+                        <h6><i class="bi bi-3-circle me-2"></i>Field Reference</h6>
+                        <table class="table table-dark table-sm">
+                            <thead>
+                                <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>secret</code></td>
+                                    <td><span class="badge bg-danger">Yes</span></td>
+                                    <td>The <strong>actual value</strong> of your WEBHOOK_SECRET from Replit Secrets (not the name)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>action</code></td>
+                                    <td><span class="badge bg-danger">Yes</span></td>
+                                    <td><code>"buy"</code> or <code>"sell"</code> - hardcode for indicator alerts</td>
+                                </tr>
+                                <tr>
+                                    <td><code>coin</code></td>
+                                    <td><span class="badge bg-danger">Yes</span></td>
+                                    <td>Coin symbol exactly as shown in Hyperliquid (e.g., <code>"BTC"</code>, <code>"ETH"</code>)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>indicator</code></td>
+                                    <td><span class="badge bg-warning text-dark">Recommended</span></td>
+                                    <td>Your Webhook Key from above - links trades to this indicator for tracking</td>
+                                </tr>
+                                <tr>
+                                    <td><code>leverage</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span></td>
+                                    <td>Override leverage (uses Coin Config default if omitted)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>collateral_usd</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span></td>
+                                    <td>Override collateral amount (uses Coin Config default if omitted)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>stop_loss_pct</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span></td>
+                                    <td>Override stop loss % (uses Coin Config default if omitted)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>close_position</code></td>
+                                    <td><span class="badge bg-secondary">Optional</span></td>
+                                    <td>Set to <code>true</code> to close existing position for this coin</td>
+                                </tr>
+                            </tbody>
+                        </table>
 
-                        <div class="alert alert-info mt-3">
+                        <div class="alert alert-warning py-2 mt-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Important:</strong> Create <strong>separate alerts</strong> for buy and sell signals since action must be hardcoded for indicator-based alerts.
+                        </div>
+
+                        <div class="alert alert-info py-2">
                             <i class="bi bi-info-circle me-2"></i>
                             <strong>Pro Tip:</strong> Start with TESTNET enabled to verify your setup works correctly before trading with real funds.
                         </div>
@@ -306,6 +340,99 @@ if (shortCondition)
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Indicator Modal -->
+<div class="modal fade" id="editIndicatorModal" tabindex="-1" aria-labelledby="editIndicatorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-darker text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="editIndicatorModalLabel">
+                    <i class="bi bi-pencil me-2"></i>Edit Indicator
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="edit-indicator-form">
+                <div class="modal-body">
+                    <input type="hidden" id="edit-indicator-id">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Indicator Name</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary"
+                                   id="edit-indicator-name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Type</label>
+                            <select class="form-select bg-dark text-light border-secondary" id="edit-indicator-type" required>
+                                <option value="custom">Custom Pine Script</option>
+                                <option value="rsi">RSI</option>
+                                <option value="macd">MACD</option>
+                                <option value="ema">EMA Crossover</option>
+                                <option value="bollinger">Bollinger Bands</option>
+                                <option value="supertrend">Supertrend</option>
+                                <option value="vwap">VWAP</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Webhook Key</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary"
+                                   id="edit-indicator-webhook-key">
+                            <small class="text-muted">Must match the "indicator" value in your TradingView alert</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Timeframe</label>
+                            <select class="form-select bg-dark text-light border-secondary" id="edit-indicator-timeframe">
+                                <option value="1m">1 Minute</option>
+                                <option value="5m">5 Minutes</option>
+                                <option value="15m">15 Minutes</option>
+                                <option value="1h">1 Hour</option>
+                                <option value="4h">4 Hours</option>
+                                <option value="1d">1 Day</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Coins</label>
+                            <select class="form-select bg-dark text-light border-secondary" id="edit-indicator-coins" multiple style="height: 120px;">
+                                <optgroup label="MAJORS">
+                                    <option value="BTC">BTC</option>
+                                    <option value="ETH">ETH</option>
+                                    <option value="SOL">SOL</option>
+                                    <option value="HYPE">HYPE</option>
+                                </optgroup>
+                                <optgroup label="DEFI">
+                                    <option value="AAVE">AAVE</option>
+                                    <option value="ENA">ENA</option>
+                                    <option value="PENDLE">PENDLE</option>
+                                    <option value="AERO">AERO</option>
+                                </optgroup>
+                                <optgroup label="HIGH BETA / MEMES">
+                                    <option value="DOGE">DOGE</option>
+                                    <option value="PUMP">PUMP</option>
+                                    <option value="FARTCOIN">FARTCOIN</option>
+                                    <option value="kBONK">kBONK</option>
+                                    <option value="kPEPE">kPEPE</option>
+                                    <option value="PENGU">PENGU</option>
+                                    <option value="VIRTUAL">VIRTUAL</option>
+                                </optgroup>
+                            </select>
+                            <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control bg-dark text-light border-secondary" id="edit-indicator-description"
+                                      rows="2" placeholder="Describe what this indicator does..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-1"></i>Save Changes
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
