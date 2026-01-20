@@ -872,6 +872,7 @@ code {
 .pnl-percent {
     font-size: 0.7rem;
     margin-left: 0.25rem;
+    color: inherit;
 }
 
 /* P&L Card Modal */
@@ -976,14 +977,7 @@ code {
 .pnl-card-pnl {
     margin-top: auto;
     text-align: center;
-}
-
-.pnl-card-pnl-label {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.5);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
+    padding-bottom: 8px;
 }
 
 .pnl-card-pnl-value {
