@@ -2786,7 +2786,7 @@ function updateIndicatorsTable(indicators) {
     if (!indicators || indicators.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="text-center text-muted py-4">
+                <td colspan="10" class="text-center text-muted py-4">
                     <i class="bi bi-inbox fs-3 d-block mb-2"></i>
                     No indicators configured
                 </td>
@@ -2795,7 +2795,15 @@ function updateIndicatorsTable(indicators) {
         return;
     }
 
-    tbody.innerHTML = indicators.map(ind => `
+    tbody.innerHTML = indicators.map(ind => {
+        const secretDisplay = ind.webhook_secret
+            ? `<code class="small">${ind.webhook_secret.substring(0, 8)}...</code>
+               <button class="btn btn-link btn-sm p-0 ms-1" onclick="copyWebhookSecretToClipboard('${ind.webhook_secret}')" title="Copy full secret">
+                   <i class="bi bi-clipboard small"></i>
+               </button>`
+            : '<span class="text-muted">Not set</span>';
+
+        return `
         <tr>
             <td>
                 <div class="form-check form-switch">
@@ -2805,6 +2813,7 @@ function updateIndicatorsTable(indicators) {
             </td>
             <td><strong>${ind.name}</strong></td>
             <td><span class="badge bg-secondary">${ind.indicator_type}</span></td>
+            <td>${secretDisplay}</td>
             <td>${ind.timeframe}</td>
             <td>${ind.coins || 'All'}</td>
             <td>${ind.total_trades}</td>
@@ -2819,7 +2828,16 @@ function updateIndicatorsTable(indicators) {
                 </button>
             </td>
         </tr>
-    `).join('');
+    `}).join('');
+}
+
+// Copy webhook secret to clipboard
+function copyWebhookSecretToClipboard(secret) {
+    navigator.clipboard.writeText(secret).then(() => {
+        showToast('Webhook secret copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy secret', 'error');
+    });
 }
 
 async function saveIndicator(e) {
@@ -2829,6 +2847,7 @@ async function saveIndicator(e) {
         name: document.getElementById('indicator-name').value,
         indicator_type: document.getElementById('indicator-type').value,
         webhook_key: document.getElementById('indicator-webhook-key').value,
+        webhook_secret: document.getElementById('indicator-webhook-secret').value,
         timeframe: document.getElementById('indicator-timeframe').value,
         coins: Array.from(document.getElementById('indicator-coins').selectedOptions).map(o => o.value),
         description: document.getElementById('indicator-description').value

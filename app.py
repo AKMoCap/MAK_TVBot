@@ -72,14 +72,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def log_activity(level, category, message, details=None):
+def log_activity(level, category, message, details=None, user_id=None):
     """Log activity to database"""
     try:
         log = ActivityLog(
             level=level,
             category=category,
             message=message,
-            details=json.dumps(details) if details else None
+            details=json.dumps(details) if details else None,
+            user_id=user_id
         )
         db.session.add(log)
         db.session.commit()
@@ -735,10 +736,22 @@ def api_daily_stats():
 
 @app.route('/api/activity', methods=['GET'])
 def api_activity():
-    """Get recent activity logs"""
+    """Get recent activity logs for the current user"""
     try:
         limit = int(request.args.get('limit', 20))
-        logs = ActivityLog.query.order_by(ActivityLog.timestamp.desc()).limit(limit).all()
+        user = get_current_user()
+
+        query = ActivityLog.query
+        if user:
+            # Show user's logs + system logs (user_id is null)
+            query = query.filter(
+                db.or_(ActivityLog.user_id == user.id, ActivityLog.user_id.is_(None))
+            )
+        else:
+            # Not logged in - only show system logs
+            query = query.filter(ActivityLog.user_id.is_(None))
+
+        logs = query.order_by(ActivityLog.timestamp.desc()).limit(limit).all()
         return jsonify({'logs': [log.to_dict() for log in logs]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -856,14 +869,15 @@ def api_trade():
                 stop_loss=result.get('stop_loss'),
                 take_profit=result.get('take_profit'),
                 order_id=result.get('order_id'),
-                status='open'
+                status='open',
+                user_id=user.id
             )
             db.session.add(trade)
             db.session.commit()
 
             log_activity('info', 'trade',
                         f"Opened {action.upper()} {coin} @ ${result['entry_price']:.2f}",
-                        result)
+                        result, user_id=user.id)
 
         return jsonify(result)
 
@@ -907,8 +921,8 @@ def api_close_position():
         )
 
         if result.get('success'):
-            # Update trade in database
-            trade = Trade.query.filter_by(coin=coin, status='open').first()
+            # Update trade in database (filter by user_id)
+            trade = Trade.query.filter_by(coin=coin, status='open', user_id=user.id).first()
             if trade:
                 # Get current price for P&L calculation
                 prices = bot_manager.get_market_prices([coin])
@@ -927,7 +941,7 @@ def api_close_position():
 
                 log_activity('info', 'trade',
                             f"Closed {coin} position with P&L: ${pnl:.2f}",
-                            {'coin': coin, 'pnl': pnl})
+                            {'coin': coin, 'pnl': pnl}, user_id=user.id)
 
         return jsonify(result)
 
@@ -965,9 +979,9 @@ def api_close_all():
                 user_agent_key=user.get_agent_key()
             )
 
-            # Update trade record with exit price and P&L
+            # Update trade record with exit price and P&L (filter by user_id)
             if result.get('success'):
-                trade = Trade.query.filter_by(coin=coin, status='open').first()
+                trade = Trade.query.filter_by(coin=coin, status='open', user_id=user.id).first()
                 if trade:
                     exit_price = prices.get(coin, trade.entry_price)
                     pnl, pnl_pct = risk_manager.calculate_pnl(trade, exit_price)
@@ -988,7 +1002,7 @@ def api_close_all():
 
             results.append({'coin': coin, 'result': result})
 
-        log_activity('info', 'trade', f"Closed all positions ({len(positions)} total) with P&L: ${total_pnl:.2f}")
+        log_activity('info', 'trade', f"Closed all positions ({len(positions)} total) with P&L: ${total_pnl:.2f}", user_id=user.id)
 
         return jsonify({'success': True, 'results': results, 'total_pnl': total_pnl})
 
@@ -1024,8 +1038,12 @@ def api_bot_toggle():
 
 @app.route('/api/trades', methods=['GET'])
 def api_trades():
-    """Get trade history"""
+    """Get trade history for the current user"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'trades': [], 'stats': {}, 'total': 0, 'page': 1, 'total_pages': 0})
+
         coin = request.args.get('coin')
         side = request.args.get('side')
         status = request.args.get('status')
@@ -1034,7 +1052,7 @@ def api_trades():
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 50))
 
-        query = Trade.query
+        query = Trade.query.filter_by(user_id=user.id)
 
         if coin:
             query = query.filter_by(coin=coin)
@@ -1064,7 +1082,7 @@ def api_trades():
         # Calculate stats using SQL aggregates for better performance
         from sqlalchemy import func, case
 
-        # Get aggregate stats in a single query
+        # Get aggregate stats in a single query (filtered by user)
         stats_query = db.session.query(
             func.count(Trade.id).label('total_trades'),
             func.sum(Trade.pnl).label('total_pnl'),
@@ -1073,7 +1091,7 @@ def api_trades():
             func.count(case((Trade.pnl < 0, 1))).label('loss_count'),
             func.sum(case((Trade.pnl > 0, Trade.pnl), else_=0)).label('total_wins'),
             func.sum(case((Trade.pnl < 0, Trade.pnl), else_=0)).label('total_losses')
-        ).filter(Trade.status == 'closed').first()
+        ).filter(Trade.status == 'closed', Trade.user_id == user.id).first()
 
         total_trades = stats_query.total_trades or 0
         win_count = stats_query.win_count or 0
@@ -1103,9 +1121,13 @@ def api_trades():
 
 @app.route('/api/trades/export', methods=['GET'])
 def api_export_trades():
-    """Export trades as CSV"""
+    """Export trades as CSV for the current user"""
     try:
-        trades = Trade.query.order_by(Trade.timestamp.desc()).all()
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Please connect your wallet'}), 401
+
+        trades = Trade.query.filter_by(user_id=user.id).order_by(Trade.timestamp.desc()).all()
 
         csv_lines = ['timestamp,coin,side,entry_price,exit_price,size,leverage,pnl,pnl_percent,status,close_reason']
         for t in trades:
@@ -1128,9 +1150,13 @@ def api_export_trades():
 
 @app.route('/api/indicators', methods=['GET'])
 def api_get_indicators():
-    """Get all indicators"""
+    """Get all indicators for the current user"""
     try:
-        indicators = Indicator.query.all()
+        user = get_current_user()
+        if not user:
+            return jsonify({'indicators': []})
+
+        indicators = Indicator.query.filter_by(user_id=user.id).all()
         return jsonify({'indicators': [ind.to_dict() for ind in indicators]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1148,8 +1174,12 @@ def api_get_indicator(id):
 
 @app.route('/api/indicators', methods=['POST'])
 def api_create_indicator():
-    """Create a new indicator"""
+    """Create a new indicator for the current user"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         data = request.get_json()
         if not data:
             return jsonify({'success': False, 'error': 'No data provided'}), 400
@@ -1158,18 +1188,26 @@ def api_create_indicator():
         if not name:
             return jsonify({'success': False, 'error': 'Indicator name is required'}), 400
 
+        # Get webhook_secret from request or generate one
+        webhook_secret = data.get('webhook_secret', '').strip()
+        if not webhook_secret:
+            # Generate a random webhook secret if not provided
+            webhook_secret = secrets.token_hex(16)
+
         indicator = Indicator(
             name=name,
             indicator_type=data.get('indicator_type'),
             description=data.get('description'),
             webhook_key=data.get('webhook_key'),
+            webhook_secret=webhook_secret,
             timeframe=data.get('timeframe', '1h'),
-            coins=json.dumps(data.get('coins', []))
+            coins=json.dumps(data.get('coins', [])),
+            user_id=user.id
         )
         db.session.add(indicator)
         db.session.commit()
 
-        log_activity('info', 'system', f"Created indicator: {indicator.name}")
+        log_activity('info', 'system', f"Created indicator: {indicator.name}", user_id=user.id)
 
         return jsonify({'success': True, 'indicator': indicator.to_dict()})
 
@@ -1181,10 +1219,14 @@ def api_create_indicator():
 
 @app.route('/api/indicators/<int:id>', methods=['PUT'])
 def api_update_indicator(id):
-    """Update an indicator"""
+    """Update an indicator (must belong to current user)"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         data = request.get_json()
-        indicator = Indicator.query.get_or_404(id)
+        indicator = Indicator.query.filter_by(id=id, user_id=user.id).first_or_404()
 
         if 'enabled' in data:
             indicator.enabled = data['enabled']
@@ -1200,6 +1242,8 @@ def api_update_indicator(id):
             indicator.coins = json.dumps(data['coins'])
         if 'description' in data:
             indicator.description = data['description']
+        if 'webhook_secret' in data:
+            indicator.webhook_secret = data['webhook_secret']
 
         db.session.commit()
         log_activity('info', 'system', f"Updated indicator: {indicator.name}")
@@ -1214,14 +1258,18 @@ def api_update_indicator(id):
 
 @app.route('/api/indicators/<int:id>', methods=['DELETE'])
 def api_delete_indicator(id):
-    """Delete an indicator"""
+    """Delete an indicator (must belong to current user)"""
     try:
-        indicator = Indicator.query.get_or_404(id)
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
+        indicator = Indicator.query.filter_by(id=id, user_id=user.id).first_or_404()
         name = indicator.name
         db.session.delete(indicator)
         db.session.commit()
 
-        log_activity('info', 'system', f"Deleted indicator: {name}")
+        log_activity('info', 'system', f"Deleted indicator: {name}", user_id=user.id)
 
         return jsonify({'success': True})
 
@@ -1237,9 +1285,15 @@ def api_delete_indicator(id):
 
 @app.route('/api/settings', methods=['GET'])
 def api_get_settings():
-    """Get all settings"""
+    """Get all settings for the current user"""
     try:
-        risk = RiskSettings.query.first()
+        user = get_current_user()
+
+        # Get user-specific risk settings or default
+        if user:
+            risk = RiskSettings.query.filter_by(user_id=user.id).first()
+        else:
+            risk = None
 
         # Read USE_TESTNET fresh from environment (not cached) to match bot_manager behavior
         current_use_testnet = os.environ.get("USE_TESTNET", "true").lower().strip() == "true"
@@ -1284,13 +1338,17 @@ def api_save_settings():
 
 @app.route('/api/settings/risk', methods=['POST'])
 def api_save_risk_settings():
-    """Save risk management settings"""
+    """Save risk management settings for the current user"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         data = request.get_json()
-        risk = RiskSettings.query.first()
+        risk = RiskSettings.query.filter_by(user_id=user.id).first()
 
         if not risk:
-            risk = RiskSettings()
+            risk = RiskSettings(user_id=user.id)
             db.session.add(risk)
 
         for key in ['max_position_value_usd', 'max_total_exposure_pct', 'max_leverage']:
@@ -1299,7 +1357,7 @@ def api_save_risk_settings():
 
         db.session.commit()
 
-        log_activity('info', 'system', 'Risk settings updated')
+        log_activity('info', 'system', 'Risk settings updated', user_id=user.id)
 
         return jsonify({'success': True})
 
@@ -1309,9 +1367,13 @@ def api_save_risk_settings():
 
 @app.route('/api/coins', methods=['GET'])
 def api_get_coins():
-    """Get coin configurations"""
+    """Get coin configurations for the current user"""
     try:
-        coins = CoinConfig.query.all()
+        user = get_current_user()
+        if not user:
+            return jsonify({'coins': []})
+
+        coins = CoinConfig.query.filter_by(user_id=user.id).all()
         return jsonify({'coins': [c.to_dict() for c in coins]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1325,13 +1387,20 @@ def api_get_coins_list():
     Much faster than /api/coins for dropdown population.
     """
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'coins': []})
+
         # Use a targeted query selecting only needed columns
         coins = db.session.query(
             CoinConfig.coin,
             CoinConfig.category,
             CoinConfig.hl_max_leverage,
             CoinConfig.enabled
-        ).filter(CoinConfig.enabled == True).all()
+        ).filter(
+            CoinConfig.user_id == user.id,
+            CoinConfig.enabled == True
+        ).all()
 
         return jsonify({
             'coins': [
@@ -1417,10 +1486,14 @@ def api_cleanup_duplicates():
 
 @app.route('/api/coins/<coin>', methods=['GET'])
 def api_get_coin(coin):
-    """Get single coin configuration"""
+    """Get single coin configuration for the current user"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Please connect your wallet'}), 401
+
         # Preserve case - Hyperliquid uses case-sensitive names like kBONK
-        config = CoinConfig.query.filter_by(coin=coin).first()
+        config = CoinConfig.query.filter_by(coin=coin, user_id=user.id).first()
         if config:
             return jsonify(config.to_dict())
         return jsonify({'error': 'Coin not found'}), 404
@@ -1430,14 +1503,18 @@ def api_get_coin(coin):
 
 @app.route('/api/coins/<coin>', methods=['PUT'])
 def api_update_coin(coin):
-    """Update coin configuration"""
+    """Update coin configuration for the current user"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         data = request.get_json()
         # Preserve case - Hyperliquid uses case-sensitive names like kBONK
-        config = CoinConfig.query.filter_by(coin=coin).first()
+        config = CoinConfig.query.filter_by(coin=coin, user_id=user.id).first()
 
         if not config:
-            config = CoinConfig(coin=coin)
+            config = CoinConfig(coin=coin, user_id=user.id)
             db.session.add(config)
 
         for key in ['enabled', 'category', 'default_leverage', 'default_collateral', 'max_position_size',
@@ -1457,10 +1534,14 @@ def api_update_coin(coin):
 
 @app.route('/api/coins/bulk-update', methods=['PUT'])
 def api_bulk_update_coins():
-    """Update all coin configurations with the same settings"""
+    """Update all coin configurations with the same settings for the current user"""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         data = request.get_json()
-        coins = CoinConfig.query.all()
+        coins = CoinConfig.query.filter_by(user_id=user.id).all()
         updated = 0
 
         for config in coins:
@@ -1805,12 +1886,16 @@ def api_logs():
 
 @app.route('/api/trades/clear', methods=['DELETE'])
 def api_clear_trades():
-    """Clear all trade history. Requires confirm=true parameter for safety."""
+    """Clear all trade history for the current user. Requires confirm=true parameter for safety."""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         # Require explicit confirmation
         confirm = request.args.get('confirm', '').lower() == 'true'
         if not confirm:
-            count = Trade.query.count()
+            count = Trade.query.filter_by(user_id=user.id).count()
             return jsonify({
                 'success': False,
                 'error': 'Confirmation required',
@@ -1818,13 +1903,13 @@ def api_clear_trades():
                 'count': count
             }), 400
 
-        count = Trade.query.count()
+        count = Trade.query.filter_by(user_id=user.id).count()
         if count == 0:
             return jsonify({'success': True, 'deleted': 0, 'message': 'No trades to delete'})
 
-        Trade.query.delete()
+        Trade.query.filter_by(user_id=user.id).delete()
         db.session.commit()
-        log_activity('info', 'system', f'Cleared {count} trades from history')
+        log_activity('info', 'system', f'Cleared {count} trades from history', user_id=user.id)
         return jsonify({'success': True, 'deleted': count})
     except Exception as e:
         db.session.rollback()
@@ -1834,12 +1919,16 @@ def api_clear_trades():
 
 @app.route('/api/logs/clear', methods=['DELETE'])
 def api_clear_logs():
-    """Clear all activity logs. Requires confirm=true parameter for safety."""
+    """Clear all activity logs for the current user. Requires confirm=true parameter for safety."""
     try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
         # Require explicit confirmation
         confirm = request.args.get('confirm', '').lower() == 'true'
         if not confirm:
-            count = ActivityLog.query.count()
+            count = ActivityLog.query.filter_by(user_id=user.id).count()
             return jsonify({
                 'success': False,
                 'error': 'Confirmation required',
@@ -1847,11 +1936,11 @@ def api_clear_logs():
                 'count': count
             }), 400
 
-        count = ActivityLog.query.count()
+        count = ActivityLog.query.filter_by(user_id=user.id).count()
         if count == 0:
             return jsonify({'success': True, 'deleted': 0, 'message': 'No logs to delete'})
 
-        ActivityLog.query.delete()
+        ActivityLog.query.filter_by(user_id=user.id).delete()
         db.session.commit()
         return jsonify({'success': True, 'deleted': count})
     except Exception as e:
@@ -1905,6 +1994,8 @@ def api_wallet_session():
 @app.route('/api/wallet/connect', methods=['POST'])
 def api_wallet_connect():
     """Connect a wallet address"""
+    from models import seed_user_defaults
+
     try:
         data = request.get_json() or {}
         address = (data.get('address') or '').lower().strip()
@@ -1916,11 +2007,14 @@ def api_wallet_connect():
         # Find or create user wallet
         user = UserWallet.query.filter_by(address=address).first()
         network_changed = False
+        is_new_user = False
 
         if not user:
             # Use app's USE_TESTNET setting for new users
             user = UserWallet(address=address, use_testnet=USE_TESTNET)
             db.session.add(user)
+            db.session.flush()  # Get the user.id before commit
+            is_new_user = True
         else:
             # Check if network changed - if so, clear old agent (it won't work on new network)
             if user.has_agent_key() and user.use_testnet != USE_TESTNET:
@@ -1937,6 +2031,11 @@ def api_wallet_connect():
         user.last_connected = datetime.utcnow()
         db.session.commit()
 
+        # Seed default settings for new users
+        if is_new_user:
+            logger.info(f"New user {address[:10]}... - seeding default settings")
+            seed_user_defaults(user.id)
+
         # Set session
         session['wallet_session'] = session_token
         session['wallet_address'] = address
@@ -1949,13 +2048,15 @@ def api_wallet_connect():
             'has_agent_key': user.has_agent_key(),  # Will be False if we cleared it above
             'use_testnet': USE_TESTNET,
             'network': 'testnet' if USE_TESTNET else 'mainnet',
-            'network_changed': network_changed
+            'network_changed': network_changed,
+            'is_new_user': is_new_user
         })
         response.set_cookie('wallet_session', session_token, httponly=True, samesite='Lax', max_age=86400*30)
         return response
 
     except Exception as e:
         logger.exception(f"Wallet connect error: {e}")
+        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -2316,7 +2417,7 @@ def webhook():
 
     Expected JSON payload:
     {
-        "secret": "your-webhook-secret",
+        "secret": "your-webhook-secret",  # Per-user secret from their indicator
         "action": "buy" or "sell",
         "coin": "BTC",
         "leverage": 10,
@@ -2342,16 +2443,31 @@ def webhook():
         log_activity('info', 'webhook', f"Webhook received: {data.get('action', 'unknown')} {data.get('coin', 'unknown')}",
                     {'indicator': data.get('indicator'), 'has_secret': bool(data.get('secret'))})
 
-        # Validate secret with detailed debugging
-        received_secret = data.get("secret", "")
-        if received_secret != WEBHOOK_SECRET:
-            # Log details to help debug (without exposing actual secrets)
-            logger.warning(f"Invalid webhook secret! "
-                          f"Received length: {len(received_secret)}, Expected length: {len(WEBHOOK_SECRET)}, "
-                          f"Match: {received_secret == WEBHOOK_SECRET}")
-            log_activity('warning', 'webhook', 'Invalid webhook secret received',
-                        {'received_length': len(received_secret), 'expected_length': len(WEBHOOK_SECRET)})
-            return jsonify({"error": "Invalid secret"}), 401
+        # Get the webhook secret from payload
+        webhook_secret = data.get("secret", "")
+
+        # Look up the indicator by webhook_secret to find the user
+        indicator = Indicator.query.filter_by(webhook_secret=webhook_secret).first()
+
+        if not indicator:
+            # Fallback: check global WEBHOOK_SECRET for backwards compatibility
+            if webhook_secret != WEBHOOK_SECRET:
+                # Log details to help debug (without exposing actual secrets)
+                logger.warning(f"Invalid webhook secret! "
+                              f"Received length: {len(webhook_secret)}, Expected length: {len(WEBHOOK_SECRET)}")
+                log_activity('warning', 'webhook', 'Invalid webhook secret received',
+                            {'received_length': len(webhook_secret), 'expected_length': len(WEBHOOK_SECRET)})
+                return jsonify({"error": "Invalid secret"}), 401
+            # Legacy mode: no user association via indicator
+            user = None
+            user_id = None
+        else:
+            # Found indicator - get the associated user
+            user = indicator.user
+            user_id = indicator.user_id
+            if not user or not user.has_agent_key():
+                logger.warning(f"Indicator {indicator.name} user has no agent key")
+                return jsonify({"error": "User not authorized for trading"}), 401
 
         # Parse data
         action = data.get("action", "").lower()
@@ -2361,7 +2477,7 @@ def webhook():
 
         # Check if bot is enabled
         if not bot_manager.is_enabled:
-            log_activity('warning', 'webhook', 'Webhook received but bot is disabled')
+            log_activity('warning', 'webhook', 'Webhook received but bot is disabled', user_id=user_id)
             return jsonify({"error": "Bot is disabled"}), 400
 
         # Find a connected user with valid agent key for the current network
@@ -2384,10 +2500,22 @@ def webhook():
         # Handle close position
         if close_position:
             logger.info(f"Closing position for {coin}")
-            result = bot_manager.close_position(coin, user_wallet=user_wallet, user_agent_key=user_agent_key)
+            # Use indicator's user if found, otherwise use fallback webhook_user
+            if user and user.has_agent_key():
+                result = bot_manager.close_position(
+                    coin,
+                    user_wallet=user.address,
+                    user_agent_key=user.get_agent_key()
+                )
+            else:
+                result = bot_manager.close_position(coin, user_wallet=user_wallet, user_agent_key=user_agent_key)
 
-            # Update trade record
-            trade = Trade.query.filter_by(coin=coin, status='open').first()
+            # Update trade record (filter by user_id if available)
+            if user_id:
+                trade = Trade.query.filter_by(coin=coin, status='open', user_id=user_id).first()
+            else:
+                trade = Trade.query.filter_by(coin=coin, status='open').first()
+
             if trade:
                 prices = bot_manager.get_market_prices([coin])
                 exit_price = prices.get(coin, trade.entry_price)
@@ -2402,7 +2530,7 @@ def webhook():
 
                 risk_manager.record_trade_result(pnl)
 
-            log_activity('info', 'trade', f"Closed {coin} via webhook signal")
+            log_activity('info', 'trade', f"Closed {coin} via webhook signal", user_id=user_id)
 
             return jsonify({
                 "status": "success",
@@ -2431,8 +2559,14 @@ def webhook():
         allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
         if not allowed:
             log_activity('warning', 'risk', f"Webhook trade blocked: {reason}",
-                        {'coin': coin, 'action': action})
+                        {'coin': coin, 'action': action}, user_id=user_id)
             return jsonify({"error": reason}), 400
+
+        # Override coin config with user-specific config if available
+        if user_id:
+            user_coin_config = CoinConfig.query.filter_by(coin=coin, user_id=user_id).first()
+            if user_coin_config:
+                coin_config = user_coin_config
 
         # Use coin config defaults for TP1/TP2 (webhook uses coin config defaults)
         tp1_pct = coin_config.tp1_pct
@@ -2440,21 +2574,37 @@ def webhook():
         tp2_pct = coin_config.tp2_pct
         tp2_size_pct = coin_config.tp2_size_pct
 
-        # Execute trade using connected wallet's agent key
-        result = bot_manager.execute_trade(
-            coin=coin,
-            action=action,
-            leverage=leverage,
-            collateral_usd=collateral_usd,
-            stop_loss_pct=stop_loss_pct,
-            take_profit_pct=take_profit_pct,
-            tp1_pct=tp1_pct,
-            tp1_size_pct=tp1_size_pct,
-            tp2_pct=tp2_pct,
-            tp2_size_pct=tp2_size_pct,
-            user_wallet=user_wallet,
-            user_agent_key=user_agent_key
-        )
+        # Execute trade - use indicator's user if found, otherwise use fallback webhook_user
+        if user and user.has_agent_key():
+            result = bot_manager.execute_trade(
+                coin=coin,
+                action=action,
+                leverage=leverage,
+                collateral_usd=collateral_usd,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                tp1_pct=tp1_pct,
+                tp1_size_pct=tp1_size_pct,
+                tp2_pct=tp2_pct,
+                tp2_size_pct=tp2_size_pct,
+                user_wallet=user.address,
+                user_agent_key=user.get_agent_key()
+            )
+        else:
+            result = bot_manager.execute_trade(
+                coin=coin,
+                action=action,
+                leverage=leverage,
+                collateral_usd=collateral_usd,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                tp1_pct=tp1_pct,
+                tp1_size_pct=tp1_size_pct,
+                tp2_pct=tp2_pct,
+                tp2_size_pct=tp2_size_pct,
+                user_wallet=user_wallet,
+                user_agent_key=user_agent_key
+            )
 
         if result.get('success'):
             # Record trade
@@ -2470,21 +2620,26 @@ def webhook():
                 take_profit=result.get('take_profit'),
                 order_id=result.get('order_id'),
                 indicator_name=indicator_key,
-                status='open'
+                status='open',
+                user_id=user_id
             )
             db.session.add(trade)
             db.session.commit()
 
             # Update indicator stats
-            if indicator_key:
-                indicator = Indicator.query.filter_by(webhook_key=indicator_key).first()
-                if indicator:
-                    indicator.total_trades += 1
+            if indicator:
+                indicator.total_trades += 1
+                db.session.commit()
+            elif indicator_key:
+                # Legacy fallback: look up by webhook_key
+                ind = Indicator.query.filter_by(webhook_key=indicator_key).first()
+                if ind:
+                    ind.total_trades += 1
                     db.session.commit()
 
             log_activity('info', 'trade',
                         f"Webhook: {action.upper()} {coin} @ ${result['entry_price']:.2f}",
-                        {'indicator': indicator_key, **result})
+                        {'indicator': indicator_key, **result}, user_id=user_id)
 
             return jsonify({
                 "status": "success",
@@ -2498,7 +2653,7 @@ def webhook():
                 "network": "testnet" if USE_TESTNET else "mainnet"
             })
         else:
-            log_activity('error', 'trade', f"Webhook trade failed: {result.get('error')}")
+            log_activity('error', 'trade', f"Webhook trade failed: {result.get('error')}", user_id=user_id)
             return jsonify({"status": "error", "message": result.get('error')}), 500
 
     except Exception as e:
