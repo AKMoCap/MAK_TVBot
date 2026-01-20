@@ -13,6 +13,11 @@ class WalletManager {
         this.isConnected = false;
         this.agentKey = null;
 
+        // State flags to prevent race conditions
+        this._isConnecting = false;
+        this._isCheckingSession = false;
+        this._sessionCheckComplete = false;
+
         // Hyperliquid chain IDs for EIP-712 signing
         // Must match the network for signature validation
         this.ARBITRUM_ONE_CHAIN_ID = 42161;
@@ -103,6 +108,14 @@ class WalletManager {
      * Check if user has an existing session
      */
     async checkExistingSession() {
+        // Prevent concurrent session checks
+        if (this._isCheckingSession) {
+            console.log('[Wallet] Session check already in progress');
+            return;
+        }
+
+        this._isCheckingSession = true;
+
         try {
             const response = await fetch('/api/wallet/session');
             const data = await response.json();
@@ -114,35 +127,42 @@ class WalletManager {
                 this.updateUI();
 
                 // Try to reconnect Web3 provider silently
-                if (window.ethereum) {
+                if (window.ethereum && typeof ethers !== 'undefined') {
                     try {
                         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
                         if (accounts.length > 0 && accounts[0].toLowerCase() === this.address) {
                             this.checksumAddress = accounts[0];
                             this.provider = new ethers.BrowserProvider(window.ethereum);
-                            this.signer = await this.provider.getSigner();
 
-                            // Get current chain and switch to correct network if needed
-                            const network = await this.provider.getNetwork();
-                            this.chainId = Number(network.chainId);
+                            // Ensure provider is ready before getting network
+                            if (this.provider) {
+                                this.signer = await this.provider.getSigner();
 
-                            const requiredChainId = await this.getRequiredChainId();
-                            console.log('Session reconnect - Current chain:', this.chainId, 'Required:', requiredChainId);
+                                // Get current chain and switch to correct network if needed
+                                const network = await this.provider.getNetwork();
+                                if (network) {
+                                    this.chainId = Number(network.chainId);
 
-                            if (this.chainId !== requiredChainId) {
-                                try {
-                                    await this.switchToRequiredNetwork(requiredChainId);
-                                    this.chainId = requiredChainId;
-                                    console.log('Switched to required network:', requiredChainId);
-                                } catch (switchError) {
-                                    console.warn('Could not auto-switch network on reconnect:', switchError.message);
+                                    const requiredChainId = await this.getRequiredChainId();
+                                    console.log('Session reconnect - Current chain:', this.chainId, 'Required:', requiredChainId);
+
+                                    if (this.chainId !== requiredChainId) {
+                                        try {
+                                            await this.switchToRequiredNetwork(requiredChainId);
+                                            this.chainId = requiredChainId;
+                                            console.log('Switched to required network:', requiredChainId);
+                                        } catch (switchError) {
+                                            console.warn('Could not auto-switch network on reconnect:', switchError.message);
+                                        }
+                                    }
                                 }
-                            }
 
-                            console.log('Reconnected Web3 provider for:', this.checksumAddress);
+                                console.log('Reconnected Web3 provider for:', this.checksumAddress);
+                            }
                         }
                     } catch (e) {
                         console.log('Could not reconnect Web3 provider:', e);
+                        // Don't throw - session is still valid even without Web3 provider
                     }
                 }
 
@@ -154,6 +174,9 @@ class WalletManager {
             }
         } catch (error) {
             console.log('No existing session:', error);
+        } finally {
+            this._isCheckingSession = false;
+            this._sessionCheckComplete = true;
         }
     }
 
@@ -176,10 +199,41 @@ class WalletManager {
      * Connect wallet (MetaMask, Rabby, etc.)
      */
     async connect() {
+        // Prevent multiple concurrent connection attempts
+        if (this._isConnecting) {
+            console.log('[Wallet] Connection already in progress');
+            return false;
+        }
+
+        // Wait for session check to complete if it's running
+        if (this._isCheckingSession) {
+            console.log('[Wallet] Waiting for session check to complete...');
+            // Wait up to 3 seconds for session check
+            const startTime = Date.now();
+            while (this._isCheckingSession && Date.now() - startTime < 3000) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        // If session check found we're already connected, just update UI
+        if (this.isConnected && this.agentKey) {
+            console.log('[Wallet] Already connected with valid agent');
+            this.updateUI();
+            return true;
+        }
+
         if (!window.ethereum) {
             this.showToast('No Web3 wallet detected. Please install MetaMask or Rabby.', 'error');
             return false;
         }
+
+        // Check if ethers.js is loaded
+        if (typeof ethers === 'undefined') {
+            this.showToast('Web3 library not loaded. Please refresh the page.', 'error');
+            return false;
+        }
+
+        this._isConnecting = true;
 
         try {
             this.updateButton('Connecting...', 'status-badge-primary');
@@ -189,13 +243,18 @@ class WalletManager {
             const accounts = await this.provider.send('eth_requestAccounts', []);
 
             if (!accounts || accounts.length === 0) {
-                throw new Error('No accounts found');
+                throw new Error('No accounts found. Please unlock your wallet.');
             }
 
             this.signer = await this.provider.getSigner();
             this.checksumAddress = await this.signer.getAddress();
             this.address = this.checksumAddress.toLowerCase();
+
+            // Get network with null check
             const network = await this.provider.getNetwork();
+            if (!network) {
+                throw new Error('Could not detect network. Please check your wallet connection.');
+            }
             this.chainId = Number(network.chainId);
 
             console.log('Wallet connected:', this.checksumAddress, 'Chain:', this.chainId);
@@ -266,6 +325,8 @@ class WalletManager {
             this.showToast('Failed to connect wallet: ' + error.message, 'error');
             this.updateButton('Connect Wallet', 'status-badge-disconnected');
             return false;
+        } finally {
+            this._isConnecting = false;
         }
     }
 
@@ -444,12 +505,16 @@ class WalletManager {
             console.error('Disconnect error:', error);
         }
 
+        // Reset all state
         this.provider = null;
         this.signer = null;
         this.address = null;
         this.checksumAddress = null;
+        this.chainId = null;
         this.isConnected = false;
         this.agentKey = null;
+        this._isConnecting = false;
+        this._sessionCheckComplete = false;
 
         console.log('Wallet disconnected');
 
@@ -474,13 +539,22 @@ class WalletManager {
     /**
      * Handle account changes in wallet
      */
-    handleAccountsChanged(accounts) {
+    async handleAccountsChanged(accounts) {
+        // Prevent handling during active connection
+        if (this._isConnecting) {
+            console.log('[Wallet] Ignoring account change during connection');
+            return;
+        }
+
         if (accounts.length === 0) {
-            this.disconnect();
+            await this.disconnect();
         } else if (accounts[0].toLowerCase() !== this.address?.toLowerCase()) {
             // Account changed, reconnect
-            this.disconnect();
-            this.connect();
+            console.log('[Wallet] Account changed, reconnecting...');
+            await this.disconnect();
+            // Small delay to ensure disconnect completes
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await this.connect();
         }
     }
 
