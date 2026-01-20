@@ -759,11 +759,13 @@ function createPositionRowHtml(pos) {
             <td>${formatPrice(pos.mark_price)}</td>
             <td>${pos.liquidation_price ? formatPrice(pos.liquidation_price) : '--'}</td>
             <td>${fundingDisplay}</td>
-            <td class="${pnlClass}">${formatCurrency(pos.unrealized_pnl)} ${pnlPercentDisplay}</td>
-            <td>
-                <button class="btn btn-outline-secondary btn-sm btn-share-pnl py-0 px-1 me-1" onclick='showPnlCard(${posDataJson})' title="Share P&L">
+            <td class="${pnlClass}">
+                ${formatCurrency(pos.unrealized_pnl)} ${pnlPercentDisplay}
+                <button class="btn btn-outline-secondary btn-sm btn-share-pnl py-0 px-1 ms-1" onclick='showPnlCard(${posDataJson})' title="Share P&L">
                     <i class="bi bi-share"></i>
                 </button>
+            </td>
+            <td class="text-nowrap">
                 <button class="btn btn-outline-warning btn-sm py-0 px-1 me-1" onclick="showSlTpModal('${pos.coin}', '${pos.side}', ${pos.size}, ${pos.entry_price}, ${pos.mark_price})" title="Set SL/TP">
                     <i class="bi bi-shield-check"></i>
                 </button>
@@ -797,11 +799,6 @@ function updatePositionRow(row, pos) {
     cells[5].textContent = Math.abs(pos.size).toFixed(4);  // Size
     cells[7].textContent = formatPrice(pos.mark_price);  // Mark price
 
-    // P&L cell with color and percentage
-    const pnlCell = cells[10];
-    pnlCell.innerHTML = `${formatCurrency(pos.unrealized_pnl)} ${pnlPercentDisplay}`;
-    pnlCell.className = pnlClass;
-
     // Funding rate
     let fundingDisplay = '--';
     if (pos.funding_rate !== undefined && pos.funding_rate !== null) {
@@ -811,19 +808,24 @@ function updatePositionRow(row, pos) {
     }
     cells[9].innerHTML = fundingDisplay;
 
-    // Update share button data
-    const shareBtn = cells[11].querySelector('.btn-share-pnl');
-    if (shareBtn) {
-        const posData = {
-            coin: pos.coin,
-            side: pos.side,
-            leverage: pos.leverage,
-            entry_price: pos.entry_price,
-            mark_price: pos.mark_price,
-            pnl_percent: pnlPercent
-        };
-        shareBtn.onclick = () => showPnlCard(posData);
-    }
+    // P&L cell with color, percentage and share button
+    const pnlCell = cells[10];
+    const posData = {
+        coin: pos.coin,
+        side: pos.side,
+        leverage: pos.leverage,
+        entry_price: pos.entry_price,
+        mark_price: pos.mark_price,
+        pnl_percent: pnlPercent
+    };
+    const posDataJson = JSON.stringify(posData).replace(/"/g, '&quot;');
+    pnlCell.innerHTML = `
+        ${formatCurrency(pos.unrealized_pnl)} ${pnlPercentDisplay}
+        <button class="btn btn-outline-secondary btn-sm btn-share-pnl py-0 px-1 ms-1" onclick='showPnlCard(${posDataJson})' title="Share P&L">
+            <i class="bi bi-share"></i>
+        </button>
+    `;
+    pnlCell.className = pnlClass;
 }
 
 function updatePositionsTable(positions) {
