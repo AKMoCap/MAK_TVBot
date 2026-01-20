@@ -1858,9 +1858,7 @@ async function loadTwapOrders() {
         const twaps = data.twaps || [];
 
         // Filter to only show active/running TWAPs for THIS user
-        // Note: twapHistory API returns all TWAPs globally, so we must filter by user
-        // Hyperliquid API uses empty status object {} for running TWAPs
-        // Terminated TWAPs have status like { terminated: {...} } or { finished: {...} }
+        // Note: twapHistory API returns all TWAPs (including historical), so we must filter
         const activeTwaps = twaps.filter(twap => {
             const state = twap.state || {};
 
@@ -1871,17 +1869,29 @@ async function loadTwapOrders() {
             }
 
             const status = state.status || {};
-
-            // Check if status is empty (running) or explicitly has 'running'/'activated' key
             const statusKeys = Object.keys(status);
-            const isRunning = statusKeys.length === 0 ||
-                              statusKeys.includes('running') ||
-                              statusKeys.includes('activated');
-            // Exclude terminated/finished TWAPs
+
+            // Exclude explicitly terminated/finished TWAPs
             const isTerminated = statusKeys.includes('terminated') ||
                                  statusKeys.includes('finished') ||
                                  statusKeys.includes('error');
-            return isRunning && !isTerminated;
+            if (isTerminated) {
+                return false;
+            }
+
+            // Check if TWAP is still within its execution time window
+            const startTimestamp = state.timestamp;
+            const durationMinutes = parseInt(state.minutes || 0);
+            if (startTimestamp && durationMinutes > 0) {
+                const endTime = startTimestamp + (durationMinutes * 60 * 1000);
+                const now = Date.now();
+                // TWAP is only "running" if current time is before end time
+                if (now > endTime) {
+                    return false; // TWAP execution window has passed
+                }
+            }
+
+            return true;
         });
 
         updateTabCount('twaps', activeTwaps.length);
