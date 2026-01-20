@@ -1004,9 +1004,11 @@ td.text-danger .pnl-percent {
 
 .pnl-card-footer {
     position: absolute;
-    bottom: 12px;
-    right: 16px;
-    font-size: 0.7rem;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.55rem;
     color: rgba(255, 255, 255, 0.3);
 }
 
