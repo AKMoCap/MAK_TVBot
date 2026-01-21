@@ -1770,11 +1770,17 @@ async function loadOpenOrders() {
         }
 
         tbody.innerHTML = orders.map(order => {
-            // Parse order type - Hyperliquid uses orderType field
-            // Types: "Limit", "Stop Market", "Take Profit Market", "Stop Limit", "Take Profit Limit"
-            const orderType = formatOrderType(order.orderType);
-            const isTriggerOrder = order.orderType && (order.orderType.includes('Stop') || order.orderType.includes('Take Profit'));
-            const isMarketTrigger = order.orderType && order.orderType.includes('Market');
+            // Parse order type - Hyperliquid returns orderType as an object
+            // Format: {limit: {tif: "Gtc"}} or {trigger: {isMarket: true, triggerPx: "1.98", tpsl: "sl"}}
+            const orderTypeInfo = parseOrderType(order.orderType);
+            const orderTypeDisplay = orderTypeInfo.display;
+            const isTriggerOrder = orderTypeInfo.isTrigger;
+            const isMarketTrigger = orderTypeInfo.isMarket;
+            const isStopOrder = orderTypeInfo.isStopLoss;
+            const isTakeProfit = orderTypeInfo.isTakeProfit;
+
+            // Get trigger price from the parsed orderType (more reliable than top-level triggerPx)
+            const triggerPrice = orderTypeInfo.triggerPx || parseFloat(order.triggerPx || 0);
 
             // Hyperliquid returns 'B' for buy, 'A' for sell (ask)
             // For reduce-only orders closing a long, it's a sell (Close Long)
@@ -1786,10 +1792,9 @@ async function loadOpenOrders() {
                 : (isSell ? 'Sell' : 'Buy');
             const directionClass = isSell ? 'text-success' : 'text-danger';
 
-            // Field names from Hyperliquid: sz (size), limitPx (price), triggerPx (trigger price)
+            // Field names from Hyperliquid: sz (size), limitPx (price)
             const size = parseFloat(order.sz || order.size || 0);
             const limitPrice = parseFloat(order.limitPx || order.price || 0);
-            const triggerPrice = parseFloat(order.triggerPx || 0);
             const origSz = parseFloat(order.origSz || 0);
 
             // For full position close (reduce only with size showing as the full amount)
@@ -1806,23 +1811,21 @@ async function loadOpenOrders() {
             // Trigger conditions
             let triggerCondition = '--';
             if (triggerPrice > 0) {
-                // For stop loss (Stop Market): triggers when price goes BELOW (for long) or ABOVE (for short)
-                // For take profit (Take Profit Market): triggers when price goes ABOVE (for long) or BELOW (for short)
-                const isStopOrder = order.orderType && order.orderType.includes('Stop');
-                const isTakeProfit = order.orderType && order.orderType.includes('Take Profit');
-
                 if (isStopOrder) {
                     // Stop order: for closing long (sell), price below trigger; for closing short (buy), price above trigger
                     triggerCondition = isSell ? `Price below ${formatPrice(triggerPrice)}` : `Price above ${formatPrice(triggerPrice)}`;
                 } else if (isTakeProfit) {
                     // Take profit: for closing long (sell), price above trigger; for closing short (buy), price below trigger
                     triggerCondition = isSell ? `Price above ${formatPrice(triggerPrice)}` : `Price below ${formatPrice(triggerPrice)}`;
+                } else if (isTriggerOrder) {
+                    // Generic trigger order
+                    triggerCondition = `Trigger: ${formatPrice(triggerPrice)}`;
                 }
             }
 
             return `
                 <tr>
-                    <td class="text-nowrap">${orderType}</td>
+                    <td class="text-nowrap">${orderTypeDisplay}</td>
                     <td><strong>${order.coin}</strong></td>
                     <td class="${directionClass}">${directionText}</td>
                     <td>${sizeDisplay}</td>
@@ -1856,21 +1859,62 @@ async function loadOpenOrders() {
 }
 
 /**
- * Format order type for display
+ * Parse Hyperliquid order type object
+ * Hyperliquid returns orderType as an object, not a string:
+ * - Limit: {limit: {tif: "Gtc"}}
+ * - Stop Market: {trigger: {isMarket: true, triggerPx: "1.98", tpsl: "sl"}}
+ * - Take Profit Market: {trigger: {isMarket: true, triggerPx: "2.50", tpsl: "tp"}}
+ * - Stop Limit: {trigger: {isMarket: false, triggerPx: "1.98", tpsl: "sl"}}
  */
-function formatOrderType(orderType) {
-    if (!orderType) return 'Limit';
-
-    // Map Hyperliquid order types to display names
-    const typeMap = {
-        'Limit': 'Limit',
-        'Stop Market': 'Stop Market',
-        'Stop Limit': 'Stop Limit',
-        'Take Profit Market': 'Take Profit Market',
-        'Take Profit Limit': 'Take Profit Limit'
+function parseOrderType(orderType) {
+    const result = {
+        display: 'Limit',
+        isTrigger: false,
+        isMarket: false,
+        isStopLoss: false,
+        isTakeProfit: false,
+        triggerPx: 0
     };
 
-    return typeMap[orderType] || orderType;
+    if (!orderType) return result;
+
+    // Handle string format (legacy or already formatted)
+    if (typeof orderType === 'string') {
+        result.display = orderType;
+        result.isTrigger = orderType.includes('Stop') || orderType.includes('Take Profit');
+        result.isMarket = orderType.includes('Market');
+        result.isStopLoss = orderType.includes('Stop');
+        result.isTakeProfit = orderType.includes('Take Profit');
+        return result;
+    }
+
+    // Handle object format from Hyperliquid API
+    if (typeof orderType === 'object') {
+        // Check for trigger order
+        if (orderType.trigger) {
+            const trigger = orderType.trigger;
+            result.isTrigger = true;
+            result.isMarket = trigger.isMarket === true;
+            result.triggerPx = parseFloat(trigger.triggerPx || 0);
+
+            // tpsl: "sl" = stop loss, "tp" = take profit
+            if (trigger.tpsl === 'sl') {
+                result.isStopLoss = true;
+                result.display = result.isMarket ? 'Stop Market' : 'Stop Limit';
+            } else if (trigger.tpsl === 'tp') {
+                result.isTakeProfit = true;
+                result.display = result.isMarket ? 'Take Profit Market' : 'Take Profit Limit';
+            } else {
+                // Generic trigger
+                result.display = result.isMarket ? 'Trigger Market' : 'Trigger Limit';
+            }
+        } else if (orderType.limit) {
+            // Regular limit order
+            result.display = 'Limit';
+        }
+    }
+
+    return result;
 }
 
 /**
