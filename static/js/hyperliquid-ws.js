@@ -114,7 +114,7 @@ class HyperliquidWebSocket {
      */
     async getWsUrl() {
         try {
-            const response = await fetch('/api/settings');
+            const response = await fetch('/api/settings', { credentials: 'same-origin' });
             const settings = await response.json();
             const isTestnet = settings.use_testnet === 'true' || settings.use_testnet === true;
             return isTestnet

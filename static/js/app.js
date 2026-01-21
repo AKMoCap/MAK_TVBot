@@ -125,7 +125,8 @@ async function apiCall(endpoint, method = 'GET', data = null, options = {}) {
 
     const fetchOptions = {
         method,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin'  // Ensure cookies are sent with requests
     };
     if (data) fetchOptions.body = JSON.stringify(data);
 
