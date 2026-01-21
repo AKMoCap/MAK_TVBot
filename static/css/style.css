@@ -611,9 +611,11 @@ code {
     }
 
     #pnl-card-wrapper {
-        width: 100%;
-        display: flex;
-        justify-content: center;
+        width: auto;
+        max-width: 100%;
+        display: inline-block;
+        background: linear-gradient(to bottom, #1C3249 0%, #1C3249 50%, #5F666E 50%, #5F666E 100%);
+        border-radius: 16px;
     }
 
     /* Status badges compact for mobile */
@@ -1038,6 +1040,13 @@ td.text-danger .pnl-percent {
 }
 
 /* P&L Card Modal */
+#pnl-card-wrapper {
+    background: linear-gradient(to bottom, #1C3249 0%, #1C3249 50%, #5F666E 50%, #5F666E 100%);
+    padding: 0;
+    border-radius: 16px;
+    display: inline-block;
+}
+
 .pnl-card-container {
     width: 400px;
     height: 280px;
@@ -1049,6 +1058,7 @@ td.text-danger .pnl-percent {
     overflow: hidden;
     color: #fff;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: block;
 }
 
 .pnl-card-container::before {
