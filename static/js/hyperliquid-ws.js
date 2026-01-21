@@ -445,7 +445,7 @@ class HyperliquidWebSocket {
         let positions = [];
         let accountValue = 0;
         let totalMarginUsed = 0;
-        let withdrawable = 0;
+        let withdrawable = undefined;  // Use undefined to indicate "not provided"
 
         if (clearinghouse) {
             // Debug: log the full clearinghouse structure
@@ -455,7 +455,10 @@ class HyperliquidWebSocket {
             const marginSummary = clearinghouse.marginSummary || {};
             accountValue = parseFloat(marginSummary.accountValue || 0);
             totalMarginUsed = parseFloat(marginSummary.totalMarginUsed || 0);
-            withdrawable = parseFloat(marginSummary.withdrawable || 0);
+            // Only set withdrawable if explicitly provided in the data
+            if (marginSummary.withdrawable !== undefined && marginSummary.withdrawable !== null) {
+                withdrawable = parseFloat(marginSummary.withdrawable);
+            }
 
             console.log('[HL-WS] Account value:', accountValue, 'Margin used:', totalMarginUsed);
 

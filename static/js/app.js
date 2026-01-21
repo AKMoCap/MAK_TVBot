@@ -420,10 +420,34 @@ let spotBalancesLoaded = false;
 // Cache for spot balances (for Spot tab display)
 let spotBalancesCache = [];
 
+// Cache for last known perps available value (prevents flickering)
+let lastKnownPerpsAvailable = null;
+
 function updateAccountCards(data) {
     // Store perps account value and available balance
     const perpsAccountValue = parseFloat(data.account_value) || 0;
-    const perpsAvailable = parseFloat(data.withdrawable) || 0;
+
+    // Only update perpsAvailable if we have a valid value (not 0 when we had a value before)
+    // This prevents flickering when WebSocket sends updates without withdrawable field
+    let perpsAvailable = null;
+    if (data.withdrawable !== undefined && data.withdrawable !== null) {
+        perpsAvailable = parseFloat(data.withdrawable);
+        // Only update cache if value is valid (>= 0)
+        if (!isNaN(perpsAvailable) && perpsAvailable >= 0) {
+            // If we had a significant value before and now it's 0, ignore the 0
+            // (likely incomplete WebSocket data)
+            if (lastKnownPerpsAvailable !== null && lastKnownPerpsAvailable > 10 && perpsAvailable === 0) {
+                perpsAvailable = lastKnownPerpsAvailable;
+            } else {
+                lastKnownPerpsAvailable = perpsAvailable;
+            }
+        } else {
+            perpsAvailable = lastKnownPerpsAvailable || 0;
+        }
+    } else {
+        // No withdrawable in data, use cached value
+        perpsAvailable = lastKnownPerpsAvailable || 0;
+    }
 
     stablecoinBalances.usdcPerps = perpsAccountValue;
     stablecoinBalances.usdcPerpsAvail = perpsAvailable;
