@@ -2692,13 +2692,48 @@ async function copyPnlCardImage() {
             await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
         }
 
+        // Get the computed styles to match the border radius
+        const computedStyle = window.getComputedStyle(card);
+        const borderRadius = parseInt(computedStyle.borderRadius) || 16;
+
         const canvas = await html2canvas(card, {
             backgroundColor: null,
             scale: 2,
             logging: false,
             useCORS: true,
-            allowTaint: true
+            allowTaint: true,
+            // Remove any extra margins/padding
+            x: 0,
+            y: 0,
+            width: card.offsetWidth,
+            height: card.offsetHeight,
+            scrollX: 0,
+            scrollY: 0
         });
+
+        // Create a new canvas with rounded corners to remove any white edges
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = canvas.width;
+        finalCanvas.height = canvas.height;
+        const ctx = finalCanvas.getContext('2d');
+
+        // Draw rounded rectangle clip path
+        const scaledRadius = borderRadius * 2; // Scale matches html2canvas scale
+        ctx.beginPath();
+        ctx.moveTo(scaledRadius, 0);
+        ctx.lineTo(canvas.width - scaledRadius, 0);
+        ctx.quadraticCurveTo(canvas.width, 0, canvas.width, scaledRadius);
+        ctx.lineTo(canvas.width, canvas.height - scaledRadius);
+        ctx.quadraticCurveTo(canvas.width, canvas.height, canvas.width - scaledRadius, canvas.height);
+        ctx.lineTo(scaledRadius, canvas.height);
+        ctx.quadraticCurveTo(0, canvas.height, 0, canvas.height - scaledRadius);
+        ctx.lineTo(0, scaledRadius);
+        ctx.quadraticCurveTo(0, 0, scaledRadius, 0);
+        ctx.closePath();
+        ctx.clip();
+
+        // Draw the captured image
+        ctx.drawImage(canvas, 0, 0);
 
         // Detect mobile/touch device
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -2706,7 +2741,7 @@ async function copyPnlCardImage() {
                         (window.innerWidth <= 768);
 
         // Convert to blob
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        const blob = await new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
 
         // Try Web Share API first (works great on mobile)
         if (isMobile && navigator.canShare && navigator.share) {
@@ -2714,9 +2749,7 @@ async function copyPnlCardImage() {
                 const file = new File([blob], `pnl-card-${Date.now()}.png`, { type: 'image/png' });
                 if (navigator.canShare({ files: [file] })) {
                     await navigator.share({
-                        files: [file],
-                        title: 'P&L Card',
-                        text: 'Check out my position on MAK!'
+                        files: [file]
                     });
                     showToast('P&L card shared!', 'success');
                     return;
@@ -2743,7 +2776,7 @@ async function copyPnlCardImage() {
         }
 
         // Fallback: download the image
-        const url = canvas.toDataURL('image/png');
+        const url = finalCanvas.toDataURL('image/png');
 
         if (isMobile) {
             // Mobile fallback: open image in new tab for long-press save
@@ -2753,7 +2786,7 @@ async function copyPnlCardImage() {
                     <html>
                     <head><title>P&L Card</title>
                     <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#1a1d29;}img{max-width:100%;height:auto;}</style>
+                    <style>body{margin:0;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:100vh;background:#1a1d29;}img{max-width:100%;height:auto;}</style>
                     </head>
                     <body><img src="${url}" alt="P&L Card"><p style="color:#fff;text-align:center;padding:10px;font-family:sans-serif;">Long press image to save</p></body>
                     </html>
