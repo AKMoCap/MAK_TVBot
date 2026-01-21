@@ -572,27 +572,51 @@ class WalletManager {
     updateUI() {
         const btn = document.getElementById('wallet-connect-btn');
         const statusText = document.getElementById('wallet-status-text');
+        const btnMobile = document.getElementById('wallet-connect-btn-mobile');
+        const statusTextMobile = document.getElementById('wallet-status-text-mobile');
 
         if (!btn || !statusText) return;
 
         if (this.isConnected && this.address) {
             const shortAddress = this.address.slice(0, 6) + '...' + this.address.slice(-4);
+            const veryShortAddress = this.address.slice(0, 4) + '...' + this.address.slice(-3);
 
             if (this.agentKey) {
                 // Fully connected and authorized
                 btn.className = 'status-badge status-badge-primary';
                 statusText.textContent = shortAddress;
                 btn.onclick = (e) => { e.stopPropagation(); this.showWalletMenu(); };
+
+                // Mobile button
+                if (btnMobile && statusTextMobile) {
+                    btnMobile.className = 'status-badge status-badge-primary';
+                    statusTextMobile.textContent = veryShortAddress;
+                    btnMobile.onclick = (e) => { e.stopPropagation(); this.showWalletMenu(); };
+                }
             } else {
                 // Connected but needs agent approval
                 btn.className = 'status-badge status-badge-testnet';
                 statusText.textContent = shortAddress + ' (Authorize)';
                 btn.onclick = () => this.promptAgentApproval();
+
+                // Mobile button
+                if (btnMobile && statusTextMobile) {
+                    btnMobile.className = 'status-badge status-badge-testnet';
+                    statusTextMobile.textContent = 'Authorize';
+                    btnMobile.onclick = () => this.promptAgentApproval();
+                }
             }
         } else {
             btn.className = 'status-badge status-badge-disconnected';
             statusText.textContent = 'Connect Wallet';
             btn.onclick = () => this.connect();
+
+            // Mobile button
+            if (btnMobile && statusTextMobile) {
+                btnMobile.className = 'status-badge status-badge-disconnected';
+                statusTextMobile.textContent = 'Connect';
+                btnMobile.onclick = () => this.connect();
+            }
         }
     }
 
@@ -620,22 +644,48 @@ class WalletManager {
 
         const btn = document.getElementById('wallet-connect-btn');
         const rect = btn.getBoundingClientRect();
+        const isMobile = window.innerWidth < 768;
 
         const menu = document.createElement('div');
         menu.id = 'wallet-menu';
         menu.className = 'dropdown-menu show';
-        menu.style.cssText = `
-            position: fixed;
-            top: ${rect.bottom + 5}px;
-            right: ${window.innerWidth - rect.right}px;
-            z-index: 9999;
-            background: #1a1d29;
-            border: 1px solid #2d3748;
-            border-radius: 8px;
-            min-width: 200px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
+
+        // Mobile-friendly positioning
+        if (isMobile) {
+            menu.style.cssText = `
+                position: fixed;
+                top: auto;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 9999;
+                background: #1a1d29;
+                border: 1px solid #2d3748;
+                border-radius: 16px 16px 0 0;
+                min-width: 100%;
+                max-height: 70vh;
+                overflow-y: auto;
+                box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+                padding-bottom: env(safe-area-inset-bottom, 20px);
+            `;
+        } else {
+            menu.style.cssText = `
+                position: fixed;
+                top: ${rect.bottom + 5}px;
+                right: ${window.innerWidth - rect.right}px;
+                z-index: 9999;
+                background: #1a1d29;
+                border: 1px solid #2d3748;
+                border-radius: 8px;
+                min-width: 200px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            `;
+        }
+
+        const mobileHandle = isMobile ? '<div style="width: 40px; height: 4px; background: #4a5568; border-radius: 2px; margin: 8px auto 4px;"></div>' : '';
+
         menu.innerHTML = `
+            ${mobileHandle}
             <div class="px-3 py-2 text-muted small border-bottom" style="border-color: #2d3748 !important;">
                 <i class="bi bi-wallet2 me-1"></i>Connected Wallet
             </div>
@@ -643,13 +693,13 @@ class WalletManager {
                 ${this.address}
             </div>
             <div class="dropdown-divider" style="border-color: #2d3748;"></div>
-            <button class="dropdown-item text-info d-flex align-items-center" id="enable-hip3-btn" style="background: transparent;">
+            <button class="dropdown-item text-info d-flex align-items-center${isMobile ? ' py-3' : ''}" id="enable-hip3-btn" style="background: transparent;">
                 <i class="bi bi-lightning-charge me-2"></i>Enable HIP-3 Perps
             </button>
-            <button class="dropdown-item text-warning d-flex align-items-center" id="reauthorize-wallet-btn" style="background: transparent;">
+            <button class="dropdown-item text-warning d-flex align-items-center${isMobile ? ' py-3' : ''}" id="reauthorize-wallet-btn" style="background: transparent;">
                 <i class="bi bi-shield-check me-2"></i>Re-authorize Trading
             </button>
-            <button class="dropdown-item text-danger d-flex align-items-center" id="disconnect-wallet-btn" style="background: transparent;">
+            <button class="dropdown-item text-danger d-flex align-items-center${isMobile ? ' py-3' : ''}" id="disconnect-wallet-btn" style="background: transparent;">
                 <i class="bi bi-box-arrow-right me-2"></i>Disconnect Wallet
             </button>
         `;
