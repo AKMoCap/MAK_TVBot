@@ -486,6 +486,159 @@ code {
     }
 }
 
+/* Mobile-specific optimizations */
+@media (max-width: 991.98px) {
+    /* Navbar status badges - show wallet button outside collapsed menu */
+    .navbar-status-badges {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.75rem 0;
+    }
+
+    .navbar-status-badges .status-badge {
+        min-width: auto;
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+    }
+
+    /* Hide non-essential badges on mobile navbar */
+    .navbar-status-badges #network-badge,
+    .navbar-status-badges #connection-status {
+        display: none;
+    }
+
+    /* Hide desktop wallet button on mobile (we have mobile button instead) */
+    .navbar-status-badges #wallet-connect-btn {
+        display: none;
+    }
+
+    /* Mobile wallet button styling */
+    #wallet-connect-btn-mobile {
+        min-width: auto;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.75rem;
+    }
+}
+
+/* Small mobile screens */
+@media (max-width: 576px) {
+    /* Positions tabs - make legible on mobile */
+    .positions-tabs {
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .positions-tab {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.5rem;
+        white-space: nowrap;
+    }
+
+    .positions-tab.active {
+        font-size: 0.9rem;
+    }
+
+    .tab-count {
+        font-size: 0.65em;
+    }
+
+    /* Card header adjustments for tabs */
+    .card-header.d-flex {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 0.75rem;
+    }
+
+    #perps-controls {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    #perps-controls .form-select {
+        flex: 1;
+        max-width: 140px;
+    }
+
+    /* P&L Card responsive sizing */
+    .pnl-card-container {
+        width: 100%;
+        max-width: 340px;
+        height: auto;
+        min-height: 240px;
+        padding: 18px;
+        padding-bottom: 28px;
+    }
+
+    .pnl-card-coin {
+        font-size: 1.4rem;
+    }
+
+    .pnl-card-leverage {
+        font-size: 0.8rem;
+    }
+
+    .pnl-card-side {
+        padding: 3px 10px;
+        font-size: 0.75rem;
+    }
+
+    .pnl-card-prices {
+        gap: 20px;
+        margin-bottom: 15px;
+    }
+
+    .pnl-card-price-label {
+        font-size: 0.65rem;
+    }
+
+    .pnl-card-price-value {
+        font-size: 0.95rem;
+    }
+
+    .pnl-card-pnl-value {
+        font-size: 2rem;
+    }
+
+    .pnl-card-footer {
+        bottom: 8px;
+        font-size: 0.5rem;
+    }
+
+    /* P&L Modal adjustments */
+    #pnlCardModal .modal-body {
+        padding: 1rem;
+    }
+
+    #pnl-card-wrapper {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+
+    /* Status badges compact for mobile */
+    .status-badge {
+        min-width: 100px;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.7rem;
+    }
+
+    /* Account overview cards - stack values */
+    .col-md-3 .card-body .d-flex {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 0.5rem;
+    }
+
+    .col-md-3 .card-body h4 {
+        font-size: 1.25rem;
+    }
+
+    .stablecoin-breakdown {
+        text-align: left !important;
+    }
+}
+
 /* Animation for status indicators */
 @keyframes pulse {
     0%, 100% {

@@ -18,6 +18,13 @@
                 <span class="fw-bold">MAK Trading Bot</span>
             </a>
 
+            <!-- Mobile wallet button - always visible -->
+            <div class="d-lg-none me-2">
+                <button id="wallet-connect-btn-mobile" class="status-badge status-badge-disconnected" onclick="walletManager.connect()">
+                    <i class="bi bi-wallet2 me-1"></i><span id="wallet-status-text-mobile">Connect</span>
+                </button>
+            </div>
+
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>

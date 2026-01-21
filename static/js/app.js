@@ -2676,8 +2676,16 @@ function showPnlCard(posData) {
  */
 async function copyPnlCardImage() {
     const card = document.getElementById('pnl-card');
+    const copyBtn = document.querySelector('#pnlCardModal .btn-primary');
+    const originalBtnHtml = copyBtn ? copyBtn.innerHTML : '';
 
     try {
+        // Show loading state
+        if (copyBtn) {
+            copyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
+            copyBtn.disabled = true;
+        }
+
         // Use html2canvas to capture the card
         if (typeof html2canvas === 'undefined') {
             // Load html2canvas dynamically if not available
@@ -2687,29 +2695,98 @@ async function copyPnlCardImage() {
         const canvas = await html2canvas(card, {
             backgroundColor: null,
             scale: 2,
-            logging: false
+            logging: false,
+            useCORS: true,
+            allowTaint: true
         });
 
+        // Detect mobile/touch device
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                        ('ontouchstart' in window) ||
+                        (window.innerWidth <= 768);
+
         // Convert to blob
-        canvas.toBlob(async (blob) => {
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+
+        // Try Web Share API first (works great on mobile)
+        if (isMobile && navigator.canShare && navigator.share) {
+            try {
+                const file = new File([blob], `pnl-card-${Date.now()}.png`, { type: 'image/png' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: 'P&L Card',
+                        text: 'Check out my position on MAK!'
+                    });
+                    showToast('P&L card shared!', 'success');
+                    return;
+                }
+            } catch (shareErr) {
+                // User cancelled or share failed, continue to other methods
+                if (shareErr.name !== 'AbortError') {
+                    console.log('Share API failed, trying clipboard:', shareErr);
+                }
+            }
+        }
+
+        // Try clipboard API (works on desktop and some mobile browsers)
+        if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
             try {
                 await navigator.clipboard.write([
                     new ClipboardItem({ 'image/png': blob })
                 ]);
                 showToast('P&L card copied to clipboard!', 'success');
-            } catch (err) {
-                // Fallback: download the image
-                const url = canvas.toDataURL('image/png');
+                return;
+            } catch (clipErr) {
+                console.log('Clipboard API failed:', clipErr);
+            }
+        }
+
+        // Fallback: download the image
+        const url = canvas.toDataURL('image/png');
+
+        if (isMobile) {
+            // Mobile fallback: open image in new tab for long-press save
+            const newWindow = window.open('', '_blank');
+            if (newWindow) {
+                newWindow.document.write(`
+                    <html>
+                    <head><title>P&L Card</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#1a1d29;}img{max-width:100%;height:auto;}</style>
+                    </head>
+                    <body><img src="${url}" alt="P&L Card"><p style="color:#fff;text-align:center;padding:10px;font-family:sans-serif;">Long press image to save</p></body>
+                    </html>
+                `);
+                newWindow.document.close();
+                showToast('Image opened - long press to save', 'info');
+            } else {
+                // If popup blocked, create download link
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = `pnl-card-${Date.now()}.png`;
+                document.body.appendChild(a);
                 a.click();
-                showToast('Image downloaded (clipboard not supported)', 'info');
+                document.body.removeChild(a);
+                showToast('Image downloaded', 'info');
             }
-        }, 'image/png');
+        } else {
+            // Desktop fallback: direct download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pnl-card-${Date.now()}.png`;
+            a.click();
+            showToast('Image downloaded', 'info');
+        }
     } catch (error) {
         console.error('Failed to generate P&L card image:', error);
         showToast('Failed to generate image', 'error');
+    } finally {
+        // Restore button state
+        if (copyBtn) {
+            copyBtn.innerHTML = originalBtnHtml;
+            copyBtn.disabled = false;
+        }
     }
 }
 
