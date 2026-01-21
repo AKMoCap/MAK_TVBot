@@ -117,7 +117,7 @@ class WalletManager {
         this._isCheckingSession = true;
 
         try {
-            const response = await fetch('/api/wallet/session');
+            const response = await fetch('/api/wallet/session', { credentials: 'same-origin' });
             const data = await response.json();
 
             if (data.connected && data.address) {
@@ -185,7 +185,7 @@ class WalletManager {
      */
     async getRequiredChainId() {
         try {
-            const response = await fetch('/api/settings');
+            const response = await fetch('/api/settings', { credentials: 'same-origin' });
             const settings = await response.json();
             const isTestnet = settings.use_testnet === 'true' || settings.use_testnet === true;
             return isTestnet ? this.ARBITRUM_SEPOLIA_CHAIN_ID : this.ARBITRUM_ONE_CHAIN_ID;
@@ -278,6 +278,7 @@ class WalletManager {
             const response = await fetch('/api/wallet/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ address: this.address, chain_id: this.chainId })
             });
 
@@ -401,6 +402,7 @@ class WalletManager {
             const prepResponse = await fetch('/api/wallet/prepare-agent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ address: this.address })
             });
 
@@ -451,6 +453,7 @@ class WalletManager {
             const approveResponse = await fetch('/api/wallet/approve-agent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({
                     address: this.address,
                     signature: signature,
@@ -499,7 +502,8 @@ class WalletManager {
         try {
             await fetch('/api/wallet/disconnect', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin'
             });
         } catch (error) {
             console.error('Disconnect error:', error);
@@ -717,7 +721,8 @@ class WalletManager {
             try {
                 const response = await fetch('/api/wallet/enable-dex-abstraction', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin'
                 });
                 const data = await response.json();
 

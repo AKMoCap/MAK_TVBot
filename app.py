@@ -1456,11 +1456,14 @@ def api_get_coins():
     try:
         user = get_current_user()
         if not user:
+            logger.debug("GET /api/coins: No user session, returning empty list")
             return jsonify({'coins': []})
 
         coins = CoinConfig.query.filter_by(user_id=user.id).all()
+        logger.debug(f"GET /api/coins: Loaded {len(coins)} coins for user {user.address[:10]}...")
         return jsonify({'coins': [c.to_dict() for c in coins]})
     except Exception as e:
+        logger.exception(f"GET /api/coins error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -1592,15 +1595,18 @@ def api_update_coin(coin):
     try:
         user = get_current_user()
         if not user:
+            logger.warning(f"PUT /api/coins/{coin}: No user session, rejecting update")
             return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
 
         data = request.get_json()
         # Preserve case - Hyperliquid uses case-sensitive names like kBONK
         config = CoinConfig.query.filter_by(coin=coin, user_id=user.id).first()
 
+        is_new = False
         if not config:
             config = CoinConfig(coin=coin, user_id=user.id)
             db.session.add(config)
+            is_new = True
 
         for key in ['enabled', 'category', 'default_leverage', 'default_collateral', 'max_position_size',
                     'max_open_positions', 'default_stop_loss_pct',
@@ -1611,9 +1617,12 @@ def api_update_coin(coin):
 
         db.session.commit()
 
+        logger.info(f"PUT /api/coins/{coin}: {'Created' if is_new else 'Updated'} config for user {user.address[:10]}... - leverage={config.default_leverage}, collateral={config.default_collateral}")
+
         return jsonify({'success': True})
 
     except Exception as e:
+        logger.exception(f"PUT /api/coins/{coin} error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
