@@ -1704,9 +1704,6 @@ async function loadSpotBalances() {
 /**
  * Load open orders from API
  */
-// Cache for open orders (used by Cancel All)
-let openOrdersCache = [];
-
 async function loadOpenOrders() {
     const tbody = document.getElementById('orders-table');
     const cancelAllBtn = document.getElementById('cancel-all-orders-btn');
