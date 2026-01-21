@@ -2136,6 +2136,22 @@ function setupCustomCoinDropdown() {
 }
 
 function setupDashboardEvents() {
+    // Prevent Quick Trade form from submitting on Enter key
+    const quickTradeForm = document.getElementById('quick-trade-form');
+    if (quickTradeForm) {
+        quickTradeForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            return false;
+        });
+        // Also prevent Enter key from triggering anything in input fields
+        quickTradeForm.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                return false;
+            }
+        });
+    }
+
     // Setup positions/spot/orders tab switching
     setupPositionTabs();
 
@@ -2858,6 +2874,24 @@ function showSlTpModal(coin, side, size, entryPrice, markPrice) {
     // Clear previous values
     document.getElementById('sltp-sl-price').value = '';
     document.getElementById('sltp-tp-price').value = '';
+
+    // Setup Enter key handler for modal inputs
+    const slInput = document.getElementById('sltp-sl-price');
+    const tpInput = document.getElementById('sltp-tp-price');
+
+    const handleEnter = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            submitSlTpOrders();
+        }
+    };
+
+    // Remove old listeners and add new ones
+    slInput.removeEventListener('keydown', handleEnter);
+    tpInput.removeEventListener('keydown', handleEnter);
+    slInput.addEventListener('keydown', handleEnter);
+    tpInput.addEventListener('keydown', handleEnter);
 
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('slTpModal'));
