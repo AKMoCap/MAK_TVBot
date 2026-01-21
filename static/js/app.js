@@ -1704,17 +1704,22 @@ async function loadSpotBalances() {
 /**
  * Load open orders from API
  */
+// Cache for open orders (used by Cancel All)
+let openOrdersCache = [];
+
 async function loadOpenOrders() {
     const tbody = document.getElementById('orders-table');
+    const cancelAllBtn = document.getElementById('cancel-all-orders-btn');
     if (!tbody) return;
 
     // Get wallet address from walletManager
     const walletAddress = typeof walletManager !== 'undefined' && walletManager.address;
     if (!walletAddress) {
         updateTabCount('orders', 0);
+        if (cancelAllBtn) cancelAllBtn.style.display = 'none';
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" class="text-center text-muted py-3">
+                <td colspan="11" class="text-center text-muted py-3">
                     <i class="bi bi-wallet2 fs-4 d-block mb-1"></i>
                     Connect wallet to view open orders
                 </td>
@@ -1727,9 +1732,10 @@ async function loadOpenOrders() {
         const data = await apiCall(`/open-orders?address=${walletAddress}`);
         if (data.error) {
             updateTabCount('orders', 0);
+            if (cancelAllBtn) cancelAllBtn.style.display = 'none';
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-3">
+                    <td colspan="11" class="text-center text-muted py-3">
                         <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
                         ${data.error}
                     </td>
@@ -1739,12 +1745,18 @@ async function loadOpenOrders() {
         }
 
         const orders = data.orders || [];
+        openOrdersCache = orders; // Cache for Cancel All
         updateTabCount('orders', orders.length);
+
+        // Show/hide Cancel All button
+        if (cancelAllBtn) {
+            cancelAllBtn.style.display = orders.length > 0 ? 'inline-block' : 'none';
+        }
 
         if (orders.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-3">
+                    <td colspan="11" class="text-center text-muted py-3">
                         <i class="bi bi-inbox fs-4 d-block mb-1"></i>
                         No open orders
                     </td>
@@ -1754,31 +1766,71 @@ async function loadOpenOrders() {
         }
 
         tbody.innerHTML = orders.map(order => {
+            // Parse order type - Hyperliquid uses orderType field
+            // Types: "Limit", "Stop Market", "Take Profit Market", "Stop Limit", "Take Profit Limit"
+            const orderType = formatOrderType(order.orderType);
+            const isTriggerOrder = order.orderType && (order.orderType.includes('Stop') || order.orderType.includes('Take Profit'));
+            const isMarketTrigger = order.orderType && order.orderType.includes('Market');
+
             // Hyperliquid returns 'B' for buy, 'A' for sell (ask)
-            const sideClass = order.side === 'B' ? 'badge-long' : 'badge-short';
-            const sideText = order.side === 'B' ? 'BUY' : 'SELL';
-            // Field names from Hyperliquid: sz (size), limitPx (price), orderType
+            // For reduce-only orders closing a long, it's a sell (Close Long)
+            // For reduce-only orders closing a short, it's a buy (Close Short)
+            const isReduceOnly = order.reduceOnly === true;
+            const isSell = order.side === 'A';
+            const directionText = isReduceOnly
+                ? (isSell ? 'Close Long' : 'Close Short')
+                : (isSell ? 'Sell' : 'Buy');
+            const directionClass = isSell ? 'text-success' : 'text-danger';
+
+            // Field names from Hyperliquid: sz (size), limitPx (price), triggerPx (trigger price)
             const size = parseFloat(order.sz || order.size || 0);
-            const price = parseFloat(order.limitPx || order.price || 0);
-            const orderValue = size * price;
-            const origSz = parseFloat(order.origSz || order.sz || size);
-            const filledPct = origSz > 0 ? (((origSz - size) / origSz) * 100).toFixed(0) : '0';
+            const limitPrice = parseFloat(order.limitPx || order.price || 0);
+            const triggerPrice = parseFloat(order.triggerPx || 0);
+            const origSz = parseFloat(order.origSz || 0);
+
+            // For full position close (reduce only with size showing as the full amount)
+            // Show "All" if it's reduce only and appears to be closing a full position
+            const sizeDisplay = isReduceOnly && size === 0 ? '--' : (size > 0 ? size.toFixed(4) : '--');
+            const origSzDisplay = origSz > 0 ? origSz.toFixed(4) : '--';
+
+            // Order value - show "Market" for market trigger orders, otherwise calculate
+            const orderValue = isMarketTrigger ? 'Market' : (size > 0 && limitPrice > 0 ? formatCurrency(size * limitPrice) : '--');
+
+            // Price display - for trigger market orders show "Market", otherwise show limit price
+            const priceDisplay = isMarketTrigger ? 'Market' : (limitPrice > 0 ? formatPrice(limitPrice) : '--');
+
+            // Trigger conditions
+            let triggerCondition = '--';
+            if (triggerPrice > 0) {
+                // For stop loss (Stop Market): triggers when price goes BELOW (for long) or ABOVE (for short)
+                // For take profit (Take Profit Market): triggers when price goes ABOVE (for long) or BELOW (for short)
+                const isStopOrder = order.orderType && order.orderType.includes('Stop');
+                const isTakeProfit = order.orderType && order.orderType.includes('Take Profit');
+
+                if (isStopOrder) {
+                    // Stop order: for closing long (sell), price below trigger; for closing short (buy), price above trigger
+                    triggerCondition = isSell ? `Price below ${formatPrice(triggerPrice)}` : `Price above ${formatPrice(triggerPrice)}`;
+                } else if (isTakeProfit) {
+                    // Take profit: for closing long (sell), price above trigger; for closing short (buy), price below trigger
+                    triggerCondition = isSell ? `Price above ${formatPrice(triggerPrice)}` : `Price below ${formatPrice(triggerPrice)}`;
+                }
+            }
 
             return `
                 <tr>
+                    <td class="text-nowrap">${orderType}</td>
                     <td><strong>${order.coin}</strong></td>
-                    <td><span class="badge ${sideClass}" style="font-size:0.7rem;">${sideText}</span></td>
-                    <td>${order.orderType || 'Limit'}</td>
-                    <td>${size.toFixed(4)}</td>
-                    <td>${formatPrice(price)}</td>
-                    <td>${formatCurrency(orderValue)}</td>
-                    <td>${filledPct}%</td>
-                    <td>
-                        <button class="btn btn-outline-secondary btn-sm py-0 px-2 me-1" onclick="openModifyOrderModal(${order.oid}, '${order.coin}', ${size}, ${price}, '${order.side}')" title="Modify Order">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="cancelOrder(${order.oid}, '${order.coin}')" title="Cancel Order">
-                            <i class="bi bi-x"></i>
+                    <td class="${directionClass}">${directionText}</td>
+                    <td>${sizeDisplay}</td>
+                    <td>${origSzDisplay}</td>
+                    <td>${orderValue}</td>
+                    <td>${priceDisplay}</td>
+                    <td>${isReduceOnly ? '<span class="text-info">Yes</span>' : 'No'}</td>
+                    <td class="text-nowrap">${triggerCondition}</td>
+                    <td>--</td>
+                    <td class="text-end">
+                        <button class="btn btn-link btn-sm text-danger p-0" onclick="cancelOrder(${order.oid}, '${order.coin}')" title="Cancel Order">
+                            Cancel
                         </button>
                     </td>
                 </tr>
@@ -1787,14 +1839,91 @@ async function loadOpenOrders() {
     } catch (error) {
         console.error('Failed to load open orders:', error);
         updateTabCount('orders', 0);
+        if (cancelAllBtn) cancelAllBtn.style.display = 'none';
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" class="text-center text-muted py-3">
+                <td colspan="11" class="text-center text-muted py-3">
                     <i class="bi bi-exclamation-circle fs-4 d-block mb-1"></i>
                     Failed to load orders
                 </td>
             </tr>
         `;
+    }
+}
+
+/**
+ * Format order type for display
+ */
+function formatOrderType(orderType) {
+    if (!orderType) return 'Limit';
+
+    // Map Hyperliquid order types to display names
+    const typeMap = {
+        'Limit': 'Limit',
+        'Stop Market': 'Stop Market',
+        'Stop Limit': 'Stop Limit',
+        'Take Profit Market': 'Take Profit Market',
+        'Take Profit Limit': 'Take Profit Limit'
+    };
+
+    return typeMap[orderType] || orderType;
+}
+
+/**
+ * Cancel all open orders
+ */
+async function cancelAllOrders() {
+    if (openOrdersCache.length === 0) {
+        showToast('No orders to cancel', 'info');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to cancel all ${openOrdersCache.length} open orders?`)) {
+        return;
+    }
+
+    const cancelAllBtn = document.getElementById('cancel-all-orders-btn');
+    if (cancelAllBtn) {
+        cancelAllBtn.disabled = true;
+        cancelAllBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+
+        // Cancel orders one by one (Hyperliquid doesn't have a bulk cancel endpoint)
+        for (const order of openOrdersCache) {
+            try {
+                const result = await apiCall('/cancel-order', 'POST', {
+                    oid: order.oid,
+                    coin: order.coin
+                });
+                if (result.success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            } catch (err) {
+                failCount++;
+            }
+        }
+
+        if (failCount === 0) {
+            showToast(`Cancelled all ${successCount} orders`, 'success');
+        } else {
+            showToast(`Cancelled ${successCount} orders, ${failCount} failed`, 'warning');
+        }
+
+        loadOpenOrders(); // Refresh the list
+    } catch (error) {
+        console.error('Failed to cancel all orders:', error);
+        showToast('Failed to cancel orders', 'error');
+    } finally {
+        if (cancelAllBtn) {
+            cancelAllBtn.disabled = false;
+            cancelAllBtn.innerHTML = 'Cancel All';
+        }
     }
 }
 
