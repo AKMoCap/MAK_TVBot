@@ -65,9 +65,8 @@ class RiskManager:
         if not coin_config.enabled:
             return False, f"Trading disabled for {coin}"
 
-        # Check leverage limit
-        if leverage > settings.max_leverage:
-            return False, f"Leverage {leverage}x exceeds maximum {settings.max_leverage}x"
+        # Note: Leverage is now validated against the exchange's max leverage per coin
+        # in the trade endpoints, not against a global risk setting
 
         # Check position value limit
         position_value = collateral_usd * leverage

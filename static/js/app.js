@@ -3846,7 +3846,7 @@ async function checkAgentWalletStatus() {
     if (!agentStatusEl) return;
 
     try {
-        const result = await apiCall('/wallet/status');
+        const result = await apiCall('/wallet/session');
 
         if (!result.connected) {
             agentStatusEl.innerHTML = `<span class="badge bg-secondary"><i class="bi bi-wallet2 me-1"></i>Connect Wallet</span>`;
