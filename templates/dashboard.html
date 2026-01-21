@@ -174,19 +174,26 @@
                     <table class="table table-dark table-hover mb-0 table-sm positions-table-compact">
                         <thead>
                             <tr>
+                                <th>Type</th>
                                 <th>Coin</th>
                                 <th>Direction</th>
-                                <th>Type</th>
                                 <th>Size</th>
-                                <th>Price</th>
+                                <th>Original Size</th>
                                 <th>Order Value</th>
-                                <th>Filled</th>
-                                <th>Actions</th>
+                                <th>Price</th>
+                                <th>Reduce Only</th>
+                                <th>Trigger Conditions</th>
+                                <th>TP/SL</th>
+                                <th class="text-end">
+                                    <button class="btn btn-outline-danger btn-sm py-0 px-2" id="cancel-all-orders-btn" onclick="cancelAllOrders()" title="Cancel All Orders" style="display: none;">
+                                        Cancel All
+                                    </button>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="orders-table">
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-3">
+                                <td colspan="11" class="text-center text-muted py-3">
                                     <i class="bi bi-inbox fs-4 d-block mb-1"></i>
                                     No open orders
                                 </td>
