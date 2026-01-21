@@ -1478,7 +1478,13 @@ function populateQuickTradeForm(selection) {
     }
 
     const config = coinConfigsCache[selection];
-    if (!config) return;
+    if (!config) {
+        console.log('[QuickTrade] No config found for:', selection);
+        return;
+    }
+
+    // Debug: log the config values being applied
+    console.log('[QuickTrade] Populating form for', selection, '- SL:', config.default_stop_loss_pct, 'TP1:', config.tp1_pct, 'TP2:', config.tp2_pct);
 
     // Get max leverage for this coin from Hyperliquid API metadata
     const maxLeverage = getMaxLeverage(selection);
@@ -1503,33 +1509,33 @@ function populateQuickTradeForm(selection) {
 
     // Update collateral
     const collateralInput = document.getElementById('trade-collateral');
-    if (collateralInput && config.default_collateral) {
+    if (collateralInput && config.default_collateral != null) {
         collateralInput.value = config.default_collateral;
     }
 
-    // Update stop loss
+    // Update stop loss - use != null to allow 0 as a valid value
     const slInput = document.getElementById('trade-sl');
-    if (slInput && config.default_stop_loss_pct) {
+    if (slInput && config.default_stop_loss_pct != null) {
         slInput.value = config.default_stop_loss_pct;
     }
 
     // Update TP1
     const tp1Input = document.getElementById('trade-tp1');
     const tp1SizeInput = document.getElementById('trade-tp1-size');
-    if (tp1Input && config.tp1_pct) {
+    if (tp1Input && config.tp1_pct != null) {
         tp1Input.value = config.tp1_pct;
     }
-    if (tp1SizeInput && config.tp1_size_pct) {
+    if (tp1SizeInput && config.tp1_size_pct != null) {
         tp1SizeInput.value = config.tp1_size_pct;
     }
 
     // Update TP2
     const tp2Input = document.getElementById('trade-tp2');
     const tp2SizeInput = document.getElementById('trade-tp2-size');
-    if (tp2Input && config.tp2_pct) {
+    if (tp2Input && config.tp2_pct != null) {
         tp2Input.value = config.tp2_pct;
     }
-    if (tp2SizeInput && config.tp2_size_pct) {
+    if (tp2SizeInput && config.tp2_size_pct != null) {
         tp2SizeInput.value = config.tp2_size_pct;
     }
 
