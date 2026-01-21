@@ -507,7 +507,10 @@ def api_set_sl_tp():
             return jsonify({'success': False, 'error': 'No orders specified'})
 
         # Get current position to determine side
-        positions = bot_manager.get_positions(wallet_address)
+        account_info = bot_manager.get_account_info(user_wallet=wallet_address, user_agent_key=agent_key)
+        if 'error' in account_info:
+            return jsonify({'success': False, 'error': account_info['error']})
+        positions = account_info.get('positions', [])
         position = None
         for pos in positions:
             if pos.get('coin') == coin:
