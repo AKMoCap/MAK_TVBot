@@ -426,14 +426,80 @@ def init_db(app, run_migrations=None, seed_data=None):
                 logger.info("Database migrations applied successfully")
             except Exception as e:
                 logger.warning(f"Migration warning: {e}")
-        
+
+        # Ensure critical tables exist (fallback for migration issues)
+        ensure_coin_baskets_table(logger)
+
         # Skip seeding in production - workers shouldn't modify data
         if not seed_data:
             logger.info("Skipping database seeding (production mode)")
             return
-        
+
         # Run seeding
         seed_defaults()
+
+
+def ensure_coin_baskets_table(logger=None):
+    """
+    Ensure the coin_baskets table exists.
+    This is a fallback for when migrations haven't been applied properly.
+    Safe to call multiple times - only creates if table doesn't exist.
+    """
+    if logger is None:
+        import logging
+        logger = logging.getLogger(__name__)
+
+    try:
+        # Check if table exists
+        inspector = db.inspect(db.engine)
+        if 'coin_baskets' not in inspector.get_table_names():
+            logger.info("Creating coin_baskets table (migration fallback)...")
+
+            # Detect database type
+            is_postgres = 'postgresql' in str(db.engine.url)
+
+            if is_postgres:
+                # PostgreSQL syntax
+                db.session.execute(db.text("""
+                    CREATE TABLE IF NOT EXISTS coin_baskets (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES user_wallets(id),
+                        name VARCHAR(100) NOT NULL,
+                        coins TEXT NOT NULL,
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP
+                    )
+                """))
+            else:
+                # SQLite syntax
+                db.session.execute(db.text("""
+                    CREATE TABLE IF NOT EXISTS coin_baskets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES user_wallets(id),
+                        name VARCHAR(100) NOT NULL,
+                        coins TEXT NOT NULL,
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP
+                    )
+                """))
+
+            # Create indexes (same syntax for both)
+            db.session.execute(db.text("""
+                CREATE INDEX IF NOT EXISTS idx_coinbasket_user ON coin_baskets(user_id)
+            """))
+
+            # Create unique constraint
+            db.session.execute(db.text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_user_basket_name ON coin_baskets(user_id, name)
+            """))
+
+            db.session.commit()
+            logger.info("coin_baskets table created successfully")
+        else:
+            logger.debug("coin_baskets table already exists")
+    except Exception as e:
+        logger.warning(f"Could not ensure coin_baskets table: {e}")
+        db.session.rollback()
 
 
 def seed_defaults():
