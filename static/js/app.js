@@ -1770,8 +1770,8 @@ async function loadOpenOrders() {
         }
 
         tbody.innerHTML = orders.map(order => {
-            // Parse order type - Hyperliquid returns orderType as an object
-            // Format: {limit: {tif: "Gtc"}} or {trigger: {isMarket: true, triggerPx: "1.98", tpsl: "sl"}}
+            // Parse order type - frontendOpenOrders returns orderType as a string (e.g., "Limit", "Stop Market")
+            // with triggerPx at the top level of the order object
             const orderTypeInfo = parseOrderType(order.orderType);
             const orderTypeDisplay = orderTypeInfo.display;
             const isTriggerOrder = orderTypeInfo.isTrigger;
@@ -1779,8 +1779,10 @@ async function loadOpenOrders() {
             const isStopOrder = orderTypeInfo.isStopLoss;
             const isTakeProfit = orderTypeInfo.isTakeProfit;
 
-            // Get trigger price from the parsed orderType (more reliable than top-level triggerPx)
-            const triggerPrice = orderTypeInfo.triggerPx || parseFloat(order.triggerPx || 0);
+            // Get trigger price - frontendOpenOrders returns triggerPx at top level as a string
+            // Prioritize top-level triggerPx (from frontendOpenOrders), fallback to parsed orderType
+            const topLevelTriggerPx = parseFloat(order.triggerPx || 0);
+            const triggerPrice = topLevelTriggerPx > 0 ? topLevelTriggerPx : orderTypeInfo.triggerPx;
 
             // Hyperliquid returns 'B' for buy, 'A' for sell (ask)
             // For reduce-only orders closing a long, it's a sell (Close Long)
@@ -1906,7 +1908,7 @@ function parseOrderType(orderType) {
         return result;
     }
 
-    // Handle object format from Hyperliquid API
+    // Handle object format from Hyperliquid API (fallback for non-frontend endpoints)
     if (typeof orderType === 'object') {
         // Check for trigger order
         if (orderType.trigger) {
@@ -3156,6 +3158,12 @@ async function submitSlTpOrders() {
         });
     }
 
+    // Show loading state on button
+    const submitBtn = document.getElementById('sltp-submit-btn');
+    const originalBtnHtml = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Placing Orders...';
+
     try {
         const result = await apiCall('/set-sl-tp', 'POST', {
             coin: coin,
@@ -3172,6 +3180,10 @@ async function submitSlTpOrders() {
     } catch (error) {
         console.error('Failed to set SL/TP:', error);
         showToast('Failed to set SL/TP orders', 'error');
+    } finally {
+        // Restore button state
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnHtml;
     }
 }
 
