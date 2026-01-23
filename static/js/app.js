@@ -1802,11 +1802,29 @@ async function loadOpenOrders() {
             const sizeDisplay = isReduceOnly && size === 0 ? '--' : (size > 0 ? size.toFixed(4) : '--');
             const origSzDisplay = origSz > 0 ? origSz.toFixed(4) : '--';
 
-            // Order value - show "Market" for market trigger orders, otherwise calculate
-            const orderValue = isMarketTrigger ? 'Market' : (size > 0 && limitPrice > 0 ? formatCurrency(size * limitPrice) : '--');
+            // Order value - for trigger orders use trigger price, for limit orders use limit price
+            let orderValue;
+            if (isTriggerOrder && triggerPrice > 0 && size > 0) {
+                // Use trigger price for value calculation on stop/TP orders
+                orderValue = formatCurrency(size * triggerPrice);
+            } else if (size > 0 && limitPrice > 0) {
+                orderValue = formatCurrency(size * limitPrice);
+            } else {
+                orderValue = '--';
+            }
 
-            // Price display - for trigger market orders show "Market", otherwise show limit price
-            const priceDisplay = isMarketTrigger ? 'Market' : (limitPrice > 0 ? formatPrice(limitPrice) : '--');
+            // Price display - for trigger orders show trigger price (the activation price),
+            // otherwise show limit price. The trigger price is what the user actually set.
+            let priceDisplay;
+            if (isTriggerOrder && triggerPrice > 0) {
+                // For stop loss/take profit orders, show the trigger price (e.g., 21.5)
+                // not the slippage-adjusted limit price (e.g., 20.43)
+                priceDisplay = formatPrice(triggerPrice);
+            } else if (limitPrice > 0) {
+                priceDisplay = formatPrice(limitPrice);
+            } else {
+                priceDisplay = '--';
+            }
 
             // Trigger conditions
             let triggerCondition = '--';
