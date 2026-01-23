@@ -511,6 +511,7 @@ class BotManager:
         Get asset metadata from Hyperliquid including szDecimals, maxLeverage, and onlyIsolated.
         Returns dict mapping coin -> {szDecimals, maxLeverage, onlyIsolated}
         Uses caching to reduce API calls (5 minute TTL).
+        Note: This uses the public Info API which doesn't require authentication.
         """
         current_time = time.time()
 
@@ -519,7 +520,10 @@ class BotManager:
             return self._asset_meta_cache
 
         try:
-            info, _ = self.get_exchange()
+            # Use public Info API (no authentication required)
+            use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
+            api_url = constants.TESTNET_API_URL if use_testnet else constants.MAINNET_API_URL
+            info = Info(api_url, skip_ws=True)
             meta = info.meta()
 
             # meta contains 'universe' which is a list of asset info
@@ -571,9 +575,11 @@ class BotManager:
                 return {coin: self._prices_cache.get(coin, 0) for coin in coins}
             return self._prices_cache
 
-        # Fallback: Fetch from REST API
+        # Fallback: Fetch from REST API (public endpoint, no auth required)
         try:
-            info, _ = self.get_exchange()
+            use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
+            api_url = constants.TESTNET_API_URL if use_testnet else constants.MAINNET_API_URL
+            info = Info(api_url, skip_ws=True)
             all_mids = info.all_mids()
 
             # Update cache
