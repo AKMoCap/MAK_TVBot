@@ -38,3 +38,8 @@ externalPort = 80
 deploymentTarget = "autoscale"
 run = ["gunicorn", "--bind=0.0.0.0:5000", "--reuse-port", "--workers=2", "app:app"]
 build = ["python", "run_migrations.py"]
+ignoreMigrationRecommendations = true
+
+[deployment.database]
+# Disable Replit's auto-generated migrations - we use Flask-Migrate instead
+autoMigrate = false
