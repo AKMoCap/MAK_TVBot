@@ -1491,15 +1491,23 @@ function setupCategoryFilters() {
 
     // Only create buttons if they don't exist yet
     if (!filterContainer.querySelector('.category-filter-btn')) {
-        const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps', 'Baskets'];
+        // Map display labels to actual category values
+        const categories = [
+            {label: 'All', value: ''},
+            {label: 'L1s', value: 'L1s'},
+            {label: 'APPS', value: 'APPS'},
+            {label: 'MEMES', value: 'MEMES'},
+            {label: 'HIP3', value: 'HIP-3 Perps'},
+            {label: 'Baskets', value: 'Baskets'}
+        ];
 
         let html = '';
         categories.forEach((cat, idx) => {
             const isActive = idx === 0 ? 'active' : '';
             const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
-            const icon = cat === 'Baskets' ? '<i class="bi bi-collection me-1"></i>' : '';
+            const icon = cat.label === 'Baskets' ? '<i class="bi bi-collection me-1"></i>' : '';
             html += `<button type="button" class="btn ${btnClass} btn-sm me-1 mb-1 category-filter-btn ${isActive}"
-                             data-category="${cat === 'All' ? '' : cat}">${icon}${cat}</button>`;
+                             data-category="${cat.value}">${icon}${cat.label}</button>`;
         });
 
         filterContainer.innerHTML = html;

@@ -18,6 +18,17 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
 }
 
+/* Compact Category Filter Buttons */
+.category-filter-btn {
+    font-size: 0.7rem !important;
+    padding: 0.2rem 0.5rem !important;
+    line-height: 1.2;
+}
+
+.category-filter-btn i {
+    font-size: 0.65rem;
+}
+
 .bg-darker {
     background-color: var(--bg-darker) !important;
 }
