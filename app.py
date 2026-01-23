@@ -2243,6 +2243,172 @@ def api_trade_basket():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/trade/basket-twap', methods=['POST'])
+def api_trade_basket_twap():
+    """Execute TWAP orders for all coins in a basket"""
+    try:
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No trade data provided'}), 400
+
+        basket_id = data.get('basket_id')
+        action = data.get('action', '').lower().strip()
+
+        if not basket_id:
+            return jsonify({'success': False, 'error': 'Basket ID is required'}), 400
+
+        if action not in ('buy', 'sell'):
+            return jsonify({'success': False, 'error': 'Invalid action. Must be "buy" or "sell"'}), 400
+
+        # Get basket
+        basket = CoinBasket.query.filter_by(id=basket_id, user_id=user.id).first()
+        if not basket:
+            return jsonify({'success': False, 'error': 'Basket not found'}), 404
+
+        coins = json.loads(basket.coins) if basket.coins else []
+        if not coins:
+            return jsonify({'success': False, 'error': 'Basket has no coins'}), 400
+
+        # Parse parameters
+        try:
+            leverage = int(data.get('leverage', 10))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid leverage value'}), 400
+
+        try:
+            collateral_usd = float(data.get('collateral_usd', 100))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid collateral value'}), 400
+
+        # TWAP-specific parameters
+        hours = int(data.get('hours', 0))
+        minutes = int(data.get('minutes', 30))
+        randomize = bool(data.get('randomize', False))
+
+        # Calculate duration
+        duration_minutes = (hours * 60) + minutes
+        if duration_minutes < 5:
+            return jsonify({'success': False, 'error': 'TWAP duration must be at least 5 minutes'}), 400
+
+        # Validate ranges
+        if leverage < 1 or leverage > 100:
+            return jsonify({'success': False, 'error': 'Leverage must be between 1 and 100'}), 400
+
+        if collateral_usd <= 0:
+            return jsonify({'success': False, 'error': 'Collateral must be a positive amount'}), 400
+
+        if collateral_usd < 1:
+            return jsonify({'success': False, 'error': 'Minimum collateral is $1'}), 400
+
+        # Check total collateral needed
+        total_collateral = collateral_usd * len(coins)
+        if total_collateral > 100000:
+            return jsonify({'success': False, 'error': f'Total collateral ({total_collateral:,.0f} USD) exceeds maximum $100,000'}), 400
+
+        # Check if bot is enabled
+        if not bot_manager.is_enabled:
+            return jsonify({'success': False, 'error': 'Bot is disabled'})
+
+        wallet_address = user.address
+        agent_key = user.get_agent_key()
+        is_buy = action == 'buy'
+
+        # Get asset metadata for all coins
+        asset_meta = bot_manager.get_asset_metadata()
+
+        # Execute TWAP for each coin
+        results = []
+        successful = 0
+        failed = 0
+
+        for coin in coins:
+            try:
+                # Get coin metadata
+                coin_meta = asset_meta.get(coin, {})
+                if not coin_meta:
+                    results.append({'coin': coin, 'success': False, 'error': f"Coin '{coin}' not found in Hyperliquid"})
+                    failed += 1
+                    continue
+
+                # Check leverage limit
+                max_leverage = coin_meta.get('maxLeverage', 10)
+                if leverage > max_leverage:
+                    results.append({'coin': coin, 'success': False, 'error': f"Leverage {leverage}x exceeds max {max_leverage}x"})
+                    failed += 1
+                    continue
+
+                # Set leverage for this coin
+                _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
+                try:
+                    exchange.update_leverage(leverage, coin, is_cross=False)
+                except Exception as lev_error:
+                    results.append({'coin': coin, 'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
+                    failed += 1
+                    continue
+
+                # Get current price to calculate size
+                prices = bot_manager.get_market_prices([coin])
+                current_price = prices.get(coin, 0)
+                if not current_price:
+                    results.append({'coin': coin, 'success': False, 'error': f"Could not get price"})
+                    failed += 1
+                    continue
+
+                # Calculate position size
+                notional_value = collateral_usd * leverage
+                size = notional_value / current_price
+
+                # Round size
+                sz_decimals = coin_meta.get('szDecimals', 2)
+                size = round(size, sz_decimals)
+
+                # Place TWAP order
+                result = bot_manager.place_twap_order(
+                    coin, is_buy, size, duration_minutes, randomize,
+                    reduce_only=False,
+                    user_wallet=wallet_address,
+                    user_agent_key=agent_key
+                )
+
+                if result.get('success'):
+                    results.append({
+                        'coin': coin,
+                        'success': True,
+                        'twap_id': result.get('twap_id'),
+                        'size': size
+                    })
+                    successful += 1
+                else:
+                    results.append({'coin': coin, 'success': False, 'error': result.get('error', 'Unknown error')})
+                    failed += 1
+
+            except Exception as e:
+                logger.exception(f"Basket TWAP error for {coin}: {e}")
+                results.append({'coin': coin, 'success': False, 'error': str(e)})
+                failed += 1
+
+        log_activity('info', 'trade',
+                    f"Basket TWAP '{basket.name}' {action.upper()}: {successful} succeeded, {failed} failed",
+                    {'basket': basket.name, 'duration_minutes': duration_minutes, 'results': results}, user_id=user.id)
+
+        return jsonify({
+            'success': successful > 0,
+            'basket_name': basket.name,
+            'total_coins': len(coins),
+            'successful': successful,
+            'failed': failed,
+            'results': results
+        })
+
+    except Exception as e:
+        logger.exception(f"Basket TWAP error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/test-connection', methods=['GET'])
 def api_test_connection():
     """Test Hyperliquid connection"""
