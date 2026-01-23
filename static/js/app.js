@@ -4627,6 +4627,7 @@ function setupSettingsEvents() {
  */
 async function checkAgentWalletStatus() {
     const agentStatusEl = document.getElementById('api-wallet-status');
+    const mainWalletEl = document.getElementById('main-wallet');
     if (!agentStatusEl) return;
 
     try {
@@ -4634,7 +4635,19 @@ async function checkAgentWalletStatus() {
 
         if (!result.connected) {
             agentStatusEl.innerHTML = `<span class="badge bg-secondary"><i class="bi bi-wallet2 me-1"></i>Connect Wallet</span>`;
+            // Update Connected Wallet field to show not connected
+            if (mainWalletEl) {
+                mainWalletEl.value = 'Not configured';
+            }
             return;
+        }
+
+        // Update Connected Wallet field with the session address
+        if (mainWalletEl && result.address) {
+            const addr = result.address;
+            // Format address: first 10 chars + ... + last 6 chars
+            const formattedAddr = addr.slice(0, 10) + '...' + addr.slice(-6);
+            mainWalletEl.value = formattedAddr;
         }
 
         if (result.has_agent_key) {
