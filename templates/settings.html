@@ -147,6 +147,32 @@
         </div>
     </div>
 
+    <!-- Coin Baskets -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-collection me-2"></i>Baskets</h5>
+                <button class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#addBasketModal">
+                    <i class="bi bi-plus-circle me-1"></i>Add New Basket
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">Create custom groupings of coins to open multiple positions at once from the Quick Trade box.</p>
+                <div id="baskets-container">
+                    <div class="text-center text-muted py-3" id="baskets-loading">
+                        <i class="bi bi-hourglass-split me-2"></i>Loading baskets...
+                    </div>
+                    <div id="baskets-list" style="display: none;">
+                        <!-- Baskets will be populated here -->
+                    </div>
+                    <div id="baskets-empty" class="text-center text-muted py-4" style="display: none;">
+                        <i class="bi bi-collection me-2"></i>No baskets created yet. Click "Add New Basket" to create one.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Wallet & Connection -->
     <div class="col-md-6">
         <div class="card bg-darker border-secondary">
@@ -508,6 +534,56 @@
         </div>
     </div>
 </div>
+
+<!-- Add/Edit Basket Modal -->
+<div class="modal fade" id="addBasketModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="basketModalTitle"><i class="bi bi-collection me-2"></i>Add New Basket</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="basket-form">
+                    <input type="hidden" id="basket-id">
+
+                    <div class="mb-3">
+                        <label class="form-label">Basket Name</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary"
+                               id="basket-name" placeholder="e.g., Layer 1s, Meme Coins, Blue Chips" required>
+                        <small class="text-muted">A descriptive name for this basket</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Coins to Include</label>
+                        <div class="border border-secondary rounded p-3" style="max-height: 300px; overflow-y: auto;" id="basket-coins-container">
+                            <div class="text-center text-muted py-2" id="basket-coins-loading">
+                                Loading coins...
+                            </div>
+                            <div id="basket-coins-list" style="display: none;">
+                                <!-- Coins grouped by category will be populated here -->
+                            </div>
+                        </div>
+                        <small class="text-muted">Select the coins you want to include in this basket</small>
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label">Selected Coins</label>
+                        <div id="basket-selected-coins" class="d-flex flex-wrap gap-2">
+                            <span class="text-muted">No coins selected</span>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="save-basket-btn" onclick="saveBasket()">
+                    <i class="bi bi-check-circle me-1"></i>Save Basket
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -515,6 +591,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     loadSettings();
     loadCoinConfigs();
+    loadBaskets();
     setupSettingsEvents();
 
     document.getElementById('general-settings-form').addEventListener('submit', saveGeneralSettings);
@@ -522,6 +599,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('test-connection').addEventListener('click', testConnection);
     document.getElementById('save-coin-config').addEventListener('click', saveCoinConfig);
     document.getElementById('save-all-coin-defaults').addEventListener('click', saveAllCoinDefaults);
+
+    // Basket modal events
+    document.getElementById('addBasketModal').addEventListener('show.bs.modal', function(event) {
+        // If not editing, reset the form
+        if (!event.relatedTarget || !event.relatedTarget.dataset.basketId) {
+            resetBasketModal();
+        }
+        loadCoinsForBasketModal();
+    });
 });
 </script>
 {% endblock %}

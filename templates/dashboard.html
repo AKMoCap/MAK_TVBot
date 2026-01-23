@@ -293,14 +293,15 @@
                                 const dropdownMenu = document.getElementById('coin-dropdown-menu');
                                 const filterDiv = document.getElementById('coin-category-filters');
 
-                                // Build category filter buttons
+                                // Build category filter buttons (including Baskets)
                                 if (filterDiv) {
-                                    const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+                                    const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps', 'Baskets'];
                                     let filterHtml = '';
                                     categories.forEach((cat, idx) => {
                                         const isActive = idx === 0 ? 'active' : '';
                                         const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
-                                        filterHtml += '<button type="button" class="btn ' + btnClass + ' btn-sm me-1 mb-1 category-filter-btn ' + isActive + '" data-category="' + (cat === 'All' ? '' : cat) + '">' + cat + '</button>';
+                                        const icon = cat === 'Baskets' ? '<i class="bi bi-collection me-1"></i>' : '';
+                                        filterHtml += '<button type="button" class="btn ' + btnClass + ' btn-sm me-1 mb-1 category-filter-btn ' + isActive + '" data-category="' + (cat === 'All' ? '' : cat) + '">' + icon + cat + '</button>';
                                     });
                                     filterDiv.innerHTML = filterHtml;
                                 }

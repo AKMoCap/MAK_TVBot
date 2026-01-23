@@ -54,6 +54,7 @@ class UserWallet(db.Model):
     # Relationships - user owns their data
     trades = db.relationship('Trade', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     coin_configs = db.relationship('CoinConfig', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    coin_baskets = db.relationship('CoinBasket', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     risk_settings = db.relationship('RiskSettings', backref='user', uselist=False, cascade='all, delete-orphan')
     indicators = db.relationship('Indicator', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     activity_logs = db.relationship('ActivityLog', backref='user', lazy='dynamic', cascade='all, delete-orphan')
@@ -246,6 +247,35 @@ class CoinConfig(db.Model):
             'hl_only_isolated': self.hl_only_isolated,
             'hl_margin_mode': self.hl_margin_mode,
             'hl_metadata_updated': self.hl_metadata_updated.isoformat() if self.hl_metadata_updated else None
+        }
+
+
+class CoinBasket(db.Model):
+    """User-defined coin baskets for batch trading - per user"""
+    __tablename__ = 'coin_baskets'
+
+    # Unique constraint: each user can have one basket with a given name
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'name', name='uq_user_basket_name'),
+        db.Index('idx_coinbasket_user', 'user_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user_wallets.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    coins = db.Column(db.Text, nullable=False)  # JSON array of coin names
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'name': self.name,
+            'coins': json.loads(self.coins) if self.coins else [],
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
 
