@@ -14,6 +14,7 @@ Author: Built with Claude
 import os
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, send_from_directory
 
@@ -2150,13 +2151,17 @@ def api_trade_basket():
         if not bot_manager.is_enabled:
             return jsonify({'success': False, 'error': 'Bot is disabled'})
 
-        # Execute trades for each coin
+        # Execute trades for each coin (with rate limiting delay)
         results = []
         successful = 0
         failed = 0
 
-        for coin in coins:
+        for i, coin in enumerate(coins):
             try:
+                # Add delay between trades to avoid rate limiting (skip first trade)
+                if i > 0:
+                    time.sleep(0.5)  # 500ms delay between trades
+
                 # Risk check
                 allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
                 if not allowed:
@@ -2320,13 +2325,17 @@ def api_trade_basket_twap():
         # Get asset metadata for all coins
         asset_meta = bot_manager.get_asset_metadata()
 
-        # Execute TWAP for each coin
+        # Execute TWAP for each coin (with rate limiting delay)
         results = []
         successful = 0
         failed = 0
 
-        for coin in coins:
+        for i, coin in enumerate(coins):
             try:
+                # Add delay between trades to avoid rate limiting (skip first trade)
+                if i > 0:
+                    time.sleep(0.5)  # 500ms delay between trades
+
                 # Get coin metadata
                 coin_meta = asset_meta.get(coin, {})
                 if not coin_meta:
