@@ -2151,6 +2151,9 @@ def api_trade_basket():
         if not bot_manager.is_enabled:
             return jsonify({'success': False, 'error': 'Bot is disabled'})
 
+        # Pre-fetch asset metadata to warm cache (avoids repeated meta() calls)
+        asset_meta = bot_manager.get_asset_metadata()
+
         # Execute trades for each coin (with rate limiting delay)
         results = []
         successful = 0
@@ -2160,7 +2163,7 @@ def api_trade_basket():
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
                 if i > 0:
-                    time.sleep(1.5)  # 1.5s delay between market orders
+                    time.sleep(2.0)  # 2s delay between market orders
 
                 # Risk check
                 allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
@@ -2177,21 +2180,33 @@ def api_trade_basket():
                 coin_tp2 = tp2_pct if tp2_pct is not None else coin_config.tp2_pct
                 coin_tp2_size = tp2_size_pct if tp2_size_pct is not None else coin_config.tp2_size_pct
 
-                # Execute trade
-                result = bot_manager.execute_trade(
-                    coin=coin,
-                    action=action,
-                    leverage=leverage,
-                    collateral_usd=collateral_usd,
-                    stop_loss_pct=coin_sl,
-                    take_profit_pct=None,
-                    tp1_pct=coin_tp1,
-                    tp1_size_pct=coin_tp1_size,
-                    tp2_pct=coin_tp2,
-                    tp2_size_pct=coin_tp2_size,
-                    user_wallet=user.address,
-                    user_agent_key=user.get_agent_key()
-                )
+                # Execute trade with retry logic for rate limiting
+                max_retries = 3
+                result = None
+                for attempt in range(max_retries):
+                    result = bot_manager.execute_trade(
+                        coin=coin,
+                        action=action,
+                        leverage=leverage,
+                        collateral_usd=collateral_usd,
+                        stop_loss_pct=coin_sl,
+                        take_profit_pct=None,
+                        tp1_pct=coin_tp1,
+                        tp1_size_pct=coin_tp1_size,
+                        tp2_pct=coin_tp2,
+                        tp2_size_pct=coin_tp2_size,
+                        user_wallet=user.address,
+                        user_agent_key=user.get_agent_key()
+                    )
+                    if result.get('success'):
+                        break
+                    # Check if it's a rate limit error (HTML response)
+                    error_msg = result.get('error', '')
+                    if 'Unexpected token' in str(error_msg) or '<' in str(error_msg)[:10]:
+                        logger.warning(f"Rate limited on {coin}, retry {attempt + 1}/{max_retries}")
+                        time.sleep(3)  # Wait 3 seconds before retry
+                    else:
+                        break  # Non-rate-limit error, don't retry
 
                 if result.get('success'):
                     # Record trade in database
