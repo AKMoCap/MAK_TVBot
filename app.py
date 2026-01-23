@@ -2325,10 +2325,14 @@ def api_trade_basket_twap():
         # Get asset metadata for all coins (cached)
         asset_meta = bot_manager.get_asset_metadata()
 
-        # Pre-fetch all prices at once to reduce API calls
+        # Pre-fetch all prices at once to reduce API calls (weight 2)
         all_prices = bot_manager.get_market_prices(coins)
 
-        # Create exchange connection once (reused for leverage updates)
+        # Pre-fetch all asset indices at once (single meta() call, weight 20)
+        # This avoids calling meta() for each coin individually
+        asset_indices = bot_manager.get_asset_indices(coins)
+
+        # Create exchange connection once (reused for all operations)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
 
         # Execute TWAP for each coin (with rate limiting delay)
@@ -2339,9 +2343,9 @@ def api_trade_basket_twap():
         for i, coin in enumerate(coins):
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
-                # TWAP orders need longer delay due to multiple API calls per coin
+                # With pre-fetched data, we only need delay for leverage + TWAP calls
                 if i > 0:
-                    time.sleep(2.5)  # 2.5s delay between TWAP orders
+                    time.sleep(1.0)  # 1s delay between TWAP orders
 
                 # Get coin metadata
                 coin_meta = asset_meta.get(coin, {})
@@ -2380,6 +2384,13 @@ def api_trade_basket_twap():
                 sz_decimals = coin_meta.get('szDecimals', 2)
                 size = round(size, sz_decimals)
 
+                # Get pre-fetched asset index (avoids expensive meta() call per coin)
+                coin_asset_index = asset_indices.get(coin)
+                if coin_asset_index is None:
+                    results.append({'coin': coin, 'success': False, 'error': f"Asset index not found for {coin}"})
+                    failed += 1
+                    continue
+
                 # Place TWAP order with retry logic
                 max_retries = 3
                 result = None
@@ -2388,7 +2399,9 @@ def api_trade_basket_twap():
                         coin, is_buy, size, duration_minutes, randomize,
                         reduce_only=False,
                         user_wallet=wallet_address,
-                        user_agent_key=agent_key
+                        user_agent_key=agent_key,
+                        asset_index=coin_asset_index,
+                        exchange=exchange
                     )
                     if result.get('success'):
                         break
