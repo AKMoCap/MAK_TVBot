@@ -26,6 +26,27 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Create a safe HTML ID from a string (for coin names with special chars like HIP-3 perps)
+ */
+function safeId(str) {
+    if (!str) return '';
+    // Replace non-alphanumeric characters with underscores
+    return str.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+/**
+ * Escape a string for use in HTML attribute values (handles quotes)
+ */
+function escapeAttr(text) {
+    if (!text) return '';
+    return text.replace(/&/g, '&amp;')
+               .replace(/"/g, '&quot;')
+               .replace(/'/g, '&#39;')
+               .replace(/</g, '&lt;')
+               .replace(/>/g, '&gt;');
+}
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     const toastId = 'toast-' + Date.now();
@@ -4141,6 +4162,13 @@ async function loadBaskets() {
         if (basketsCache.length === 0) {
             listEl.style.display = 'none';
             emptyEl.style.display = 'block';
+            // Show wallet hint if not connected
+            const isConnected = typeof walletManager !== 'undefined' && walletManager.isConnected && walletManager.address;
+            if (!isConnected) {
+                emptyEl.innerHTML = '<i class="bi bi-wallet2 me-2"></i>Connect your wallet to create and manage baskets.';
+            } else {
+                emptyEl.innerHTML = '<i class="bi bi-collection me-2"></i>No baskets created yet. Click "Add New Basket" to create one.';
+            }
         } else {
             emptyEl.style.display = 'none';
             listEl.style.display = 'block';
@@ -4159,7 +4187,10 @@ function renderBasketsList(baskets) {
     const listEl = document.getElementById('baskets-list');
     if (!listEl) return;
 
-    listEl.innerHTML = baskets.map(basket => `
+    listEl.innerHTML = baskets.map(basket => {
+        // Safely escape the basket name for use in onclick attribute
+        const safeNameForJs = JSON.stringify(basket.name);
+        return `
         <div class="card bg-dark border-secondary mb-2">
             <div class="card-body py-2 px-3">
                 <div class="d-flex justify-content-between align-items-center">
@@ -4174,14 +4205,14 @@ function renderBasketsList(baskets) {
                         <button class="btn btn-outline-info" onclick="editBasket(${basket.id})" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </button>
-                        <button class="btn btn-outline-danger" onclick="deleteBasket(${basket.id}, '${escapeHtml(basket.name)}')" title="Delete">
+                        <button class="btn btn-outline-danger" onclick="deleteBasket(${basket.id}, ${escapeAttr(safeNameForJs)})" title="Delete">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 /**
@@ -4208,9 +4239,21 @@ async function loadCoinsForBasketModal() {
 
     if (!loadingEl || !listEl) return;
 
+    // Show loading state
+    loadingEl.style.display = 'block';
+    loadingEl.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Loading coins...';
+    listEl.style.display = 'none';
+
     try {
         const result = await apiCall('/coins');
         const coins = result.coins || [];
+
+        // Check if we have any coins
+        if (coins.length === 0) {
+            loadingEl.innerHTML = '<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-triangle me-2"></i>No coins configured. Please add coins in the Coin Configuration section first, then try creating a basket.</div>';
+            listEl.style.display = 'none';
+            return;
+        }
 
         loadingEl.style.display = 'none';
         listEl.style.display = 'block';
@@ -4232,14 +4275,14 @@ async function loadCoinsForBasketModal() {
         categoryOrder.forEach(category => {
             if (categories[category] && categories[category].length > 0) {
                 html += `<div class="mb-3">
-                    <div class="text-muted small mb-2">${category}</div>
+                    <div class="text-muted small mb-2">${escapeHtml(category)}</div>
                     <div class="d-flex flex-wrap gap-2">
                         ${categories[category].map(coin => `
                             <div class="form-check form-check-inline">
                                 <input class="form-check-input basket-coin-checkbox" type="checkbox"
-                                       id="basket-coin-${coin.coin}" value="${coin.coin}"
+                                       id="basket-coin-${safeId(coin.coin)}" value="${escapeAttr(coin.coin)}"
                                        onchange="updateSelectedCoinsDisplay()">
-                                <label class="form-check-label" for="basket-coin-${coin.coin}">${coin.coin}</label>
+                                <label class="form-check-label" for="basket-coin-${safeId(coin.coin)}">${escapeHtml(coin.coin)}</label>
                             </div>
                         `).join('')}
                     </div>
@@ -4255,7 +4298,7 @@ async function loadCoinsForBasketModal() {
             const basket = basketsCache.find(b => b.id === parseInt(basketId));
             if (basket && basket.coins) {
                 basket.coins.forEach(coin => {
-                    const checkbox = document.getElementById(`basket-coin-${coin}`);
+                    const checkbox = document.getElementById(`basket-coin-${safeId(coin)}`);
                     if (checkbox) checkbox.checked = true;
                 });
                 updateSelectedCoinsDisplay();
@@ -4263,7 +4306,9 @@ async function loadCoinsForBasketModal() {
         }
     } catch (error) {
         console.error('Failed to load coins for basket modal:', error);
-        loadingEl.innerHTML = '<span class="text-danger">Failed to load coins</span>';
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Failed to load coins. Please try again.</div>';
+        listEl.style.display = 'none';
     }
 }
 
@@ -4297,6 +4342,12 @@ function getSelectedBasketCoins() {
  * Save a new or edited basket
  */
 async function saveBasket() {
+    // Check wallet connection first
+    if (typeof walletManager === 'undefined' || !walletManager.isConnected || !walletManager.address) {
+        showToast('Please connect your wallet first', 'error');
+        return;
+    }
+
     const basketId = document.getElementById('basket-id').value;
     const name = document.getElementById('basket-name').value.trim();
     const coins = getSelectedBasketCoins();
