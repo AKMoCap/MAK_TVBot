@@ -9,6 +9,7 @@ import sys
 
 from flask import Flask
 from flask_migrate import Migrate, upgrade
+from sqlalchemy import inspect, text
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///trading_bot.db')
@@ -27,7 +28,35 @@ with app.app_context():
     except Exception as e:
         print(f"Migration error: {e}")
         sys.exit(1)
-    
+
+    # Ensure critical tables exist (fallback for Replit's auto-migration issues)
+    print("Verifying critical tables...")
+    try:
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        # Ensure coin_baskets table exists
+        if 'coin_baskets' not in existing_tables:
+            print("WARNING: coin_baskets table missing, creating it...")
+            db.session.execute(text('''
+                CREATE TABLE IF NOT EXISTS coin_baskets (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES user_wallets(id),
+                    name VARCHAR(100) NOT NULL,
+                    coins TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_user_basket_name UNIQUE (user_id, name)
+                )
+            '''))
+            db.session.execute(text('CREATE INDEX IF NOT EXISTS idx_coinbasket_user ON coin_baskets(user_id)'))
+            db.session.commit()
+            print("coin_baskets table created successfully!")
+        else:
+            print("coin_baskets table exists, OK")
+    except Exception as e:
+        print(f"Table verification error: {e}")
+
     print("Seeding default data...")
     try:
         seed_defaults()
