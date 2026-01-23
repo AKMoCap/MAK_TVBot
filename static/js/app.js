@@ -1229,6 +1229,23 @@ function getBasketId(value) {
 }
 
 function getMaxLeverage(coin) {
+    // Handle basket selections - return min max leverage across all coins
+    if (isBasket(coin)) {
+        const basketId = getBasketId(coin);
+        const basket = basketsCache.find(b => b.id === basketId);
+        if (basket && basket.coins && basket.coins.length > 0) {
+            let minMaxLev = 100;
+            basket.coins.forEach(c => {
+                const coinMaxLev = coinConfigsCache[c]?.hl_max_leverage || 50;
+                if (coinMaxLev < minMaxLev) {
+                    minMaxLev = coinMaxLev;
+                }
+            });
+            return minMaxLev;
+        }
+        return 50;  // Default if basket not found
+    }
+
     // Get max leverage from coin config (stored in database)
     if (coinConfigsCache[coin] && coinConfigsCache[coin].hl_max_leverage) {
         return coinConfigsCache[coin].hl_max_leverage;
@@ -1580,9 +1597,9 @@ function populateQuickTradeForm(selection) {
         return;
     }
 
-    // If a basket is selected, clear the form for manual entry
+    // If a basket is selected, calculate proper max leverage from coins in basket
     if (isBasket(selection)) {
-        clearQuickTradeForm();
+        populateBasketTradeForm(selection);
         return;
     }
 
@@ -1687,6 +1704,59 @@ function clearQuickTradeForm() {
         }
     }
 
+    const collateralInput = document.getElementById('trade-collateral');
+    if (collateralInput) collateralInput.value = '';
+
+    const slInput = document.getElementById('trade-sl');
+    if (slInput) slInput.value = '';
+
+    const tp1Input = document.getElementById('trade-tp1');
+    const tp1SizeInput = document.getElementById('trade-tp1-size');
+    if (tp1Input) tp1Input.value = '';
+    if (tp1SizeInput) tp1SizeInput.value = '';
+
+    const tp2Input = document.getElementById('trade-tp2');
+    const tp2SizeInput = document.getElementById('trade-tp2-size');
+    if (tp2Input) tp2Input.value = '';
+    if (tp2SizeInput) tp2SizeInput.value = '';
+}
+
+/**
+ * Populate form for basket selection with proper max leverage
+ */
+function populateBasketTradeForm(selection) {
+    const basketId = getBasketId(selection);
+    const basket = basketsCache.find(b => b.id === basketId);
+
+    if (!basket || !basket.coins || basket.coins.length === 0) {
+        clearQuickTradeForm();
+        return;
+    }
+
+    // Calculate the minimum max leverage across all coins in the basket
+    let minMaxLeverage = 100;
+    basket.coins.forEach(coin => {
+        const coinMaxLev = getMaxLeverage(coin);
+        if (coinMaxLev < minMaxLeverage) {
+            minMaxLeverage = coinMaxLev;
+        }
+    });
+
+    // Update leverage slider with basket's max leverage
+    const leverageRange = document.getElementById('trade-leverage-range');
+    const leverageDisplay = document.getElementById('leverage-display');
+    if (leverageRange) {
+        leverageRange.max = minMaxLeverage;
+        // Set default to min of 3 or the calculated max
+        const defaultLev = Math.min(3, minMaxLeverage);
+        leverageRange.value = defaultLev;
+        if (leverageDisplay) {
+            leverageDisplay.textContent = defaultLev + 'x';
+            leverageDisplay.title = `Max leverage for "${basket.name}": ${minMaxLeverage}x (limited by lowest coin)`;
+        }
+    }
+
+    // Clear other fields for manual entry
     const collateralInput = document.getElementById('trade-collateral');
     if (collateralInput) collateralInput.value = '';
 
@@ -2952,7 +3022,19 @@ async function executeBasketTrade(basketValue, action, collateral, leverage, sto
 
             refreshDashboard();
         } else {
+            // Show main error message
             showToast('Basket trade failed: ' + (result.error || 'All trades failed'), 'error');
+
+            // Also show individual errors to help diagnose the issue
+            if (result.results && result.results.length > 0) {
+                const failedTrades = result.results.filter(r => !r.success);
+                failedTrades.slice(0, 3).forEach(r => {  // Show first 3 errors to avoid spam
+                    showToast(`${r.coin}: ${r.error}`, 'error');
+                });
+                if (failedTrades.length > 3) {
+                    showToast(`...and ${failedTrades.length - 3} more failures`, 'error');
+                }
+            }
         }
     } catch (error) {
         console.error('Basket trade error:', error);
@@ -3034,7 +3116,19 @@ async function executeBasketTwapTrade(basketValue, action, collateral, leverage)
                 loadTwapOrders();
             }
         } else {
+            // Show main error message
             showToast('Basket TWAP failed: ' + (result.error || 'All orders failed'), 'error');
+
+            // Also show individual errors to help diagnose the issue
+            if (result.results && result.results.length > 0) {
+                const failedTrades = result.results.filter(r => !r.success);
+                failedTrades.slice(0, 3).forEach(r => {  // Show first 3 errors to avoid spam
+                    showToast(`${r.coin}: ${r.error}`, 'error');
+                });
+                if (failedTrades.length > 3) {
+                    showToast(`...and ${failedTrades.length - 3} more failures`, 'error');
+                }
+            }
         }
     } catch (error) {
         console.error('Basket TWAP error:', error);
