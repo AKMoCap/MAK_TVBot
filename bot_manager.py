@@ -554,6 +554,37 @@ class BotManager:
                 return self._asset_meta_cache
             return {}
 
+    def get_asset_indices(self, coins):
+        """
+        Get asset indices for multiple coins with a single API call.
+        Uses cached metadata to avoid expensive meta() calls (weight 20).
+
+        Args:
+            coins: List of coin names (e.g., ['BTC', 'ETH', 'DOGE'])
+
+        Returns:
+            dict mapping coin name to asset index (e.g., {'BTC': 0, 'ETH': 1})
+        """
+        try:
+            use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
+            api_url = constants.TESTNET_API_URL if use_testnet else constants.MAINNET_API_URL
+            info = Info(api_url, skip_ws=True)
+            meta = info.meta()
+            universe = meta.get('universe', [])
+
+            # Build index map for requested coins
+            asset_indices = {}
+            for idx, asset in enumerate(universe):
+                name = asset.get('name')
+                if name in coins:
+                    asset_indices[name] = idx
+
+            logger.info(f"Fetched asset indices for {len(asset_indices)} coins")
+            return asset_indices
+        except Exception as e:
+            logger.exception(f"Error getting asset indices: {e}")
+            return {}
+
     def get_market_prices(self, coins=None, force_refresh=False):
         """
         Get current market prices.
@@ -1302,7 +1333,8 @@ class BotManager:
             return {'success': False, 'error': str(e)}
 
     def place_twap_order(self, coin, is_buy, size, duration_minutes, randomize=False,
-                         reduce_only=False, user_wallet=None, user_agent_key=None):
+                         reduce_only=False, user_wallet=None, user_agent_key=None,
+                         asset_index=None, exchange=None):
         """
         Place a TWAP (Time-Weighted Average Price) order.
 
@@ -1315,6 +1347,8 @@ class BotManager:
             reduce_only: If True, only reduces existing position
             user_wallet: Optional wallet address
             user_agent_key: Optional agent private key
+            asset_index: Optional pre-computed asset index (avoids expensive meta() call)
+            exchange: Optional pre-created exchange object (avoids creating new connection)
 
         Returns:
             dict with success status, twap_id if successful, or error
@@ -1324,20 +1358,25 @@ class BotManager:
         from hyperliquid.utils.signing import sign_l1_action, get_timestamp_ms
 
         try:
-            info, exchange = self.get_exchange(user_wallet, user_agent_key)
+            # Use provided exchange or create new one
+            if exchange is None:
+                _, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             # Validate duration
             if duration_minutes < 5:
                 return {'success': False, 'error': 'TWAP duration must be at least 5 minutes'}
 
-            # Get asset index for the coin
-            meta = info.meta()
-            universe = meta.get('universe', [])
-            asset_index = None
-            for idx, asset in enumerate(universe):
-                if asset.get('name') == coin:
-                    asset_index = idx
-                    break
+            # Use provided asset_index or fetch it (expensive - weight 20!)
+            if asset_index is None:
+                use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
+                api_url = constants.TESTNET_API_URL if use_testnet else constants.MAINNET_API_URL
+                info = Info(api_url, skip_ws=True)
+                meta = info.meta()
+                universe = meta.get('universe', [])
+                for idx, asset in enumerate(universe):
+                    if asset.get('name') == coin:
+                        asset_index = idx
+                        break
 
             if asset_index is None:
                 return {'success': False, 'error': f'Asset {coin} not found'}
