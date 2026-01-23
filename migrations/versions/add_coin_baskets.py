@@ -43,12 +43,5 @@ def upgrade():
 
 
 def downgrade():
-    # Only drop if table exists
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    existing_tables = inspector.get_table_names()
-
-    if 'coin_baskets' in existing_tables:
-        op.drop_constraint('uq_user_basket_name', 'coin_baskets', type_='unique')
-        op.drop_index('idx_coinbasket_user', table_name='coin_baskets')
-        op.drop_table('coin_baskets')
+    # No-op: Never drop coin_baskets table to preserve user data
+    pass
