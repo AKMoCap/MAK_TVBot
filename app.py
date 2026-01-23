@@ -2160,7 +2160,7 @@ def api_trade_basket():
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
                 if i > 0:
-                    time.sleep(1.0)  # 1s delay between market orders
+                    time.sleep(1.5)  # 1.5s delay between market orders
 
                 # Risk check
                 allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
@@ -2322,8 +2322,14 @@ def api_trade_basket_twap():
         agent_key = user.get_agent_key()
         is_buy = action == 'buy'
 
-        # Get asset metadata for all coins
+        # Get asset metadata for all coins (cached)
         asset_meta = bot_manager.get_asset_metadata()
+
+        # Pre-fetch all prices at once to reduce API calls
+        all_prices = bot_manager.get_market_prices(coins)
+
+        # Create exchange connection once (reused for leverage updates)
+        _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
 
         # Execute TWAP for each coin (with rate limiting delay)
         results = []
@@ -2335,7 +2341,7 @@ def api_trade_basket_twap():
                 # Add delay between trades to avoid rate limiting (skip first trade)
                 # TWAP orders need longer delay due to multiple API calls per coin
                 if i > 0:
-                    time.sleep(1.5)  # 1.5s delay between TWAP orders
+                    time.sleep(2.5)  # 2.5s delay between TWAP orders
 
                 # Get coin metadata
                 coin_meta = asset_meta.get(coin, {})
@@ -2351,8 +2357,7 @@ def api_trade_basket_twap():
                     failed += 1
                     continue
 
-                # Set leverage for this coin
-                _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
+                # Set leverage for this coin (using pre-created exchange)
                 try:
                     exchange.update_leverage(leverage, coin, is_cross=False)
                 except Exception as lev_error:
@@ -2360,9 +2365,8 @@ def api_trade_basket_twap():
                     failed += 1
                     continue
 
-                # Get current price to calculate size
-                prices = bot_manager.get_market_prices([coin])
-                current_price = prices.get(coin, 0)
+                # Get price from pre-fetched prices
+                current_price = all_prices.get(coin, 0)
                 if not current_price:
                     results.append({'coin': coin, 'success': False, 'error': f"Could not get price"})
                     failed += 1
@@ -2376,13 +2380,25 @@ def api_trade_basket_twap():
                 sz_decimals = coin_meta.get('szDecimals', 2)
                 size = round(size, sz_decimals)
 
-                # Place TWAP order
-                result = bot_manager.place_twap_order(
-                    coin, is_buy, size, duration_minutes, randomize,
-                    reduce_only=False,
-                    user_wallet=wallet_address,
-                    user_agent_key=agent_key
-                )
+                # Place TWAP order with retry logic
+                max_retries = 3
+                result = None
+                for attempt in range(max_retries):
+                    result = bot_manager.place_twap_order(
+                        coin, is_buy, size, duration_minutes, randomize,
+                        reduce_only=False,
+                        user_wallet=wallet_address,
+                        user_agent_key=agent_key
+                    )
+                    if result.get('success'):
+                        break
+                    # Check if it's a rate limit error (HTML response)
+                    error_msg = result.get('error', '')
+                    if 'Unexpected token' in str(error_msg) or '<' in str(error_msg)[:10]:
+                        logger.warning(f"Rate limited on {coin}, retry {attempt + 1}/{max_retries}")
+                        time.sleep(3)  # Wait 3 seconds before retry
+                    else:
+                        break  # Non-rate-limit error, don't retry
 
                 if result.get('success'):
                     results.append({
