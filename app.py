@@ -30,7 +30,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:/
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize database
-from models import db, migrate, init_db, Trade, BotConfig, CoinConfig, RiskSettings, Indicator, ActivityLog, UserWallet
+from models import db, migrate, init_db, Trade, BotConfig, CoinConfig, CoinBasket, RiskSettings, Indicator, ActivityLog, UserWallet
 init_db(app)
 
 # Initialize managers
@@ -1936,6 +1936,309 @@ def api_add_coin():
     except requests.exceptions.RequestException as e:
         return jsonify({'success': False, 'error': f'Network error: {str(e)}'}), 500
     except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# BASKET ROUTES - User-defined coin groupings for batch trading
+# ============================================================================
+
+@app.route('/api/baskets', methods=['GET'])
+def api_get_baskets():
+    """Get all coin baskets for the current user"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'baskets': []})
+
+        baskets = CoinBasket.query.filter_by(user_id=user.id).all()
+        return jsonify({'baskets': [b.to_dict() for b in baskets]})
+    except Exception as e:
+        logger.exception(f"GET /api/baskets error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/baskets', methods=['POST'])
+def api_create_basket():
+    """Create a new coin basket for the current user"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        coins = data.get('coins', [])
+
+        if not name:
+            return jsonify({'success': False, 'error': 'Basket name is required'}), 400
+
+        if not coins or not isinstance(coins, list):
+            return jsonify({'success': False, 'error': 'At least one coin must be selected'}), 400
+
+        # Check for duplicate basket name
+        existing = CoinBasket.query.filter_by(user_id=user.id, name=name).first()
+        if existing:
+            return jsonify({'success': False, 'error': f'Basket "{name}" already exists'}), 400
+
+        basket = CoinBasket(
+            user_id=user.id,
+            name=name,
+            coins=json.dumps(coins)
+        )
+        db.session.add(basket)
+        db.session.commit()
+
+        logger.info(f"Created basket '{name}' with {len(coins)} coins for user {user.address[:10]}...")
+        return jsonify({'success': True, 'basket': basket.to_dict()})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.exception(f"POST /api/baskets error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/baskets/<int:basket_id>', methods=['GET'])
+def api_get_basket(basket_id):
+    """Get a single basket by ID"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Please connect your wallet'}), 401
+
+        basket = CoinBasket.query.filter_by(id=basket_id, user_id=user.id).first()
+        if not basket:
+            return jsonify({'error': 'Basket not found'}), 404
+
+        return jsonify(basket.to_dict())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/baskets/<int:basket_id>', methods=['PUT'])
+def api_update_basket(basket_id):
+    """Update an existing basket"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
+        basket = CoinBasket.query.filter_by(id=basket_id, user_id=user.id).first()
+        if not basket:
+            return jsonify({'success': False, 'error': 'Basket not found'}), 404
+
+        data = request.get_json()
+
+        if 'name' in data:
+            name = data['name'].strip()
+            if not name:
+                return jsonify({'success': False, 'error': 'Basket name is required'}), 400
+            # Check for duplicate name (excluding current basket)
+            existing = CoinBasket.query.filter(
+                CoinBasket.user_id == user.id,
+                CoinBasket.name == name,
+                CoinBasket.id != basket_id
+            ).first()
+            if existing:
+                return jsonify({'success': False, 'error': f'Basket "{name}" already exists'}), 400
+            basket.name = name
+
+        if 'coins' in data:
+            coins = data['coins']
+            if not coins or not isinstance(coins, list):
+                return jsonify({'success': False, 'error': 'At least one coin must be selected'}), 400
+            basket.coins = json.dumps(coins)
+
+        db.session.commit()
+        logger.info(f"Updated basket '{basket.name}' for user {user.address[:10]}...")
+        return jsonify({'success': True, 'basket': basket.to_dict()})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.exception(f"PUT /api/baskets/{basket_id} error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/baskets/<int:basket_id>', methods=['DELETE'])
+def api_delete_basket(basket_id):
+    """Delete a basket"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Please connect your wallet'}), 401
+
+        basket = CoinBasket.query.filter_by(id=basket_id, user_id=user.id).first()
+        if not basket:
+            return jsonify({'success': False, 'error': 'Basket not found'}), 404
+
+        basket_name = basket.name
+        db.session.delete(basket)
+        db.session.commit()
+
+        logger.info(f"Deleted basket '{basket_name}' for user {user.address[:10]}...")
+        return jsonify({'success': True, 'message': f'Basket "{basket_name}" deleted'})
+
+    except Exception as e:
+        db.session.rollback()
+        logger.exception(f"DELETE /api/baskets/{basket_id} error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/trade/basket', methods=['POST'])
+def api_trade_basket():
+    """Execute trades for all coins in a basket"""
+    try:
+        user = get_current_user()
+        if not user or not user.has_agent_key():
+            return jsonify({'success': False, 'error': 'Please connect and authorize your wallet first'}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No trade data provided'}), 400
+
+        basket_id = data.get('basket_id')
+        action = data.get('action', '').lower().strip()
+
+        if not basket_id:
+            return jsonify({'success': False, 'error': 'Basket ID is required'}), 400
+
+        if action not in ('buy', 'sell'):
+            return jsonify({'success': False, 'error': 'Invalid action. Must be "buy" or "sell"'}), 400
+
+        # Get basket
+        basket = CoinBasket.query.filter_by(id=basket_id, user_id=user.id).first()
+        if not basket:
+            return jsonify({'success': False, 'error': 'Basket not found'}), 404
+
+        coins = json.loads(basket.coins) if basket.coins else []
+        if not coins:
+            return jsonify({'success': False, 'error': 'Basket has no coins'}), 400
+
+        try:
+            leverage = int(data.get('leverage', 10))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid leverage value'}), 400
+
+        try:
+            collateral_usd = float(data.get('collateral_usd', 100))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid collateral value'}), 400
+
+        # Validate ranges
+        if leverage < 1 or leverage > 100:
+            return jsonify({'success': False, 'error': 'Leverage must be between 1 and 100'}), 400
+
+        if collateral_usd <= 0:
+            return jsonify({'success': False, 'error': 'Collateral must be a positive amount'}), 400
+
+        if collateral_usd < 1:
+            return jsonify({'success': False, 'error': 'Minimum collateral is $1'}), 400
+
+        # Check total collateral needed
+        total_collateral = collateral_usd * len(coins)
+        if total_collateral > 100000:
+            return jsonify({'success': False, 'error': f'Total collateral ({total_collateral:,.0f} USD) exceeds maximum $100,000'}), 400
+
+        stop_loss_pct = data.get('stop_loss_pct')
+        tp1_pct = data.get('tp1_pct')
+        tp1_size_pct = data.get('tp1_size_pct')
+        tp2_pct = data.get('tp2_pct')
+        tp2_size_pct = data.get('tp2_size_pct')
+
+        # Check if bot is enabled
+        if not bot_manager.is_enabled:
+            return jsonify({'success': False, 'error': 'Bot is disabled'})
+
+        # Execute trades for each coin
+        results = []
+        successful = 0
+        failed = 0
+
+        for coin in coins:
+            try:
+                # Risk check
+                allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
+                if not allowed:
+                    results.append({'coin': coin, 'success': False, 'error': reason})
+                    failed += 1
+                    continue
+
+                # Get coin config for defaults
+                coin_config = risk_manager.get_coin_config(coin)
+                coin_sl = stop_loss_pct if stop_loss_pct is not None else coin_config.default_stop_loss_pct
+                coin_tp1 = tp1_pct if tp1_pct is not None else coin_config.tp1_pct
+                coin_tp1_size = tp1_size_pct if tp1_size_pct is not None else coin_config.tp1_size_pct
+                coin_tp2 = tp2_pct if tp2_pct is not None else coin_config.tp2_pct
+                coin_tp2_size = tp2_size_pct if tp2_size_pct is not None else coin_config.tp2_size_pct
+
+                # Execute trade
+                result = bot_manager.execute_trade(
+                    coin=coin,
+                    action=action,
+                    leverage=leverage,
+                    collateral_usd=collateral_usd,
+                    stop_loss_pct=coin_sl,
+                    take_profit_pct=None,
+                    tp1_pct=coin_tp1,
+                    tp1_size_pct=coin_tp1_size,
+                    tp2_pct=coin_tp2,
+                    tp2_size_pct=coin_tp2_size,
+                    user_wallet=user.address,
+                    user_agent_key=user.get_agent_key()
+                )
+
+                if result.get('success'):
+                    # Record trade in database
+                    trade = Trade(
+                        coin=coin,
+                        action=action,
+                        side='long' if action == 'buy' else 'short',
+                        size=result['size'],
+                        entry_price=result['entry_price'],
+                        leverage=leverage,
+                        collateral_usd=collateral_usd,
+                        stop_loss=result.get('stop_loss'),
+                        take_profit=result.get('take_profit'),
+                        order_id=result.get('order_id'),
+                        status='open',
+                        user_id=user.id,
+                        notes=f'Basket: {basket.name}'
+                    )
+                    db.session.add(trade)
+                    results.append({
+                        'coin': coin,
+                        'success': True,
+                        'entry_price': result['entry_price'],
+                        'size': result['size']
+                    })
+                    successful += 1
+                else:
+                    results.append({'coin': coin, 'success': False, 'error': result.get('error', 'Unknown error')})
+                    failed += 1
+
+            except Exception as e:
+                logger.exception(f"Basket trade error for {coin}: {e}")
+                results.append({'coin': coin, 'success': False, 'error': str(e)})
+                failed += 1
+
+        db.session.commit()
+
+        log_activity('info', 'trade',
+                    f"Basket '{basket.name}' {action.upper()}: {successful} succeeded, {failed} failed",
+                    {'basket': basket.name, 'results': results}, user_id=user.id)
+
+        return jsonify({
+            'success': successful > 0,
+            'basket_name': basket.name,
+            'total_coins': len(coins),
+            'successful': successful,
+            'failed': failed,
+            'results': results
+        })
+
+    except Exception as e:
+        logger.exception(f"Basket trade error: {e}")
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 

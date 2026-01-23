@@ -1023,6 +1023,20 @@ code {
     font-family: 'SFMono-Regular', Consolas, monospace;
 }
 
+/* Basket items in dropdown */
+.coin-dropdown-item.basket-item {
+    background-color: rgba(13, 110, 253, 0.1);
+    border-left: 3px solid var(--bs-primary);
+}
+
+.coin-dropdown-item.basket-item:hover {
+    background-color: rgba(13, 110, 253, 0.2);
+}
+
+.coin-dropdown-item.basket-item .item-coin {
+    color: var(--bs-primary);
+}
+
 /* P&L Percentage display - inherit color from parent (text-success/text-danger) */
 .pnl-percent {
     font-size: 0.7rem;

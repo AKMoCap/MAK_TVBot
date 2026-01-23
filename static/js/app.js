@@ -1156,13 +1156,29 @@ function loadQuickTradeCache() {
  */
 async function refreshQuickTradeCache() {
     try {
-        const data = await apiCall('/coins');
-        if (data.coins && data.coins.length > 0) {
-            saveQuickTradeCache(data.coins);
-            processCoinData(data.coins);
-            console.log('[QuickTrade] Cache refreshed with', data.coins.length, 'coins');
-            return true;
+        // Load coins and baskets in parallel
+        const [coinsData, basketsData] = await Promise.all([
+            apiCall('/coins'),
+            apiCall('/baskets')
+        ]);
+
+        if (coinsData.coins && coinsData.coins.length > 0) {
+            saveQuickTradeCache(coinsData.coins);
+            processCoinData(coinsData.coins);
+            console.log('[QuickTrade] Cache refreshed with', coinsData.coins.length, 'coins');
         }
+
+        // Update baskets cache
+        if (basketsData.baskets) {
+            basketsCache = basketsData.baskets;
+            console.log('[QuickTrade] Loaded', basketsCache.length, 'baskets');
+            // Re-render dropdown to include baskets
+            if (window.allCoinsData) {
+                populateQuickTradeDropdown(window.allCoinsData);
+            }
+        }
+
+        return true;
     } catch (error) {
         console.error('[QuickTrade] Failed to refresh cache:', error);
     }
@@ -1171,6 +1187,14 @@ async function refreshQuickTradeCache() {
 
 function isCategory(value) {
     return value && value.startsWith('CAT:');
+}
+
+function isBasket(value) {
+    return value && value.startsWith('BASKET:');
+}
+
+function getBasketId(value) {
+    return value ? parseInt(value.replace('BASKET:', '')) : null;
 }
 
 function getMaxLeverage(coin) {
@@ -1237,6 +1261,8 @@ async function loadCoinConfigsForQuickTrade() {
         // Just setup the internal data structures and event handlers
         processCoinDataWithoutRepopulate(cachedCoins);
         setupCategoryFilterHandlers();
+        // Also load baskets asynchronously to add them to dropdown
+        loadBasketsForQuickTrade();
         return;
     }
 
@@ -1249,8 +1275,29 @@ async function loadCoinConfigsForQuickTrade() {
             saveQuickTradeCache(data.coins);
             processCoinData(data.coins);  // This will populate dropdown since cache was empty
         }
+        // Also load baskets
+        loadBasketsForQuickTrade();
     } catch (error) {
         console.error('[QuickTrade] Failed to load initial coin configs:', error);
+    }
+}
+
+/**
+ * Load baskets for Quick Trade dropdown (called after coins are loaded)
+ */
+async function loadBasketsForQuickTrade() {
+    try {
+        const data = await apiCall('/baskets');
+        if (data.baskets) {
+            basketsCache = data.baskets;
+            console.log('[QuickTrade] Loaded', basketsCache.length, 'baskets');
+            // Re-render dropdown to include baskets
+            if (window.allCoinsData && basketsCache.length > 0) {
+                populateQuickTradeDropdown(window.allCoinsData);
+            }
+        }
+    } catch (error) {
+        console.error('[QuickTrade] Failed to load baskets:', error);
     }
 }
 
@@ -1341,8 +1388,8 @@ function populateQuickTradeDropdown(coins, filterCategory = null) {
 
     coins.forEach(coin => {
         const category = coin.category || 'L1s';
-        // If filtering, only include coins from the selected category
-        if (filterCategory && category !== filterCategory) return;
+        // If filtering by a specific category (not Baskets), only include coins from that category
+        if (filterCategory && filterCategory !== 'Baskets' && category !== filterCategory) return;
 
         if (groups[category]) {
             groups[category].push(coin.coin);
@@ -1355,21 +1402,37 @@ function populateQuickTradeDropdown(coins, filterCategory = null) {
     let html = '';
     let firstCoin = null;
 
-    // Add coin groups in order
-    for (const category of categoryOrder) {
-        const coinList = groups[category];
-        if (coinList && coinList.length > 0) {
-            html += `<div class="coin-dropdown-category" data-category="${category}">${categoryDisplayNames[category] || category}</div>`;
-            coinList.forEach(coinName => {
-                if (!firstCoin) firstCoin = coinName;
-                const price = livePrices[coinName] ? formatPrice(livePrices[coinName]) : '--';
-                const selectedClass = (hiddenInput && hiddenInput.value === coinName) ? ' selected' : '';
-                html += `<div class="coin-dropdown-item${selectedClass}" data-coin="${coinName}" data-category="${category}">`;
-                html += `<span class="item-coin">${coinName}</span>`;
-                html += `<span class="item-price">${price}</span>`;
-                html += '</div>';
-            });
+    // If filtering to Baskets only, skip the coins
+    if (filterCategory !== 'Baskets') {
+        // Add coin groups in order
+        for (const category of categoryOrder) {
+            const coinList = groups[category];
+            if (coinList && coinList.length > 0) {
+                html += `<div class="coin-dropdown-category" data-category="${category}">${categoryDisplayNames[category] || category}</div>`;
+                coinList.forEach(coinName => {
+                    if (!firstCoin) firstCoin = coinName;
+                    const price = livePrices[coinName] ? formatPrice(livePrices[coinName]) : '--';
+                    const selectedClass = (hiddenInput && hiddenInput.value === coinName) ? ' selected' : '';
+                    html += `<div class="coin-dropdown-item${selectedClass}" data-coin="${coinName}" data-category="${category}">`;
+                    html += `<span class="item-coin">${coinName}</span>`;
+                    html += `<span class="item-price">${price}</span>`;
+                    html += '</div>';
+                });
+            }
         }
+    }
+
+    // Add baskets section at the bottom (if not filtering to a specific coin category)
+    if ((!filterCategory || filterCategory === 'Baskets') && basketsCache && basketsCache.length > 0) {
+        html += `<div class="coin-dropdown-category" data-category="Baskets"><i class="bi bi-collection me-1"></i>Baskets</div>`;
+        basketsCache.forEach(basket => {
+            const basketValue = `BASKET:${basket.id}`;
+            const selectedClass = (hiddenInput && hiddenInput.value === basketValue) ? ' selected' : '';
+            html += `<div class="coin-dropdown-item basket-item${selectedClass}" data-coin="${basketValue}" data-category="Baskets">`;
+            html += `<span class="item-coin"><i class="bi bi-collection me-1"></i>${escapeHtml(basket.name)}</span>`;
+            html += `<span class="item-price text-muted">${basket.coins.length} coins</span>`;
+            html += '</div>';
+        });
     }
 
     dropdownMenu.innerHTML = html;
@@ -1397,14 +1460,15 @@ function setupCategoryFilters() {
 
     // Only create buttons if they don't exist yet
     if (!filterContainer.querySelector('.category-filter-btn')) {
-        const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps'];
+        const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps', 'Baskets'];
 
         let html = '';
         categories.forEach((cat, idx) => {
             const isActive = idx === 0 ? 'active' : '';
             const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
+            const icon = cat === 'Baskets' ? '<i class="bi bi-collection me-1"></i>' : '';
             html += `<button type="button" class="btn ${btnClass} btn-sm me-1 mb-1 category-filter-btn ${isActive}"
-                             data-category="${cat === 'All' ? '' : cat}">${cat}</button>`;
+                             data-category="${cat === 'All' ? '' : cat}">${icon}${cat}</button>`;
         });
 
         filterContainer.innerHTML = html;
@@ -1473,6 +1537,12 @@ function handleOrderTypeChange(orderType) {
 function populateQuickTradeForm(selection) {
     // If a category is selected, clear the form for manual entry
     if (isCategory(selection)) {
+        clearQuickTradeForm();
+        return;
+    }
+
+    // If a basket is selected, clear the form for manual entry
+    if (isBasket(selection)) {
         clearQuickTradeForm();
         return;
     }
@@ -2336,11 +2406,24 @@ function setupCustomCoinDropdown() {
         // Update trigger display
         const nameEl = document.getElementById('selected-coin-name');
         const priceEl = document.getElementById('selected-coin-price');
-        if (nameEl) nameEl.textContent = coin;
-        if (priceEl && livePrices[coin]) {
-            priceEl.textContent = formatPrice(livePrices[coin]);
-        } else if (priceEl) {
-            priceEl.textContent = '';
+
+        // Check if this is a basket selection
+        if (isBasket(coin)) {
+            const basketId = getBasketId(coin);
+            const basket = basketsCache.find(b => b.id === basketId);
+            if (nameEl) {
+                nameEl.innerHTML = '<i class="bi bi-collection me-1"></i>' + (basket ? basket.name : 'Basket');
+            }
+            if (priceEl) {
+                priceEl.textContent = basket ? `${basket.coins.length} coins` : '';
+            }
+        } else {
+            if (nameEl) nameEl.textContent = coin;
+            if (priceEl && livePrices[coin]) {
+                priceEl.textContent = formatPrice(livePrices[coin]);
+            } else if (priceEl) {
+                priceEl.textContent = '';
+            }
         }
 
         // Update selected state in menu
@@ -2508,6 +2591,21 @@ async function executeTrade(action) {
     if (!validated) return;
 
     const { selection, collateral, leverage, orderType } = validated;
+
+    // Check if this is a basket trade (only for market orders)
+    if (isBasket(selection)) {
+        if (orderType !== 'market') {
+            showToast('Basket trades only support market orders', 'warning');
+            return;
+        }
+        const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
+        const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
+        const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
+        const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
+        const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
+        await executeBasketTrade(selection, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct);
+        return;
+    }
 
     // Check if this is a category trade (only for market orders)
     if (isCategory(selection)) {
@@ -2751,6 +2849,74 @@ async function executeScaleOrder(coin, action, collateral, leverage) {
         }
     } catch (error) {
         showToast('Scale order execution failed', 'error');
+    }
+}
+
+/**
+ * Execute trades for all coins in a basket
+ */
+async function executeBasketTrade(basketValue, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct) {
+    const basketId = getBasketId(basketValue);
+    if (!basketId) {
+        showToast('Invalid basket selected', 'error');
+        return;
+    }
+
+    // Get the basket info from cache
+    const basket = basketsCache.find(b => b.id === basketId);
+    if (!basket) {
+        showToast('Basket not found', 'error');
+        return;
+    }
+
+    const basketName = basket.name;
+    const coinCount = basket.coins.length;
+
+    // Confirm before executing multiple trades
+    if (!confirm(`Open ${action.toUpperCase()} positions for all ${coinCount} coins in "${basketName}"?\n\nCoins: ${basket.coins.join(', ')}\nCollateral per coin: $${collateral}\nTotal collateral: $${(collateral * coinCount).toFixed(2)}`)) {
+        return;
+    }
+
+    // Get the button for loading state
+    const button = document.getElementById(action === 'buy' ? 'buy-btn' : 'sell-btn');
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Executing...';
+
+    try {
+        const result = await apiCall('/trade/basket', 'POST', {
+            basket_id: basketId,
+            action,
+            leverage,
+            collateral_usd: collateral,
+            stop_loss_pct: stopLoss,
+            tp1_pct: tp1Pct,
+            tp1_size_pct: tp1SizePct,
+            tp2_pct: tp2Pct,
+            tp2_size_pct: tp2SizePct
+        });
+
+        if (result.success || result.successful > 0) {
+            showToast(`Basket "${basketName}": ${result.successful}/${result.total_coins} trades succeeded`, 'success');
+
+            // Show individual results if some failed
+            if (result.failed > 0 && result.results) {
+                const failedTrades = result.results.filter(r => !r.success);
+                failedTrades.forEach(r => {
+                    showToast(`${r.coin} failed: ${r.error}`, 'error');
+                });
+            }
+
+            refreshDashboard();
+        } else {
+            showToast('Basket trade failed: ' + (result.error || 'All trades failed'), 'error');
+        }
+    } catch (error) {
+        console.error('Basket trade error:', error);
+        showToast('Basket trade execution failed', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalText;
     }
 }
 
@@ -3937,6 +4103,290 @@ async function cleanupDuplicates() {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-trash me-1"></i>Cleanup Duplicates';
     }
+}
+
+// ============================================================================
+// BASKET MANAGEMENT - Custom coin groupings for batch trading
+// ============================================================================
+
+// Cache for baskets (used by Quick Trade)
+let basketsCache = [];
+
+/**
+ * Load all baskets for the current user
+ */
+async function loadBaskets() {
+    const loadingEl = document.getElementById('baskets-loading');
+    const listEl = document.getElementById('baskets-list');
+    const emptyEl = document.getElementById('baskets-empty');
+
+    if (!loadingEl || !listEl || !emptyEl) return;
+
+    try {
+        const result = await apiCall('/baskets');
+        basketsCache = result.baskets || [];
+
+        loadingEl.style.display = 'none';
+
+        if (basketsCache.length === 0) {
+            listEl.style.display = 'none';
+            emptyEl.style.display = 'block';
+        } else {
+            emptyEl.style.display = 'none';
+            listEl.style.display = 'block';
+            renderBasketsList(basketsCache);
+        }
+    } catch (error) {
+        console.error('Failed to load baskets:', error);
+        loadingEl.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Failed to load baskets</span>';
+    }
+}
+
+/**
+ * Render the baskets list on Settings page
+ */
+function renderBasketsList(baskets) {
+    const listEl = document.getElementById('baskets-list');
+    if (!listEl) return;
+
+    listEl.innerHTML = baskets.map(basket => `
+        <div class="card bg-dark border-secondary mb-2">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong class="text-light">${escapeHtml(basket.name)}</strong>
+                        <span class="text-muted ms-2">(${basket.coins.length} coins)</span>
+                        <div class="mt-1">
+                            ${basket.coins.map(coin => `<span class="badge bg-secondary me-1">${escapeHtml(coin)}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-info" onclick="editBasket(${basket.id})" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="deleteBasket(${basket.id}, '${escapeHtml(basket.name)}')" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+/**
+ * Reset basket modal to default state for adding new basket
+ */
+function resetBasketModal() {
+    document.getElementById('basket-id').value = '';
+    document.getElementById('basket-name').value = '';
+    document.getElementById('basketModalTitle').innerHTML = '<i class="bi bi-collection me-2"></i>Add New Basket';
+    document.getElementById('save-basket-btn').innerHTML = '<i class="bi bi-check-circle me-1"></i>Save Basket';
+    document.getElementById('basket-selected-coins').innerHTML = '<span class="text-muted">No coins selected</span>';
+
+    // Clear coin checkboxes
+    const checkboxes = document.querySelectorAll('#basket-coins-list input[type="checkbox"]');
+    checkboxes.forEach(cb => cb.checked = false);
+}
+
+/**
+ * Load coins for the basket modal's coin selector
+ */
+async function loadCoinsForBasketModal() {
+    const loadingEl = document.getElementById('basket-coins-loading');
+    const listEl = document.getElementById('basket-coins-list');
+
+    if (!loadingEl || !listEl) return;
+
+    try {
+        const result = await apiCall('/coins');
+        const coins = result.coins || [];
+
+        loadingEl.style.display = 'none';
+        listEl.style.display = 'block';
+
+        // Group coins by category
+        const categories = {};
+        coins.forEach(coin => {
+            const category = coin.category || 'Other';
+            if (!categories[category]) {
+                categories[category] = [];
+            }
+            categories[category].push(coin);
+        });
+
+        // Render coins grouped by category
+        const categoryOrder = ['L1s', 'APPS', 'MEMES', 'HIP-3 Perps', 'Other'];
+        let html = '';
+
+        categoryOrder.forEach(category => {
+            if (categories[category] && categories[category].length > 0) {
+                html += `<div class="mb-3">
+                    <div class="text-muted small mb-2">${category}</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        ${categories[category].map(coin => `
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input basket-coin-checkbox" type="checkbox"
+                                       id="basket-coin-${coin.coin}" value="${coin.coin}"
+                                       onchange="updateSelectedCoinsDisplay()">
+                                <label class="form-check-label" for="basket-coin-${coin.coin}">${coin.coin}</label>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            }
+        });
+
+        listEl.innerHTML = html;
+
+        // If editing, restore selected coins
+        const basketId = document.getElementById('basket-id').value;
+        if (basketId) {
+            const basket = basketsCache.find(b => b.id === parseInt(basketId));
+            if (basket && basket.coins) {
+                basket.coins.forEach(coin => {
+                    const checkbox = document.getElementById(`basket-coin-${coin}`);
+                    if (checkbox) checkbox.checked = true;
+                });
+                updateSelectedCoinsDisplay();
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load coins for basket modal:', error);
+        loadingEl.innerHTML = '<span class="text-danger">Failed to load coins</span>';
+    }
+}
+
+/**
+ * Update the selected coins display at the bottom of the modal
+ */
+function updateSelectedCoinsDisplay() {
+    const selectedCoins = getSelectedBasketCoins();
+    const displayEl = document.getElementById('basket-selected-coins');
+
+    if (!displayEl) return;
+
+    if (selectedCoins.length === 0) {
+        displayEl.innerHTML = '<span class="text-muted">No coins selected</span>';
+    } else {
+        displayEl.innerHTML = selectedCoins.map(coin =>
+            `<span class="badge bg-primary">${escapeHtml(coin)}</span>`
+        ).join('');
+    }
+}
+
+/**
+ * Get array of selected coins from the modal checkboxes
+ */
+function getSelectedBasketCoins() {
+    const checkboxes = document.querySelectorAll('#basket-coins-list input[type="checkbox"]:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+/**
+ * Save a new or edited basket
+ */
+async function saveBasket() {
+    const basketId = document.getElementById('basket-id').value;
+    const name = document.getElementById('basket-name').value.trim();
+    const coins = getSelectedBasketCoins();
+
+    if (!name) {
+        showToast('Please enter a basket name', 'error');
+        return;
+    }
+
+    if (coins.length === 0) {
+        showToast('Please select at least one coin', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('save-basket-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+
+    try {
+        let result;
+        if (basketId) {
+            // Update existing basket
+            result = await apiCall(`/baskets/${basketId}`, 'PUT', { name, coins });
+        } else {
+            // Create new basket
+            result = await apiCall('/baskets', 'POST', { name, coins });
+        }
+
+        if (result.success) {
+            showToast(basketId ? 'Basket updated successfully' : 'Basket created successfully', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('addBasketModal')).hide();
+            loadBaskets();
+            // Also refresh Quick Trade cache so baskets appear in dropdown
+            if (typeof refreshQuickTradeCache === 'function') {
+                await refreshQuickTradeCache();
+            }
+        } else {
+            showToast('Failed to save basket: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save basket:', error);
+        showToast('Failed to save basket', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Save Basket';
+    }
+}
+
+/**
+ * Edit an existing basket
+ */
+function editBasket(basketId) {
+    const basket = basketsCache.find(b => b.id === basketId);
+    if (!basket) {
+        showToast('Basket not found', 'error');
+        return;
+    }
+
+    // Set modal to edit mode
+    document.getElementById('basket-id').value = basket.id;
+    document.getElementById('basket-name').value = basket.name;
+    document.getElementById('basketModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Basket';
+    document.getElementById('save-basket-btn').innerHTML = '<i class="bi bi-check-circle me-1"></i>Update Basket';
+
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('addBasketModal'));
+    modal.show();
+}
+
+/**
+ * Delete a basket
+ */
+async function deleteBasket(basketId, basketName) {
+    if (!confirm(`Are you sure you want to delete the basket "${basketName}"?`)) {
+        return;
+    }
+
+    try {
+        const result = await apiCall(`/baskets/${basketId}`, 'DELETE');
+        if (result.success) {
+            showToast(result.message || 'Basket deleted', 'success');
+            loadBaskets();
+            // Also refresh Quick Trade cache
+            if (typeof refreshQuickTradeCache === 'function') {
+                await refreshQuickTradeCache();
+            }
+        } else {
+            showToast('Failed to delete basket: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Failed to delete basket:', error);
+        showToast('Failed to delete basket', 'error');
+    }
+}
+
+/**
+ * Get baskets for Quick Trade dropdown
+ */
+function getBasketsForQuickTrade() {
+    return basketsCache;
 }
 
 /**
