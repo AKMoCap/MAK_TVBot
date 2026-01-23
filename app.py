@@ -2160,7 +2160,7 @@ def api_trade_basket():
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
                 if i > 0:
-                    time.sleep(0.5)  # 500ms delay between trades
+                    time.sleep(1.0)  # 1s delay between market orders
 
                 # Risk check
                 allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
@@ -2333,8 +2333,9 @@ def api_trade_basket_twap():
         for i, coin in enumerate(coins):
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
+                # TWAP orders need longer delay due to multiple API calls per coin
                 if i > 0:
-                    time.sleep(0.5)  # 500ms delay between trades
+                    time.sleep(1.5)  # 1.5s delay between TWAP orders
 
                 # Get coin metadata
                 coin_meta = asset_meta.get(coin, {})
