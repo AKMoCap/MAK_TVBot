@@ -2631,19 +2631,23 @@ async function executeTrade(action) {
 
     const { selection, collateral, leverage, orderType } = validated;
 
-    // Check if this is a basket trade (only for market orders)
+    // Check if this is a basket trade (supports market and TWAP orders)
     if (isBasket(selection)) {
-        if (orderType !== 'market') {
-            showToast('Basket trades only support market orders', 'warning');
+        if (orderType === 'twap') {
+            await executeBasketTwapTrade(selection, action, collateral, leverage);
+            return;
+        } else if (orderType === 'market') {
+            const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
+            const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
+            const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
+            const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
+            const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
+            await executeBasketTrade(selection, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct);
+            return;
+        } else {
+            showToast('Basket trades only support Market and TWAP orders', 'warning');
             return;
         }
-        const stopLoss = parseFloat(document.getElementById('trade-sl').value) || null;
-        const tp1Pct = parseFloat(document.getElementById('trade-tp1').value) || null;
-        const tp1SizePct = parseFloat(document.getElementById('trade-tp1-size').value) || null;
-        const tp2Pct = parseFloat(document.getElementById('trade-tp2').value) || null;
-        const tp2SizePct = parseFloat(document.getElementById('trade-tp2-size').value) || null;
-        await executeBasketTrade(selection, action, collateral, leverage, stopLoss, tp1Pct, tp1SizePct, tp2Pct, tp2SizePct);
-        return;
     }
 
     // Check if this is a category trade (only for market orders)
@@ -2953,6 +2957,88 @@ async function executeBasketTrade(basketValue, action, collateral, leverage, sto
     } catch (error) {
         console.error('Basket trade error:', error);
         showToast('Basket trade execution failed', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalText;
+    }
+}
+
+/**
+ * Execute TWAP orders for all coins in a basket
+ */
+async function executeBasketTwapTrade(basketValue, action, collateral, leverage) {
+    const basketId = getBasketId(basketValue);
+    if (!basketId) {
+        showToast('Invalid basket selected', 'error');
+        return;
+    }
+
+    // Get the basket info from cache
+    const basket = basketsCache.find(b => b.id === basketId);
+    if (!basket) {
+        showToast('Basket not found', 'error');
+        return;
+    }
+
+    // Get TWAP parameters
+    const hours = parseInt(document.getElementById('trade-twap-hours')?.value) || 0;
+    const minutes = parseInt(document.getElementById('trade-twap-minutes')?.value) || 30;
+    const randomize = document.getElementById('trade-twap-randomize')?.checked || false;
+
+    const durationMinutes = (hours * 60) + minutes;
+    if (durationMinutes < 5) {
+        showToast('TWAP duration must be at least 5 minutes', 'warning');
+        return;
+    }
+
+    const basketName = basket.name;
+    const coinCount = basket.coins.length;
+    const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+    // Confirm before executing multiple TWAP orders
+    if (!confirm(`Open TWAP ${action.toUpperCase()} orders for all ${coinCount} coins in "${basketName}"?\n\nCoins: ${basket.coins.join(', ')}\nCollateral per coin: $${collateral}\nTotal collateral: $${(collateral * coinCount).toFixed(2)}\nDuration: ${durationText}${randomize ? ' (randomized)' : ''}`)) {
+        return;
+    }
+
+    // Get the button for loading state
+    const button = document.getElementById(action === 'buy' ? 'buy-btn' : 'sell-btn');
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Placing TWAPs...';
+
+    try {
+        const result = await apiCall('/trade/basket-twap', 'POST', {
+            basket_id: basketId,
+            action,
+            leverage,
+            collateral_usd: collateral,
+            hours,
+            minutes,
+            randomize
+        });
+
+        if (result.success || result.successful > 0) {
+            showToast(`Basket TWAP "${basketName}": ${result.successful}/${result.total_coins} orders placed`, 'success');
+
+            // Show individual results if some failed
+            if (result.failed > 0 && result.results) {
+                const failedTrades = result.results.filter(r => !r.success);
+                failedTrades.forEach(r => {
+                    showToast(`${r.coin} failed: ${r.error}`, 'error');
+                });
+            }
+
+            refreshDashboard();
+            // Refresh TWAP orders display
+            if (typeof loadTwapOrders === 'function') {
+                loadTwapOrders();
+            }
+        } else {
+            showToast('Basket TWAP failed: ' + (result.error || 'All orders failed'), 'error');
+        }
+    } catch (error) {
+        console.error('Basket TWAP error:', error);
+        showToast('Basket TWAP execution failed', 'error');
     } finally {
         button.disabled = false;
         button.innerHTML = originalText;
