@@ -1537,11 +1537,12 @@ class BotManager:
         try:
             all_orders = []
 
-            # Get native perps + spot open orders (dex: "")
+            # Get native perps + spot open orders using frontendOpenOrders for better trigger price data
+            # frontendOpenOrders returns triggerPx at top level, more reliable than nested in orderType
             response = requests.post(
                 f"{api_url}/info",
                 json={
-                    "type": "openOrders",
+                    "type": "frontendOpenOrders",
                     "user": wallet_address
                 },
                 headers={"Content-Type": "application/json"}
