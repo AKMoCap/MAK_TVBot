@@ -295,13 +295,20 @@
 
                                 // Build category filter buttons (including Baskets)
                                 if (filterDiv) {
-                                    const categories = ['All', 'L1s', 'APPS', 'MEMES', 'HIP-3 Perps', 'Baskets'];
+                                    const categories = [
+                                        {label: 'All', value: ''},
+                                        {label: 'L1s', value: 'L1s'},
+                                        {label: 'APPS', value: 'APPS'},
+                                        {label: 'MEMES', value: 'MEMES'},
+                                        {label: 'HIP3', value: 'HIP-3 Perps'},
+                                        {label: 'Baskets', value: 'Baskets'}
+                                    ];
                                     let filterHtml = '';
                                     categories.forEach((cat, idx) => {
                                         const isActive = idx === 0 ? 'active' : '';
                                         const btnClass = idx === 0 ? 'btn-primary' : 'btn-outline-secondary';
-                                        const icon = cat === 'Baskets' ? '<i class="bi bi-collection me-1"></i>' : '';
-                                        filterHtml += '<button type="button" class="btn ' + btnClass + ' btn-sm me-1 mb-1 category-filter-btn ' + isActive + '" data-category="' + (cat === 'All' ? '' : cat) + '">' + icon + cat + '</button>';
+                                        const icon = cat.label === 'Baskets' ? '<i class="bi bi-collection me-1"></i>' : '';
+                                        filterHtml += '<button type="button" class="btn ' + btnClass + ' btn-sm me-1 mb-1 category-filter-btn ' + isActive + '" data-category="' + cat.value + '">' + icon + cat.label + '</button>';
                                     });
                                     filterDiv.innerHTML = filterHtml;
                                 }
