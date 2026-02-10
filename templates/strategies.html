@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+
+{% block title %}Strategies - MAK Trading Bot{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- ================================================================== -->
+    <!-- CARD 1: Strategy Overview                                          -->
+    <!-- ================================================================== -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex align-items-center">
+                <i class="bi bi-lightbulb me-2 text-warning"></i>
+                <h5 class="mb-0">MAK EMA + AVWAP + RSI Strategy</h5>
+            </div>
+            <div class="card-body">
+                <!-- Parameter Summary Cards -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3 col-6">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-body text-center py-3">
+                                <h6 class="text-muted mb-1"><i class="bi bi-currency-bitcoin me-1"></i>Asset</h6>
+                                <h5 class="mb-0 text-light">COINBASE:BTCUSD</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-body text-center py-3">
+                                <h6 class="text-muted mb-1"><i class="bi bi-wallet2 me-1"></i>Starting Capital</h6>
+                                <h5 class="mb-0 text-light">$100,000</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-body text-center py-3">
+                                <h6 class="text-muted mb-1"><i class="bi bi-graph-up-arrow me-1"></i>Take Profit</h6>
+                                <h5 class="mb-0 text-success">+10%</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-body text-center py-3">
+                                <h6 class="text-muted mb-1"><i class="bi bi-graph-down-arrow me-1"></i>Stop Loss</h6>
+                                <h5 class="mb-0 text-danger">-5%</h5>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Strategy Description -->
+                <p class="text-light mb-3">
+                    A trend-following long-only strategy that combines <strong>EMA crossovers</strong> for trend direction,
+                    <strong>Anchored VWAP</strong> for dynamic support confirmation, and <strong>RSI momentum</strong> for
+                    pullback entry timing. Designed for BTC/USD on daily or 4-hour timeframes.
+                </p>
+
+                <!-- Entry / Exit Conditions -->
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <h6 class="text-success"><i class="bi bi-box-arrow-in-right me-1"></i>Entry Conditions (Long)</h6>
+                        <ol class="text-light small">
+                            <li><strong>EMA 20 &gt; EMA 50</strong> &mdash; Short-term trend is bullish</li>
+                            <li><strong>EMA 50 &gt; EMA 200</strong> &mdash; Long-term uptrend confirmed</li>
+                            <li><strong>Close &gt; Auto AVWAP Low</strong> &mdash; Price above dynamic VWAP support</li>
+                            <li><strong>RSI(14) &lt; 50 and rising for 2+ bars</strong> &mdash; Momentum pullback turning up</li>
+                            <li><strong>No open position</strong> &mdash; One trade at a time (pyramiding disabled)</li>
+                        </ol>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-danger"><i class="bi bi-box-arrow-right me-1"></i>Exit Conditions</h6>
+                        <ul class="text-light small">
+                            <li><strong>Take Profit:</strong> +10% gain from entry price</li>
+                            <li><strong>Stop Loss:</strong> -5% drawdown from entry price</li>
+                        </ul>
+                        <div class="alert alert-info small py-2 mt-3 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            <strong>Recommendation:</strong> The strategy adds an <code>EMA 50 &gt; EMA 200</code> filter
+                            beyond the user-specified <code>EMA 20 &gt; EMA 50</code> to reduce whipsaws in sideways markets.
+                            The RSI threshold is tightened to 45 (configurable) for earlier momentum detection.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- CARD 2: Indicator Components (collapsible, starts expanded)        -->
+    <!-- ================================================================== -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center"
+                 data-bs-toggle="collapse" data-bs-target="#indicatorDetails" role="button">
+                <div>
+                    <i class="bi bi-puzzle me-2 text-info"></i>
+                    <span class="fw-bold">Indicator Components</span>
+                </div>
+                <i class="bi bi-chevron-down"></i>
+            </div>
+            <div class="collapse show" id="indicatorDetails">
+                <div class="card-body">
+                    <ul class="nav nav-tabs mb-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-ema" type="button">
+                                <i class="bi bi-bar-chart-line me-1"></i>EMA System
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-avwap" type="button">
+                                <i class="bi bi-bezier2 me-1"></i>Auto AVWAP
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-rsi" type="button">
+                                <i class="bi bi-speedometer me-1"></i>RSI
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        <!-- EMA Tab -->
+                        <div class="tab-pane fade show active" id="tab-ema">
+                            <p class="text-light small">
+                                Exponential Moving Averages smooth price data and reveal trend direction.
+                                Faster EMAs react sooner to price changes; slower EMAs confirm the broader trend.
+                            </p>
+                            <table class="table table-dark table-sm table-bordered small">
+                                <thead>
+                                    <tr>
+                                        <th>EMA</th>
+                                        <th>Role</th>
+                                        <th>Chart Color</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>EMA 20</td>
+                                        <td>Fast signal &mdash; captures short-term momentum</td>
+                                        <td><span style="color:#2962FF;">Blue</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>EMA 50</td>
+                                        <td>Medium trend &mdash; crossover trigger with EMA 20</td>
+                                        <td><span style="color:#E91E63;">Pink</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>EMA 100</td>
+                                        <td>Slow trend &mdash; plotted for reference</td>
+                                        <td><span style="color:#FF9800;">Orange</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>EMA 200</td>
+                                        <td>Long-term trend filter &mdash; EMA 50 must be above this</td>
+                                        <td><span style="color:#9C27B0;">Purple</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p class="text-muted small mb-0">
+                                <strong>Entry logic:</strong> EMA 20 &gt; EMA 50 confirms short-term bullishness.
+                                EMA 50 &gt; EMA 200 confirms the macro uptrend, filtering out counter-trend entries.
+                            </p>
+                        </div>
+
+                        <!-- Auto AVWAP Tab -->
+                        <div class="tab-pane fade" id="tab-avwap">
+                            <p class="text-light small">
+                                The <strong>Auto Anchored VWAP</strong> calculates a volume-weighted average price
+                                anchored from significant pivot lows detected by a Stochastic RSI system. The "Low AVWAP"
+                                line acts as dynamic support that adapts as new anchor points form.
+                            </p>
+                            <h6 class="text-info small">How the anchor works:</h6>
+                            <ol class="text-light small">
+                                <li>A Stochastic RSI is computed from RSI(14) with a 14-period lookback</li>
+                                <li>When the Stochastic K line crosses above the D line in the oversold zone (&lt;20), a new anchor point is set</li>
+                                <li>From the anchor bar forward, cumulative <code>(volume &times; low)</code> and cumulative <code>volume</code> are summed</li>
+                                <li>Low AVWAP = cumulative sum / cumulative volume &mdash; this creates a rising support floor during uptrends</li>
+                            </ol>
+                            <p class="text-muted small mb-0">
+                                <strong>Entry logic:</strong> Price must be <em>above</em> the Low AVWAP, confirming the current
+                                price is supported by volume-weighted demand from the last significant low.
+                            </p>
+                        </div>
+
+                        <!-- RSI Tab -->
+                        <div class="tab-pane fade" id="tab-rsi">
+                            <p class="text-light small">
+                                The <strong>Relative Strength Index (14)</strong> measures momentum on a 0&ndash;100 scale.
+                                Values below 50 indicate the asset has pulled back from recent highs, creating a potential
+                                buy-the-dip opportunity in an uptrend.
+                            </p>
+                            <h6 class="text-info small">Momentum confirmation:</h6>
+                            <ul class="text-light small">
+                                <li><strong>RSI &lt; 50:</strong> Price has pulled back (not overbought)</li>
+                                <li><strong>RSI rising for 2+ bars:</strong> Momentum is turning upward from the pullback</li>
+                                <li>The threshold (default 45) and confirmation bars (default 2) are adjustable inputs</li>
+                            </ul>
+                            <p class="text-muted small mb-0">
+                                <strong>Why not wait for RSI &gt; 50?</strong> By entering while RSI is still below 50 but rising,
+                                the strategy catches the early recovery phase, improving the risk/reward ratio.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- CARD 3: Pine Script v5 Code (collapsible, starts expanded)         -->
+    <!-- ================================================================== -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
+                <div data-bs-toggle="collapse" data-bs-target="#pineScriptCode" role="button" class="flex-grow-1">
+                    <i class="bi bi-code-slash me-2 text-success"></i>
+                    <span class="fw-bold">Pine Script v5 Strategy Code</span>
+                </div>
+                <button class="btn btn-success btn-sm" id="copy-strategy-btn">
+                    <i class="bi bi-clipboard me-1"></i>Copy Pine Script
+                </button>
+            </div>
+            <div class="collapse show" id="pineScriptCode">
+                <div class="card-body p-0">
+                    <pre class="bg-black p-3 rounded-bottom mb-0" style="max-height:600px;overflow:auto;"><code id="strategy-code">//@version=5
+strategy("MAK EMA + AVWAP + RSI Strategy",
+     overlay              = true,
+     initial_capital      = 100000,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 10,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.0,
+     pyramiding           = 0,
+     calc_on_every_tick   = false)
+
+// =============================================================================
+// INPUT PARAMETERS
+// =============================================================================
+
+// EMA Settings
+emaFastLen   = input.int(20,  "EMA Fast",   group="EMA Settings")
+emaMidLen    = input.int(50,  "EMA Mid",    group="EMA Settings")
+emaSlow1Len  = input.int(100, "EMA Slow 1", group="EMA Settings")
+emaSlow2Len  = input.int(200, "EMA Slow 2", group="EMA Settings")
+
+// RSI Settings
+rsiLength      = input.int(14, "RSI Length",          group="RSI Settings")
+rsiThreshold   = input.int(45, "RSI Entry Threshold", group="RSI Settings", minval=20, maxval=60,
+                 tooltip="RSI must be below this value for a pullback entry. Default 45.")
+rsiConfirmBars = input.int(2,  "RSI Rising Bars",     group="RSI Settings", minval=1, maxval=5,
+                 tooltip="Number of consecutive bars RSI must be rising to confirm momentum turn.")
+
+// Auto AVWAP Settings (Stochastic RSI Anchor)
+avwapRsiLen  = input.int(14, "AVWAP RSI Length",      group="AVWAP Settings")
+avwapStochLen = input.int(14, "AVWAP Stochastic Length", group="AVWAP Settings")
+avwapSmoothK = input.int(3,  "Stoch K Smoothing",     group="AVWAP Settings")
+avwapSmoothD = input.int(3,  "Stoch D Smoothing",     group="AVWAP Settings")
+avwapStochOS = input.int(20, "Stoch Oversold Level",   group="AVWAP Settings", minval=5, maxval=40,
+               tooltip="K must cross above D below this level to anchor a new AVWAP.")
+
+// Risk Management
+takeProfitPct = input.float(10.0, "Take Profit %", group="Risk Management", minval=1.0, maxval=50.0, step=0.5)
+stopLossPct   = input.float(5.0,  "Stop Loss %",   group="Risk Management", minval=1.0, maxval=25.0, step=0.5)
+
+// =============================================================================
+// EMA CALCULATIONS
+// =============================================================================
+
+ema20  = ta.ema(close, emaFastLen)
+ema50  = ta.ema(close, emaMidLen)
+ema100 = ta.ema(close, emaSlow1Len)
+ema200 = ta.ema(close, emaSlow2Len)
+
+// =============================================================================
+// AUTO AVWAP (Anchored VWAP using Stochastic RSI for anchor detection)
+// =============================================================================
+
+// Stochastic RSI to find significant low pivot points
+avwapRsi   = ta.rsi(close, avwapRsiLen)
+avwapStoch = ta.stoch(avwapRsi, avwapRsi, avwapRsi, avwapStochLen)
+avwapK     = ta.sma(avwapStoch, avwapSmoothK)
+avwapD     = ta.sma(avwapK, avwapSmoothD)
+
+// Anchor signal: Stoch RSI K crosses above D while in oversold zone
+anchorSignal = ta.crossover(avwapK, avwapD) and avwapK[1] &lt; avwapStochOS
+
+// Cumulative volume-weighted low from last anchor point
+var float cumVolLow = 0.0
+var float cumVol    = 0.0
+
+if anchorSignal
+    cumVolLow := volume * low
+    cumVol    := volume
+else
+    cumVolLow += volume * low
+    cumVol    += volume
+
+loAVWAP = cumVol &gt; 0 ? cumVolLow / cumVol : low
+
+// =============================================================================
+// RSI CALCULATION &amp; MOMENTUM CONFIRMATION
+// =============================================================================
+
+rsiValue = ta.rsi(close, rsiLength)
+
+// Check that RSI has been rising for N consecutive bars
+rsiRising = true
+for i = 1 to rsiConfirmBars
+    if rsiValue[i - 1] &lt;= rsiValue[i]
+        rsiRising := false
+
+// =============================================================================
+// ENTRY CONDITIONS (Long Only)
+// =============================================================================
+
+emaBullish     = ema20 &gt; ema50 and ema50 &gt; ema200
+priceAboveVWAP = close &gt; loAVWAP
+rsiCondition   = rsiValue &lt; rsiThreshold and rsiRising
+notInPosition  = strategy.position_size == 0
+
+longEntry = emaBullish and priceAboveVWAP and rsiCondition and notInPosition
+
+// =============================================================================
+// STRATEGY EXECUTION
+// =============================================================================
+
+if longEntry
+    strategy.entry("Long", strategy.long)
+    alert('{"action":"buy","coin":"BTC","indicator":"ema-avwap-rsi"}', alert.freq_once_per_bar)
+
+// Take Profit &amp; Stop Loss
+if strategy.position_size &gt; 0
+    strategy.exit("TP/SL", "Long",
+         profit = close * (takeProfitPct / 100) / syminfo.mintick,
+         loss   = close * (stopLossPct / 100) / syminfo.mintick)
+
+// =============================================================================
+// PLOTS
+// =============================================================================
+
+plot(ema20,   "EMA 20",    color=color.new(#2962FF, 0), linewidth=1)
+plot(ema50,   "EMA 50",    color=color.new(#E91E63, 0), linewidth=1)
+plot(ema100,  "EMA 100",   color=color.new(#FF9800, 0), linewidth=1)
+plot(ema200,  "EMA 200",   color=color.new(#9C27B0, 0), linewidth=2)
+plot(loAVWAP, "AVWAP Low", color=color.new(#00BCD4, 0), linewidth=2, style=plot.style_stepline)
+
+// Highlight background when in a long position
+bgcolor(strategy.position_size &gt; 0 ? color.new(color.green, 92) : na, title="In Position")
+
+// Entry signal markers
+plotshape(longEntry, "Buy Signal", shape.triangleup, location.belowbar,
+          color=color.green, size=size.small, text="BUY")</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- CARD 4: TradingView Setup Guide (collapsible, starts collapsed)    -->
+    <!-- ================================================================== -->
+    <div class="col-12">
+        <div class="card bg-darker border-secondary">
+            <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center"
+                 data-bs-toggle="collapse" data-bs-target="#setupGuide" role="button">
+                <div>
+                    <i class="bi bi-book me-2 text-primary"></i>
+                    <span class="fw-bold">TradingView Setup Guide</span>
+                </div>
+                <i class="bi bi-chevron-down"></i>
+            </div>
+            <div class="collapse" id="setupGuide">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="d-flex mb-3">
+                                <span class="badge bg-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width:28px;height:28px;">1</span>
+                                <div>
+                                    <h6 class="text-light mb-1">Open TradingView Chart</h6>
+                                    <p class="text-muted small mb-0">Navigate to <strong>COINBASE:BTCUSD</strong> on TradingView. Select your preferred timeframe (recommended: 4H or 1D).</p>
+                                </div>
+                            </div>
+                            <div class="d-flex mb-3">
+                                <span class="badge bg-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width:28px;height:28px;">2</span>
+                                <div>
+                                    <h6 class="text-light mb-1">Open Pine Script Editor</h6>
+                                    <p class="text-muted small mb-0">Click the <strong>Pine Script</strong> tab at the bottom of the chart. Click <strong>"Open"</strong> &rarr; <strong>"New blank indicator"</strong> to start fresh.</p>
+                                </div>
+                            </div>
+                            <div class="d-flex mb-3">
+                                <span class="badge bg-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width:28px;height:28px;">3</span>
+                                <div>
+                                    <h6 class="text-light mb-1">Paste the Strategy Code</h6>
+                                    <p class="text-muted small mb-0">Delete any existing code, then paste the full Pine Script from above (use the <strong>Copy Pine Script</strong> button). Click <strong>"Add to chart"</strong>.</p>
+                                </div>
+                            </div>
+                            <div class="d-flex mb-3">
+                                <span class="badge bg-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width:28px;height:28px;">4</span>
+                                <div>
+                                    <h6 class="text-light mb-1">Review Backtest Results</h6>
+                                    <p class="text-muted small mb-0">Click the <strong>"Strategy Tester"</strong> tab at the bottom to view performance metrics: net profit, win rate, max drawdown, profit factor, and trade list.</p>
+                                </div>
+                            </div>
+                            <div class="d-flex mb-3">
+                                <span class="badge bg-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width:28px;height:28px;">5</span>
+                                <div>
+                                    <h6 class="text-light mb-1">Adjust Parameters</h6>
+                                    <p class="text-muted small mb-0">Click the <strong>gear icon</strong> on the strategy overlay to adjust inputs: EMA lengths, RSI threshold, AVWAP settings, and TP/SL percentages. Re-run the backtest to compare results.</p>
+                                </div>
+                            </div>
+                            <div class="d-flex mb-3">
+                                <span class="badge bg-primary rounded-circle me-3 d-flex align-items-center justify-content-center" style="width:28px;height:28px;">6</span>
+                                <div>
+                                    <h6 class="text-light mb-1">Set Up Alerts for Live Trading (Optional)</h6>
+                                    <p class="text-muted small mb-0">Right-click the strategy on the chart &rarr; <strong>"Add Alert"</strong>. Set the webhook URL to your MAK Bot endpoint and use the following JSON payload:</p>
+                                    <pre class="bg-black p-2 rounded mt-2 small"><code>{
+  "secret": "YOUR_WEBHOOK_SECRET",
+  "action": "buy",
+  "coin": "BTC",
+  "leverage": 10,
+  "collateral_usd": 100,
+  "indicator": "ema-avwap-rsi"
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning small py-2 mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Important:</strong> Always backtest thoroughly before enabling live trading.
+                        Past performance does not guarantee future results. Start with small position sizes
+                        and monitor the strategy closely during initial live deployment.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Copy Pine Script to clipboard
+    var copyBtn = document.getElementById('copy-strategy-btn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+            var code = document.getElementById('strategy-code').textContent;
+            navigator.clipboard.writeText(code).then(function() {
+                var btn = document.getElementById('copy-strategy-btn');
+                var originalHTML = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied!';
+                btn.classList.replace('btn-success', 'btn-outline-success');
+                setTimeout(function() {
+                    btn.innerHTML = originalHTML;
+                    btn.classList.replace('btn-outline-success', 'btn-success');
+                }, 2000);
+            }).catch(function() {
+                // Fallback for older browsers
+                var textarea = document.createElement('textarea');
+                textarea.value = code;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                var btn = document.getElementById('copy-strategy-btn');
+                btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied!';
+                setTimeout(function() {
+                    btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy Pine Script';
+                }, 2000);
+            });
+        });
+    }
+});
+</script>
+{% endblock %}
