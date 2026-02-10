@@ -508,8 +508,8 @@ class BotManager:
 
     def get_asset_metadata(self, force_refresh=False):
         """
-        Get asset metadata from Hyperliquid including szDecimals, maxLeverage, and onlyIsolated.
-        Returns dict mapping coin -> {szDecimals, maxLeverage, onlyIsolated}
+        Get asset metadata from Hyperliquid including szDecimals, maxLeverage, onlyIsolated, and marginMode.
+        Returns dict mapping coin -> {szDecimals, maxLeverage, onlyIsolated, marginMode}
         Uses caching to reduce API calls (5 minute TTL).
         Note: This uses the public Info API which doesn't require authentication.
         """
@@ -536,7 +536,8 @@ class BotManager:
                     asset_meta[coin] = {
                         'szDecimals': asset.get('szDecimals', 2),
                         'maxLeverage': asset.get('maxLeverage', 10),
-                        'onlyIsolated': asset.get('onlyIsolated', False)
+                        'onlyIsolated': asset.get('onlyIsolated', False),
+                        'marginMode': asset.get('marginMode'),  # None = cross allowed, 'strictIsolated'/'noCross' = isolated only
                     }
 
             # Update cache
@@ -553,6 +554,15 @@ class BotManager:
                 logger.warning("Returning stale metadata cache due to error")
                 return self._asset_meta_cache
             return {}
+
+    def supports_cross_margin(self, coin_meta):
+        """Return True if the asset supports cross margin based on its metadata."""
+        if coin_meta.get('onlyIsolated', False):
+            return False
+        margin_mode = coin_meta.get('marginMode')
+        if margin_mode in ('strictIsolated', 'noCross'):
+            return False
+        return True
 
     def get_asset_indices(self, coins):
         """
@@ -780,12 +790,13 @@ class BotManager:
                 logger.error(error_msg)
                 return {'success': False, 'error': error_msg}
 
-            # Set leverage - always use isolated margin (is_cross=False)
-            # This is required for assets with onlyIsolated=True (like AERO)
-            logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x, isolated margin)")
+            # Determine margin mode: use cross margin by default, fall back to isolated for restricted assets
+            is_cross = self.supports_cross_margin(coin_meta)
+            margin_label = "cross" if is_cross else "isolated"
+            logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x, {margin_label} margin)")
             try:
                 leverage_result = self._retry_api_call(
-                    lambda: exchange.update_leverage(leverage, coin, is_cross=False)
+                    lambda: exchange.update_leverage(leverage, coin, is_cross=is_cross)
                 )
                 logger.info(f"Leverage update result for {coin}: {leverage_result}")
             except Exception as lev_error:

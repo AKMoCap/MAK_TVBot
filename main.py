@@ -178,9 +178,15 @@ def webhook():
         # ====================================================================
         # SET LEVERAGE (do this before opening position)
         # ====================================================================
-        # is_cross=False means isolated margin (recommended for defined risk)
-        logger.info(f"Setting leverage to {leverage}x for {coin}")
-        leverage_result = exchange.update_leverage(leverage, coin, is_cross=False)
+        # Determine margin mode: cross by default, isolated for restricted assets
+        meta = info.meta()
+        asset_info = next((a for a in meta.get('universe', []) if a.get('name') == coin), {})
+        only_isolated = asset_info.get('onlyIsolated', False)
+        margin_mode = asset_info.get('marginMode')
+        is_cross = not only_isolated and margin_mode not in ('strictIsolated', 'noCross')
+        margin_label = "cross" if is_cross else "isolated"
+        logger.info(f"Setting leverage to {leverage}x for {coin} ({margin_label} margin)")
+        leverage_result = exchange.update_leverage(leverage, coin, is_cross=is_cross)
         logger.info(f"Leverage result: {leverage_result}")
         
         # ====================================================================
