@@ -285,10 +285,11 @@ def api_limit_order():
         if leverage > max_leverage:
             return jsonify({'success': False, 'error': f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"})
 
-        # Set leverage using exchange
+        # Set leverage using exchange (cross margin by default, isolated for restricted assets)
+        is_cross = bot_manager.supports_cross_margin(coin_meta)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
         try:
-            exchange.update_leverage(leverage, coin, is_cross=False)
+            exchange.update_leverage(leverage, coin, is_cross=is_cross)
         except Exception as lev_error:
             return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
 
@@ -402,10 +403,11 @@ def api_scale_order():
         if leverage > max_leverage:
             return jsonify({'success': False, 'error': f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"})
 
-        # Set leverage
+        # Set leverage (cross margin by default, isolated for restricted assets)
+        is_cross = bot_manager.supports_cross_margin(coin_meta)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
         try:
-            exchange.update_leverage(leverage, coin, is_cross=False)
+            exchange.update_leverage(leverage, coin, is_cross=is_cross)
         except Exception as lev_error:
             return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
 
@@ -618,10 +620,11 @@ def api_twap_order():
         if leverage > max_leverage:
             return jsonify({'success': False, 'error': f"Leverage {leverage}x exceeds max allowed for {coin} ({max_leverage}x)"})
 
-        # Set leverage
+        # Set leverage (cross margin by default, isolated for restricted assets)
+        is_cross = bot_manager.supports_cross_margin(coin_meta)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
         try:
-            exchange.update_leverage(leverage, coin, is_cross=False)
+            exchange.update_leverage(leverage, coin, is_cross=is_cross)
         except Exception as lev_error:
             return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
 
@@ -2376,9 +2379,10 @@ def api_trade_basket_twap():
                     failed += 1
                     continue
 
-                # Set leverage for this coin (using pre-created exchange)
+                # Set leverage for this coin (cross margin by default, isolated for restricted assets)
+                is_cross = bot_manager.supports_cross_margin(coin_meta)
                 try:
-                    exchange.update_leverage(leverage, coin, is_cross=False)
+                    exchange.update_leverage(leverage, coin, is_cross=is_cross)
                 except Exception as lev_error:
                     results.append({'coin': coin, 'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
                     failed += 1
