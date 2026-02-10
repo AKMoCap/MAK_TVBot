@@ -55,7 +55,7 @@
                 <p class="text-light mb-3">
                     A trend-following long-only strategy that combines <strong>EMA crossovers</strong> for trend direction,
                     <strong>Anchored VWAP</strong> for dynamic support confirmation, and <strong>RSI momentum</strong> for
-                    pullback entry timing. Designed for BTC/USD on daily or 4-hour timeframes.
+                    pullback entry timing. Designed for BTC/USD on shorter timeframes (1H, 4H, or Daily).
                 </p>
 
                 <!-- Entry / Exit Conditions -->
@@ -64,9 +64,8 @@
                         <h6 class="text-success"><i class="bi bi-box-arrow-in-right me-1"></i>Entry Conditions (Long)</h6>
                         <ol class="text-light small">
                             <li><strong>EMA 20 &gt; EMA 50</strong> &mdash; Short-term trend is bullish</li>
-                            <li><strong>EMA 50 &gt; EMA 200</strong> &mdash; Long-term uptrend confirmed</li>
                             <li><strong>Close &gt; Auto AVWAP Low</strong> &mdash; Price above dynamic VWAP support</li>
-                            <li><strong>RSI(14) &lt; 50 and rising for 2+ bars</strong> &mdash; Momentum pullback turning up</li>
+                            <li><strong>RSI(14) &lt; 50 and rising</strong> &mdash; Momentum pullback turning up</li>
                             <li><strong>No open position</strong> &mdash; One trade at a time (pyramiding disabled)</li>
                         </ol>
                     </div>
@@ -78,9 +77,8 @@
                         </ul>
                         <div class="alert alert-info small py-2 mt-3 mb-0">
                             <i class="bi bi-info-circle me-1"></i>
-                            <strong>Recommendation:</strong> The strategy adds an <code>EMA 50 &gt; EMA 200</code> filter
-                            beyond the user-specified <code>EMA 20 &gt; EMA 50</code> to reduce whipsaws in sideways markets.
-                            The RSI threshold is tightened to 45 (configurable) for earlier momentum detection.
+                            All parameters (EMA lengths, RSI threshold, AVWAP settings, TP/SL) are fully
+                            configurable via TradingView's strategy inputs panel.
                         </div>
                     </div>
                 </div>
@@ -153,14 +151,14 @@
                                     </tr>
                                     <tr>
                                         <td>EMA 200</td>
-                                        <td>Long-term trend filter &mdash; EMA 50 must be above this</td>
+                                        <td>Long-term trend reference &mdash; plotted for context</td>
                                         <td><span style="color:#9C27B0;">Purple</span></td>
                                     </tr>
                                 </tbody>
                             </table>
                             <p class="text-muted small mb-0">
                                 <strong>Entry logic:</strong> EMA 20 &gt; EMA 50 confirms short-term bullishness.
-                                EMA 50 &gt; EMA 200 confirms the macro uptrend, filtering out counter-trend entries.
+                                EMA 100 and EMA 200 are plotted for visual reference but are not required for entry.
                             </p>
                         </div>
 
@@ -209,14 +207,14 @@
     </div>
 
     <!-- ================================================================== -->
-    <!-- CARD 3: Pine Script v5 Code (collapsible, starts expanded)         -->
+    <!-- CARD 3: Pine Script v6 Code (collapsible, starts expanded)         -->
     <!-- ================================================================== -->
     <div class="col-12">
         <div class="card bg-darker border-secondary">
             <div class="card-header bg-transparent border-secondary d-flex justify-content-between align-items-center">
                 <div data-bs-toggle="collapse" data-bs-target="#pineScriptCode" role="button" class="flex-grow-1">
                     <i class="bi bi-code-slash me-2 text-success"></i>
-                    <span class="fw-bold">Pine Script v5 Strategy Code</span>
+                    <span class="fw-bold">Pine Script v6 Strategy Code</span>
                 </div>
                 <button class="btn btn-success btn-sm" id="copy-strategy-btn">
                     <i class="bi bi-clipboard me-1"></i>Copy Pine Script
@@ -224,7 +222,10 @@
             </div>
             <div class="collapse show" id="pineScriptCode">
                 <div class="card-body p-0">
-                    <pre class="bg-black p-3 rounded-bottom mb-0" style="max-height:600px;overflow:auto;"><code id="strategy-code">//@version=5
+                    <pre class="bg-black p-3 rounded-bottom mb-0" style="max-height:600px;overflow:auto;"><code id="strategy-code">// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © akmocap
+//@version=6
+
 strategy("MAK EMA + AVWAP + RSI Strategy",
      overlay              = true,
      initial_capital      = 100000,
@@ -247,18 +248,18 @@ emaSlow2Len  = input.int(200, "EMA Slow 2", group="EMA Settings")
 
 // RSI Settings
 rsiLength      = input.int(14, "RSI Length",          group="RSI Settings")
-rsiThreshold   = input.int(45, "RSI Entry Threshold", group="RSI Settings", minval=20, maxval=60,
-                 tooltip="RSI must be below this value for a pullback entry. Default 45.")
-rsiConfirmBars = input.int(2,  "RSI Rising Bars",     group="RSI Settings", minval=1, maxval=5,
+rsiThreshold   = input.int(50, "RSI Entry Threshold", group="RSI Settings", minval=20, maxval=60,
+                 tooltip="RSI must be below this value for a pullback entry. Default 50.")
+rsiConfirmBars = input.int(1,  "RSI Rising Bars",     group="RSI Settings", minval=1, maxval=5,
                  tooltip="Number of consecutive bars RSI must be rising to confirm momentum turn.")
 
 // Auto AVWAP Settings (Stochastic RSI Anchor)
-avwapRsiLen  = input.int(14, "AVWAP RSI Length",      group="AVWAP Settings")
-avwapStochLen = input.int(14, "AVWAP Stochastic Length", group="AVWAP Settings")
-avwapSmoothK = input.int(3,  "Stoch K Smoothing",     group="AVWAP Settings")
-avwapSmoothD = input.int(3,  "Stoch D Smoothing",     group="AVWAP Settings")
-avwapStochOS = input.int(20, "Stoch Oversold Level",   group="AVWAP Settings", minval=5, maxval=40,
-               tooltip="K must cross above D below this level to anchor a new AVWAP.")
+avwapRsiLen   = input.int(14, "AVWAP RSI Length",        group="AVWAP Settings")
+avwapStochLen = input.int(14, "AVWAP Stochastic Length",  group="AVWAP Settings")
+avwapSmoothK  = input.int(3,  "Stoch K Smoothing",       group="AVWAP Settings")
+avwapSmoothD  = input.int(3,  "Stoch D Smoothing",       group="AVWAP Settings")
+avwapStochOS  = input.int(30, "Stoch Oversold Level",     group="AVWAP Settings", minval=5, maxval=40,
+                tooltip="K must cross above D below this level to anchor a new AVWAP.")
 
 // Risk Management
 takeProfitPct = input.float(10.0, "Take Profit %", group="Risk Management", minval=1.0, maxval=50.0, step=0.5)
@@ -315,7 +316,7 @@ for i = 1 to rsiConfirmBars
 // ENTRY CONDITIONS (Long Only)
 // =============================================================================
 
-emaBullish     = ema20 &gt; ema50 and ema50 &gt; ema200
+emaBullish     = ema20 &gt; ema50
 priceAboveVWAP = close &gt; loAVWAP
 rsiCondition   = rsiValue &lt; rsiThreshold and rsiRising
 notInPosition  = strategy.position_size == 0
@@ -330,11 +331,12 @@ if longEntry
     strategy.entry("Long", strategy.long)
     alert('{"action":"buy","coin":"BTC","indicator":"ema-avwap-rsi"}', alert.freq_once_per_bar)
 
-// Take Profit &amp; Stop Loss
+// Take Profit &amp; Stop Loss (fixed to entry price)
 if strategy.position_size &gt; 0
+    entryPrice = strategy.position_avg_price
     strategy.exit("TP/SL", "Long",
-         profit = close * (takeProfitPct / 100) / syminfo.mintick,
-         loss   = close * (stopLossPct / 100) / syminfo.mintick)
+         profit = entryPrice * (takeProfitPct / 100) / syminfo.mintick,
+         loss   = entryPrice * (stopLossPct / 100) / syminfo.mintick)
 
 // =============================================================================
 // PLOTS
