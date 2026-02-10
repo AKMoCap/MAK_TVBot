@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from eth_account import Account
 from hyperliquid.info import Info
@@ -63,6 +64,19 @@ class BotManager:
         self._hip3_funding_cache = {}
         self._hip3_funding_cache_time = 0
         self._hip3_funding_cache_ttl = 60  # 1 minute TTL for funding rates
+
+        # Asset index cache (coin -> index in universe array)
+        self._asset_index_cache = {}
+
+        # Native funding rates cache
+        self._funding_rates_cache = {}
+        self._funding_rates_cache_time = 0
+        self._funding_rates_cache_ttl = 60  # 1 minute TTL
+
+        # Leverage cache to skip redundant update_leverage() calls
+        # Key: (coin, is_cross) -> {'leverage': int, 'time': float}
+        self._leverage_cache = {}
+        self._leverage_cache_ttl = 300  # 5 minutes TTL
 
     @property
     def is_enabled(self):
@@ -253,6 +267,31 @@ class BotManager:
             self._ws_connected = False
             logger.info("WebSocket price streaming stopped")
 
+    def get_user_positions(self, user_wallet=None, user_agent_key=None):
+        """Lightweight position fetch — only calls user_state(), skips funding rates and HIP-3."""
+        try:
+            config = self.get_config(user_wallet, user_agent_key)
+            if not self.is_configured(user_wallet, user_agent_key):
+                return []
+            info, _ = self.get_exchange(user_wallet, user_agent_key)
+            user_state = info.user_state(config['main_wallet'])
+            positions = user_state.get('assetPositions', [])
+            result = []
+            for pos in positions:
+                position = pos.get('position', {})
+                size = float(position.get('szi', 0))
+                if size != 0:
+                    result.append({
+                        'coin': position.get('coin'),
+                        'size': size,
+                        'side': 'long' if size > 0 else 'short',
+                        'entry_price': float(position.get('entryPx', 0)),
+                    })
+            return result
+        except Exception as e:
+            logger.warning(f"Error in get_user_positions: {e}")
+            return []
+
     def get_account_info(self, user_wallet=None, user_agent_key=None):
         """Get account balance and positions from Hyperliquid (including HIP-3 perps)"""
         try:
@@ -332,8 +371,13 @@ class BotManager:
     def _get_funding_rates(self, info):
         """
         Get current funding rates for all assets.
-        Returns dict mapping coin -> funding_rate (hourly)
+        Returns dict mapping coin -> funding_rate (hourly).
+        Cached for 60 seconds to avoid expensive meta_and_asset_ctxs() calls.
         """
+        current_time = time.time()
+        if self._funding_rates_cache and (current_time - self._funding_rates_cache_time) < self._funding_rates_cache_ttl:
+            return self._funding_rates_cache
+
         try:
             # Get meta and asset contexts which includes funding rates
             meta_and_ctxs = info.meta_and_asset_ctxs()
@@ -352,9 +396,13 @@ class BotManager:
                         funding_rate = float(ctx.get('funding', 0))
                         funding_rates[coin] = funding_rate
 
+            self._funding_rates_cache = funding_rates
+            self._funding_rates_cache_time = current_time
             return funding_rates
         except Exception as e:
             logger.warning(f"Error fetching funding rates: {e}")
+            if self._funding_rates_cache:
+                return self._funding_rates_cache
             return {}
 
     def _get_hip3_funding_rates(self, api_url, dex_name):
@@ -530,7 +578,8 @@ class BotManager:
             universe = meta.get('universe', [])
 
             asset_meta = {}
-            for asset in universe:
+            asset_indices = {}
+            for idx, asset in enumerate(universe):
                 coin = asset.get('name')
                 if coin:
                     asset_meta[coin] = {
@@ -539,9 +588,11 @@ class BotManager:
                         'onlyIsolated': asset.get('onlyIsolated', False),
                         'marginMode': asset.get('marginMode'),  # None = cross allowed, 'strictIsolated'/'noCross' = isolated only
                     }
+                    asset_indices[coin] = idx
 
-            # Update cache
+            # Update caches
             self._asset_meta_cache = asset_meta
+            self._asset_index_cache = asset_indices
             self._asset_meta_cache_time = current_time
 
             logger.info(f"Loaded metadata for {len(asset_meta)} assets (cached for {self._asset_meta_cache_ttl}s)")
@@ -564,10 +615,30 @@ class BotManager:
             return False
         return True
 
+    def _update_leverage_if_needed(self, exchange, leverage, coin, is_cross):
+        """Update leverage only if it differs from the cached value. Returns the API result or None if skipped."""
+        cache_key = (coin, is_cross)
+        current_time = time.time()
+        cached = self._leverage_cache.get(cache_key)
+        if cached and cached['leverage'] == leverage and (current_time - cached['time']) < self._leverage_cache_ttl:
+            logger.info(f"Leverage already set to {leverage}x for {coin} ({'cross' if is_cross else 'isolated'} margin), skipping API call")
+            return None
+
+        result = exchange.update_leverage(leverage, coin, is_cross=is_cross)
+        self._leverage_cache[cache_key] = {'leverage': leverage, 'time': current_time}
+        return result
+
+    def get_asset_index(self, coin):
+        """Get asset index for a single coin from cache. Refreshes metadata if not cached."""
+        if coin in self._asset_index_cache:
+            return self._asset_index_cache[coin]
+        # Cache miss — refresh metadata which rebuilds index cache
+        self.get_asset_metadata(force_refresh=True)
+        return self._asset_index_cache.get(coin)
+
     def get_asset_indices(self, coins):
         """
-        Get asset indices for multiple coins with a single API call.
-        Uses cached metadata to avoid expensive meta() calls (weight 20).
+        Get asset indices for multiple coins using cached metadata.
 
         Args:
             coins: List of coin names (e.g., ['BTC', 'ETH', 'DOGE'])
@@ -575,25 +646,17 @@ class BotManager:
         Returns:
             dict mapping coin name to asset index (e.g., {'BTC': 0, 'ETH': 1})
         """
-        try:
-            use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
-            api_url = constants.TESTNET_API_URL if use_testnet else constants.MAINNET_API_URL
-            info = Info(api_url, skip_ws=True)
-            meta = info.meta()
-            universe = meta.get('universe', [])
+        # Ensure cache is populated
+        if not self._asset_index_cache:
+            self.get_asset_metadata()
 
-            # Build index map for requested coins
-            asset_indices = {}
-            for idx, asset in enumerate(universe):
-                name = asset.get('name')
-                if name in coins:
-                    asset_indices[name] = idx
+        asset_indices = {}
+        for coin in coins:
+            idx = self._asset_index_cache.get(coin)
+            if idx is not None:
+                asset_indices[coin] = idx
 
-            logger.info(f"Fetched asset indices for {len(asset_indices)} coins")
-            return asset_indices
-        except Exception as e:
-            logger.exception(f"Error getting asset indices: {e}")
-            return {}
+        return asset_indices
 
     def get_market_prices(self, coins=None, force_refresh=False):
         """
@@ -603,12 +666,11 @@ class BotManager:
         current_time = time.time()
 
         # Try WebSocket prices first (no API call needed)
-        if self._ws_connected and (current_time - self._ws_last_update) < 10:
-            with self._ws_prices_lock:
-                if self._ws_prices:
-                    if coins:
-                        return {coin: self._ws_prices.get(coin, 0) for coin in coins}
-                    return dict(self._ws_prices)
+        with self._ws_prices_lock:
+            if self._ws_connected and (current_time - self._ws_last_update) < 10 and self._ws_prices:
+                if coins:
+                    return {coin: self._ws_prices.get(coin, 0) for coin in coins}
+                return dict(self._ws_prices)
 
         # Fallback: Check REST API cache
         if not force_refresh and self._prices_cache and (current_time - self._prices_cache_time) < self._prices_cache_ttl:
@@ -684,11 +746,13 @@ class BotManager:
 
         return 10  # Default
 
-    def calculate_position_size(self, coin, collateral_usd, leverage, asset_meta=None):
-        """Calculate position size based on collateral and leverage"""
-        # Use cached prices
-        prices = self.get_market_prices([coin])
-        current_price = prices.get(coin, 0)
+    def calculate_position_size(self, coin, collateral_usd, leverage, asset_meta=None, price=None):
+        """Calculate position size based on collateral and leverage. Optionally accepts a pre-fetched price."""
+        if price and price > 0:
+            current_price = price
+        else:
+            prices = self.get_market_prices([coin])
+            current_price = prices.get(coin, 0)
 
         if current_price == 0:
             raise ValueError(f"Could not get price for {coin}")
@@ -711,9 +775,12 @@ class BotManager:
 
         return size, current_price
 
+    _RETRYABLE_ERRORS = ('429', '502', '503', 'Connection reset', 'timed out', 'ConnectionError', 'Timeout')
+
     def _retry_api_call(self, func, max_retries=3, initial_delay=2, include_rate_limit_info=False):
         """
-        Execute an API call with retry logic for rate limiting (429 errors).
+        Execute an API call with retry logic for transient errors.
+        Retries on: 429 rate limits, 502/503 gateway errors, connection resets, timeouts.
         Uses exponential backoff: 2s, 4s, 8s
 
         Args:
@@ -738,16 +805,19 @@ class BotManager:
             except Exception as e:
                 last_error = e
                 error_str = str(e)
-                # Check for rate limiting (429)
+                # Check for retryable transient errors
+                is_retryable = any(err in error_str for err in self._RETRYABLE_ERRORS)
+                if not is_retryable:
+                    raise
+
                 if '429' in error_str:
                     was_rate_limited = True
-                    total_retries = attempt + 1
-                    if attempt < max_retries - 1:
-                        delay = initial_delay * (2 ** attempt)  # Exponential backoff
-                        logger.warning(f"Rate limited (429), retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
-                        time.sleep(delay)
-                        continue
-                # Non-429 errors or max retries reached
+                total_retries = attempt + 1
+                if attempt < max_retries - 1:
+                    delay = initial_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"Transient error ({error_str[:80]}), retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
                 raise
 
         # Include rate limit info in the exception message
@@ -793,13 +863,15 @@ class BotManager:
             # Determine margin mode: use cross margin by default, fall back to isolated for restricted assets
             is_cross = self.supports_cross_margin(coin_meta)
             margin_label = "cross" if is_cross else "isolated"
-            logger.info(f"Setting leverage to {leverage}x for {coin} (max: {max_leverage}x, {margin_label} margin)")
             try:
                 leverage_result = self._retry_api_call(
-                    lambda: exchange.update_leverage(leverage, coin, is_cross=is_cross)
+                    lambda: self._update_leverage_if_needed(exchange, leverage, coin, is_cross)
                 )
-                logger.info(f"Leverage update result for {coin}: {leverage_result}")
+                if leverage_result is not None:
+                    logger.info(f"Leverage set to {leverage}x for {coin} ({margin_label} margin): {leverage_result}")
             except Exception as lev_error:
+                # Invalidate cache on failure
+                self._leverage_cache.pop((coin, is_cross), None)
                 error_msg = f"Failed to set leverage for {coin}: {str(lev_error)}"
                 logger.error(error_msg)
                 return {'success': False, 'error': error_msg}
@@ -815,7 +887,8 @@ class BotManager:
                 lambda: exchange.market_open(coin, is_buy, size, None, slippage)
             )
 
-            logger.info(f"Order result: {json.dumps(order_result, indent=2)}")
+            logger.info(f"Order result status: {order_result.get('status')}")
+            logger.debug(f"Order result detail: {json.dumps(order_result, separators=(',', ':'))}")
 
             # Parse result
             if order_result.get("status") == "ok":
@@ -854,53 +927,47 @@ class BotManager:
                 # Calculate SL/TP prices
                 side = 'long' if is_buy else 'short'
                 filled_size = float(fills[0]['size']) if fills else size
-                sz_decimals = self.get_size_decimals(coin)
+
+                # Warn if actual fill size differs significantly from requested
+                if filled_size < size * 0.95:
+                    logger.warning(f"Partial fill for {coin}: requested {size}, filled {filled_size} ({filled_size/size*100:.1f}%)")
+                sz_decimals = coin_meta.get('szDecimals', 2)
                 sl_price = None
                 tp_price = None
                 sl_order_result = None
                 tp_order_result = None
+
+                # Calculate SL/TP prices and prepare parallel order tasks
+                # Handle TP1 and TP2 (multi-level take profits)
+                tp1_price = None
+                tp2_price = None
+                tp1_order_result = None
+                tp2_order_result = None
+                sl_failed = False
+                tp_failed = False
+
+                # Build list of SL/TP orders to place in parallel
+                sl_tp_tasks = []
 
                 if stop_loss_pct:
                     if side == 'long':
                         sl_price = actual_price * (1 - stop_loss_pct / 100)
                     else:
                         sl_price = actual_price * (1 + stop_loss_pct / 100)
-                    # Round to 5 significant figures
                     sl_price = float(f"{sl_price:.5g}")
-
-                    # Place stop loss order on exchange
-                    sl_order_result = self.place_stop_loss_order(coin, side, sl_price, filled_size, user_wallet, user_agent_key)
-                    if sl_order_result.get('success'):
-                        logger.info(f"Stop loss order placed for {coin} at ${sl_price:.2f}")
-                    else:
-                        logger.warning(f"Failed to place stop loss for {coin}: {sl_order_result.get('error')}")
-
-                # Handle TP1 and TP2 (multi-level take profits)
-                tp1_price = None
-                tp2_price = None
-                tp1_order_result = None
-                tp2_order_result = None
+                    sl_tp_tasks.append(('sl', lambda: self.place_stop_loss_order(
+                        coin, side, sl_price, filled_size, user_wallet, user_agent_key, exchange=exchange)))
 
                 if tp1_pct and tp1_size_pct:
                     if side == 'long':
                         tp1_price = actual_price * (1 + tp1_pct / 100)
                     else:
                         tp1_price = actual_price * (1 - tp1_pct / 100)
-                    # Round to 5 significant figures
                     tp1_price = float(f"{tp1_price:.5g}")
-
-                    # Calculate TP1 size (percentage of position) and round
-                    tp1_size = filled_size * (tp1_size_pct / 100)
-                    tp1_size = round(tp1_size, sz_decimals)
-
-                    # Only place order if size is valid
+                    tp1_size = round(filled_size * (tp1_size_pct / 100), sz_decimals)
                     if tp1_size > 0:
-                        # Place TP1 order on exchange
-                        tp1_order_result = self.place_take_profit_order(coin, side, tp1_price, tp1_size, user_wallet, user_agent_key)
-                        if tp1_order_result.get('success'):
-                            logger.info(f"TP1 order placed for {coin} at ${tp1_price:.2f} for {tp1_size_pct}% of position")
-                        else:
-                            logger.warning(f"Failed to place TP1 for {coin}: {tp1_order_result.get('error')}")
+                        sl_tp_tasks.append(('tp1', lambda: self.place_take_profit_order(
+                            coin, side, tp1_price, tp1_size, user_wallet, user_agent_key, exchange=exchange)))
                     else:
                         logger.warning(f"TP1 size too small for {coin}: {tp1_size}")
                         tp1_order_result = {'success': False, 'error': 'Size too small after rounding'}
@@ -910,21 +977,11 @@ class BotManager:
                         tp2_price = actual_price * (1 + tp2_pct / 100)
                     else:
                         tp2_price = actual_price * (1 - tp2_pct / 100)
-                    # Round to 5 significant figures
                     tp2_price = float(f"{tp2_price:.5g}")
-
-                    # Calculate TP2 size (percentage of position) and round
-                    tp2_size = filled_size * (tp2_size_pct / 100)
-                    tp2_size = round(tp2_size, sz_decimals)
-
-                    # Only place order if size is valid
+                    tp2_size = round(filled_size * (tp2_size_pct / 100), sz_decimals)
                     if tp2_size > 0:
-                        # Place TP2 order on exchange
-                        tp2_order_result = self.place_take_profit_order(coin, side, tp2_price, tp2_size, user_wallet, user_agent_key)
-                        if tp2_order_result.get('success'):
-                            logger.info(f"TP2 order placed for {coin} at ${tp2_price:.2f} for {tp2_size_pct}% of position")
-                        else:
-                            logger.warning(f"Failed to place TP2 for {coin}: {tp2_order_result.get('error')}")
+                        sl_tp_tasks.append(('tp2', lambda: self.place_take_profit_order(
+                            coin, side, tp2_price, tp2_size, user_wallet, user_agent_key, exchange=exchange)))
                     else:
                         logger.warning(f"TP2 size too small for {coin}: {tp2_size}")
                         tp2_order_result = {'success': False, 'error': 'Size too small after rounding'}
@@ -935,15 +992,52 @@ class BotManager:
                         tp_price = actual_price * (1 + take_profit_pct / 100)
                     else:
                         tp_price = actual_price * (1 - take_profit_pct / 100)
-                    # Round to 5 significant figures
                     tp_price = float(f"{tp_price:.5g}")
+                    sl_tp_tasks.append(('tp', lambda: self.place_take_profit_order(
+                        coin, side, tp_price, filled_size, user_wallet, user_agent_key, exchange=exchange)))
 
-                    # Place take profit order on exchange
-                    tp_order_result = self.place_take_profit_order(coin, side, tp_price, filled_size, user_wallet, user_agent_key)
-                    if tp_order_result.get('success'):
-                        logger.info(f"Take profit order placed for {coin} at ${tp_price:.2f}")
-                    else:
-                        logger.warning(f"Failed to place take profit for {coin}: {tp_order_result.get('error')}")
+                # Execute all SL/TP orders in parallel
+                if sl_tp_tasks:
+                    with ThreadPoolExecutor(max_workers=len(sl_tp_tasks)) as executor:
+                        futures = {executor.submit(task_fn): task_name for task_name, task_fn in sl_tp_tasks}
+                        for future in as_completed(futures):
+                            task_name = futures[future]
+                            try:
+                                result = future.result()
+                                if task_name == 'sl':
+                                    sl_order_result = result
+                                    if result.get('success'):
+                                        logger.info(f"Stop loss order placed for {coin} at ${sl_price:.2f}")
+                                    else:
+                                        sl_failed = True
+                                        logger.warning(f"Failed to place stop loss for {coin}: {result.get('error')}")
+                                elif task_name == 'tp1':
+                                    tp1_order_result = result
+                                    if result.get('success'):
+                                        logger.info(f"TP1 order placed for {coin} at ${tp1_price:.2f} for {tp1_size_pct}% of position")
+                                    else:
+                                        tp_failed = True
+                                        logger.warning(f"Failed to place TP1 for {coin}: {result.get('error')}")
+                                elif task_name == 'tp2':
+                                    tp2_order_result = result
+                                    if result.get('success'):
+                                        logger.info(f"TP2 order placed for {coin} at ${tp2_price:.2f} for {tp2_size_pct}% of position")
+                                    else:
+                                        tp_failed = True
+                                        logger.warning(f"Failed to place TP2 for {coin}: {result.get('error')}")
+                                elif task_name == 'tp':
+                                    tp_order_result = result
+                                    if result.get('success'):
+                                        logger.info(f"Take profit order placed for {coin} at ${tp_price:.2f}")
+                                    else:
+                                        tp_failed = True
+                                        logger.warning(f"Failed to place take profit for {coin}: {result.get('error')}")
+                            except Exception as e:
+                                logger.warning(f"Exception placing {task_name} order for {coin}: {e}")
+                                if task_name == 'sl':
+                                    sl_failed = True
+                                else:
+                                    tp_failed = True
 
                 logger.info(f"Trade filled: {coin} {action} {fills[0]['size']} @ ${actual_price:.2f}")
 
@@ -964,6 +1058,8 @@ class BotManager:
                     'tp_order': tp_order_result,
                     'tp1_order': tp1_order_result,
                     'tp2_order': tp2_order_result,
+                    'sl_failed': sl_failed,
+                    'tp_failed': tp_failed,
                     'fills': fills,
                     'order_id': fills[0]['oid'] if fills else None
                 }
@@ -996,10 +1092,11 @@ class BotManager:
             logger.exception(f"Error closing position: {e}")
             return {'success': False, 'error': str(e)}
 
-    def place_stop_loss_order(self, coin, side, trigger_price, size, user_wallet=None, user_agent_key=None):
+    def place_stop_loss_order(self, coin, side, trigger_price, size, user_wallet=None, user_agent_key=None, exchange=None):
         """Place a stop loss order on the exchange"""
         try:
-            _, exchange = self.get_exchange(user_wallet, user_agent_key)
+            if exchange is None:
+                _, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             # Get size decimals for proper rounding
             sz_decimals = self.get_size_decimals(coin)
@@ -1067,10 +1164,11 @@ class BotManager:
             logger.exception(f"Error placing stop loss: {e}")
             return {'success': False, 'error': str(e)}
 
-    def place_take_profit_order(self, coin, side, trigger_price, size, user_wallet=None, user_agent_key=None):
+    def place_take_profit_order(self, coin, side, trigger_price, size, user_wallet=None, user_agent_key=None, exchange=None):
         """Place a take profit order on the exchange"""
         try:
-            _, exchange = self.get_exchange(user_wallet, user_agent_key)
+            if exchange is None:
+                _, exchange = self.get_exchange(user_wallet, user_agent_key)
 
             # Get size decimals for proper rounding
             sz_decimals = self.get_size_decimals(coin)
@@ -1270,15 +1368,8 @@ class BotManager:
                 config = self.get_config()
                 api_url = constants.TESTNET_API_URL if config['use_testnet'] else constants.MAINNET_API_URL
 
-                # Get asset index for the coin
-                meta = info.meta()
-                universe = meta.get('universe', [])
-                asset_index = None
-                for idx, asset in enumerate(universe):
-                    if asset.get('name') == coin:
-                        asset_index = idx
-                        break
-
+                # Get asset index from cache (avoids expensive meta() call)
+                asset_index = self.get_asset_index(coin)
                 if asset_index is None:
                     return {'success': False, 'error': f'Asset {coin} not found'}
 
@@ -1377,17 +1468,9 @@ class BotManager:
             if duration_minutes < 5:
                 return {'success': False, 'error': 'TWAP duration must be at least 5 minutes'}
 
-            # Use provided asset_index or fetch it (expensive - weight 20!)
+            # Use provided asset_index or look up from cache
             if asset_index is None:
-                use_testnet = os.environ.get("USE_TESTNET", "true").lower() == "true"
-                api_url = constants.TESTNET_API_URL if use_testnet else constants.MAINNET_API_URL
-                info = Info(api_url, skip_ws=True)
-                meta = info.meta()
-                universe = meta.get('universe', [])
-                for idx, asset in enumerate(universe):
-                    if asset.get('name') == coin:
-                        asset_index = idx
-                        break
+                asset_index = self.get_asset_index(coin)
 
             if asset_index is None:
                 return {'success': False, 'error': f'Asset {coin} not found'}
@@ -1481,15 +1564,8 @@ class BotManager:
         try:
             info, exchange = self.get_exchange(user_wallet, user_agent_key)
 
-            # Get asset index for the coin
-            meta = info.meta()
-            universe = meta.get('universe', [])
-            asset_index = None
-            for idx, asset in enumerate(universe):
-                if asset.get('name') == coin:
-                    asset_index = idx
-                    break
-
+            # Get asset index from cache (avoids expensive meta() call)
+            asset_index = self.get_asset_index(coin)
             if asset_index is None:
                 return {'success': False, 'error': f'Asset {coin} not found'}
 

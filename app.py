@@ -289,8 +289,9 @@ def api_limit_order():
         is_cross = bot_manager.supports_cross_margin(coin_meta)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
         try:
-            exchange.update_leverage(leverage, coin, is_cross=is_cross)
+            bot_manager._update_leverage_if_needed(exchange, leverage, coin, is_cross)
         except Exception as lev_error:
+            bot_manager._leverage_cache.pop((coin, is_cross), None)
             return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
 
         # Calculate position size
@@ -407,8 +408,9 @@ def api_scale_order():
         is_cross = bot_manager.supports_cross_margin(coin_meta)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
         try:
-            exchange.update_leverage(leverage, coin, is_cross=is_cross)
+            bot_manager._update_leverage_if_needed(exchange, leverage, coin, is_cross)
         except Exception as lev_error:
+            bot_manager._leverage_cache.pop((coin, is_cross), None)
             return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
 
         # Calculate total size based on average price
@@ -509,11 +511,8 @@ def api_set_sl_tp():
         if not orders:
             return jsonify({'success': False, 'error': 'No orders specified'})
 
-        # Get current position to determine side
-        account_info = bot_manager.get_account_info(user_wallet=wallet_address, user_agent_key=agent_key)
-        if 'error' in account_info:
-            return jsonify({'success': False, 'error': account_info['error']})
-        positions = account_info.get('positions', [])
+        # Get current position to determine side (lightweight — skips funding rates and HIP-3)
+        positions = bot_manager.get_user_positions(user_wallet=wallet_address, user_agent_key=agent_key)
         position = None
         for pos in positions:
             if pos.get('coin') == coin:
@@ -624,8 +623,9 @@ def api_twap_order():
         is_cross = bot_manager.supports_cross_margin(coin_meta)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
         try:
-            exchange.update_leverage(leverage, coin, is_cross=is_cross)
+            bot_manager._update_leverage_if_needed(exchange, leverage, coin, is_cross)
         except Exception as lev_error:
+            bot_manager._leverage_cache.pop((coin, is_cross), None)
             return jsonify({'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
 
         # Get current price to calculate size
@@ -1080,7 +1080,6 @@ def api_close_all():
                     trade.pnl_percent = pnl_pct
                     trade.status = 'closed'
                     trade.close_reason = 'manual'
-                    db.session.commit()
 
                     risk_manager.record_trade_result(pnl)
                     total_pnl += pnl
@@ -1090,6 +1089,9 @@ def api_close_all():
                     result['pnl_percent'] = pnl_pct
 
             results.append({'coin': coin, 'result': result})
+
+        # Batch commit all trade updates at once
+        db.session.commit()
 
         log_activity('info', 'trade', f"Closed all positions ({len(positions)} total) with P&L: ${total_pnl:.2f}", user_id=user.id)
 
@@ -2157,17 +2159,21 @@ def api_trade_basket():
         # Pre-fetch asset metadata to warm cache (avoids repeated meta() calls)
         asset_meta = bot_manager.get_asset_metadata()
 
-        # Execute trades for each coin (with rate limiting delay)
+        # Execute trades for each coin (with adaptive rate limiting delay)
         results = []
         successful = 0
         failed = 0
+        was_rate_limited = False
 
         for i, coin in enumerate(coins):
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
+                # Use adaptive delay: 0.5s normally, increased if rate-limited on previous trade
                 if i > 0:
-                    time.sleep(2.0)  # 2s delay between market orders
+                    delay = 2.0 if was_rate_limited else 0.5
+                    time.sleep(delay)
 
+                was_rate_limited = False
                 # Risk check
                 allowed, reason = risk_manager.check_trading_allowed(coin, collateral_usd, leverage)
                 if not allowed:
@@ -2206,6 +2212,7 @@ def api_trade_basket():
                     # Check if it's a rate limit error (HTML response)
                     error_msg = result.get('error', '')
                     if 'Unexpected token' in str(error_msg) or '<' in str(error_msg)[:10]:
+                        was_rate_limited = True
                         logger.warning(f"Rate limited on {coin}, retry {attempt + 1}/{max_retries}")
                         time.sleep(3)  # Wait 3 seconds before retry
                     else:
@@ -2353,18 +2360,21 @@ def api_trade_basket_twap():
         # Create exchange connection once (reused for all operations)
         _, exchange = bot_manager.get_exchange(wallet_address, agent_key)
 
-        # Execute TWAP for each coin (with rate limiting delay)
+        # Execute TWAP for each coin (with adaptive rate limiting delay)
         results = []
         successful = 0
         failed = 0
+        was_rate_limited = False
 
         for i, coin in enumerate(coins):
             try:
                 # Add delay between trades to avoid rate limiting (skip first trade)
-                # With pre-fetched data, we only need delay for leverage + TWAP calls
+                # Use adaptive delay: 0.5s normally, increased if rate-limited on previous trade
                 if i > 0:
-                    time.sleep(1.0)  # 1s delay between TWAP orders
+                    delay = 2.0 if was_rate_limited else 0.5
+                    time.sleep(delay)
 
+                was_rate_limited = False
                 # Get coin metadata
                 coin_meta = asset_meta.get(coin, {})
                 if not coin_meta:
@@ -2382,8 +2392,9 @@ def api_trade_basket_twap():
                 # Set leverage for this coin (cross margin by default, isolated for restricted assets)
                 is_cross = bot_manager.supports_cross_margin(coin_meta)
                 try:
-                    exchange.update_leverage(leverage, coin, is_cross=is_cross)
+                    bot_manager._update_leverage_if_needed(exchange, leverage, coin, is_cross)
                 except Exception as lev_error:
+                    bot_manager._leverage_cache.pop((coin, is_cross), None)
                     results.append({'coin': coin, 'success': False, 'error': f"Failed to set leverage: {str(lev_error)}"})
                     failed += 1
                     continue
@@ -2427,6 +2438,7 @@ def api_trade_basket_twap():
                     # Check if it's a rate limit error (HTML response)
                     error_msg = result.get('error', '')
                     if 'Unexpected token' in str(error_msg) or '<' in str(error_msg)[:10]:
+                        was_rate_limited = True
                         logger.warning(f"Rate limited on {coin}, retry {attempt + 1}/{max_retries}")
                         time.sleep(3)  # Wait 3 seconds before retry
                     else:

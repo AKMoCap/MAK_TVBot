@@ -200,6 +200,11 @@ async function initDashboard() {
     await fetchBotStatus();
     await refreshDashboard();
     setupDashboardEvents();
+
+    // Periodically refresh spot balances (every 60s) to keep display current
+    setInterval(() => {
+        loadAndCacheSpotBalances().catch(() => {});
+    }, 60000);
 }
 
 /**
@@ -365,7 +370,12 @@ async function fetchBotStatus() {
     }
 }
 
+let _dashboardRefreshInProgress = false;
 async function refreshDashboard() {
+    // Guard against concurrent refresh calls
+    if (_dashboardRefreshInProgress) return;
+    _dashboardRefreshInProgress = true;
+    try {
     // Use Promise.allSettled for parallel API calls - one failure won't block others
     const wsConnected = typeof hlWebSocket !== 'undefined' && hlWebSocket.isConnected;
 
@@ -434,6 +444,9 @@ async function refreshDashboard() {
 
     // Update connection status based on whether any call succeeded
     updateConnectionStatus(connected);
+    } finally {
+        _dashboardRefreshInProgress = false;
+    }
 }
 
 // Global cache for stablecoin balances (for transfer modal and display)
