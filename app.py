@@ -121,16 +121,6 @@ def settings():
     return render_template('settings.html')
 
 
-@app.route('/strategies')
-def strategies():
-    """Trading strategies page"""
-    try:
-        return render_template('strategies.html')
-    except Exception as e:
-        logger.exception(f"Error rendering strategies page: {e}")
-        return f"Error: {str(e)}", 500
-
-
 # ============================================================================
 # API ROUTES - Account & Positions
 # ============================================================================
